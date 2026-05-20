@@ -81,6 +81,14 @@
     pan.delaysTouchesBegan = NO;
     [self.contentView addGestureRecognizer:pan];
 
+    UILongPressGestureRecognizer *longPress = [[UILongPressGestureRecognizer alloc]
+        initWithTarget:self action:@selector(_handleLongPress:)];
+    longPress.minimumPressDuration = 0.75;
+    longPress.delaysTouchesBegan = NO;
+    longPress.cancelsTouchesInView = NO;
+    longPress.delegate = self;
+    [_bubbleView addGestureRecognizer:longPress];
+
 
     return self;
 }
@@ -221,6 +229,34 @@
         }
         default: break;
     }
+}
+
+// ── Long-press copy ────────────────────────────────────────────────────────
+
+- (BOOL)canBecomeFirstResponder {
+    return YES;
+}
+
+- (BOOL)canPerformAction:(SEL)action withSender:(id)sender {
+    return action == @selector(copyBubbleText:);
+}
+
+- (void)copyBubbleText:(id)sender {
+    if (_messageTextView.text.length == 0) return;
+    [UIPasteboard generalPasteboard].string = _messageTextView.text;
+    [[UIMenuController sharedMenuController] setMenuVisible:NO animated:YES];
+    [self resignFirstResponder];
+}
+
+- (void)_handleLongPress:(UILongPressGestureRecognizer *)gesture {
+    if (gesture.state != UIGestureRecognizerStateBegan) return;
+    [self becomeFirstResponder];
+    UIMenuItem *copyItem = [[UIMenuItem alloc] initWithTitle:@"Copy"
+                                                      action:@selector(copyBubbleText:)];
+    UIMenuController *menu = [UIMenuController sharedMenuController];
+    menu.menuItems = @[copyItem];
+    [menu setTargetRect:_bubbleView.frame inView:self];
+    [menu setMenuVisible:YES animated:YES];
 }
 
 

@@ -1,7 +1,7 @@
 // HelperLogViewController.m
 // EZCompleteUI
 //
-// Displays the full ezui_helpers.log in a card-based table view.
+// Displays the full ezui_helper.log in a card-based table view.
 // • One card per log line (parsed into level / tag / body).
 // • File/image paths embedded in a log line get an inline QL thumbnail and
 //   a tap gesture that opens QLPreviewController — same pattern as
@@ -13,6 +13,7 @@
 
 #import "HelperLogViewController.h"
 #import "helpers.h"
+#import "SystemLogViewController.h"
 #import <QuickLook/QuickLook.h>
 #import <QuickLookThumbnailing/QuickLookThumbnailing.h>
 
@@ -20,7 +21,7 @@
 // MARK: - Parsed log entry model
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// A single parsed line from ezui_helpers.log.
+/// A single parsed line from ezui_helper.log.
 @interface EZLogEntry : NSObject
 @property (nonatomic, copy)   NSString        *raw;          // full original line
 @property (nonatomic, copy)   NSString        *timestamp;    // e.g. "2026-04-05 14:29:20"
@@ -137,7 +138,7 @@
 
     _thumbButton = [UIButton buttonWithType:UIButtonTypeCustom];
     _thumbButton.translatesAutoresizingMaskIntoConstraints = NO;
-    _thumbButton.hidden = YES;
+    _thumbButton.hidden = NO;
     [_thumbButton addTarget:self action:@selector(thumbTapped)
           forControlEvents:UIControlEventTouchUpInside];
     [card addSubview:_thumbButton];
@@ -149,7 +150,7 @@
     _thumbBadge.text              = @"  📎  Tap to preview  ";
     _thumbBadge.layer.cornerRadius = 7;
     _thumbBadge.clipsToBounds     = YES;
-    _thumbBadge.hidden            = YES;
+    _thumbBadge.hidden            = NO;
     _thumbBadge.userInteractionEnabled = YES;
     _thumbBadge.translatesAutoresizingMaskIntoConstraints = NO;
     UITapGestureRecognizer *badgeTap = [[UITapGestureRecognizer alloc]
@@ -267,30 +268,166 @@
 }
 
 - (NSAttributedString *)attributedBodyForEntry:(EZLogEntry *)entry {
-    NSString *body = entry.body ?: @"";
-    NSMutableAttributedString *attr = [[NSMutableAttributedString alloc]
-        initWithString:body
-            attributes:@{
-                NSFontAttributeName: [UIFont systemFontOfSize:13],
-                NSForegroundColorAttributeName: [UIColor labelColor],
-            }];
 
-    // Highlight chatKey as a tappable link (custom URL scheme "ezchat://")
-    if (entry.chatKey.length > 0) {
-        NSRange range = [body rangeOfString:entry.chatKey];
-        if (range.location != NSNotFound) {
-            NSString *urlStr = [NSString stringWithFormat:@"ezchat://%@", entry.chatKey];
+    NSString *body = entry.body ?: @"";
+
+    NSMutableAttributedString *attr =
+    [[NSMutableAttributedString alloc]
+     initWithString:body
+     attributes:@{
+        NSFontAttributeName : [UIFont systemFontOfSize:13],
+        NSForegroundColorAttributeName : [UIColor labelColor]
+    }];
+
+    // Base font for log-ish readability
+    [attr addAttribute:NSFontAttributeName
+                 value:[UIFont monospacedSystemFontOfSize:13
+                                                    weight:UIFontWeightRegular]
+                 range:NSMakeRange(0, body.length)];
+
+#pragma mark - CHATKEY= deep link (blue + tappable)
+
+    NSError *chatErr = nil;
+    NSRegularExpression *chatRX =
+    [NSRegularExpression regularExpressionWithPattern:
+     @"CHATKEY=([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}-[0-9]{2}-[0-9]{2})"
+                                                    options:NSRegularExpressionCaseInsensitive
+                                                      error:&chatErr];
+
+    NSArray<NSTextCheckingResult *> *chatMatches =
+    [chatRX matchesInString:body
+                    options:0
+                      range:NSMakeRange(0, body.length)];
+
+    for (NSTextCheckingResult *match in chatMatches) {
+
+        if (match.numberOfRanges < 2) continue;
+
+        NSRange fullRange = match.range;
+        NSRange keyRange  = [match rangeAtIndex:1];
+
+        NSString *chatKey = [body substringWithRange:keyRange];
+
+        // Use query param so NSURL parsing stops being annoying
+        NSString *urlString =
+        [NSString stringWithFormat:@"ezchat://open?key=%@", chatKey];
+
+        NSURL *url = [NSURL URLWithString:urlString];
+
+        [attr addAttributes:@{
+            NSForegroundColorAttributeName : [UIColor systemBlueColor],
+            NSUnderlineStyleAttributeName : @(NSUnderlineStyleSingle),
+            NSLinkAttributeName : url,
+            NSFontAttributeName :
+                [UIFont monospacedSystemFontOfSize:13
+                                            weight:UIFontWeightSemibold]
+        } range:fullRange];
+    }
+
+#pragma mark - Stage highlighting
+
+    NSDictionary *tokenColors = @{
+        @"STAGE1-TRIAGE" : [UIColor systemOrangeColor],
+        @"STAGE1-VERDICT" : [UIColor systemPurpleColor],
+        @"STAGE2" : [UIColor systemIndigoColor],
+        @"VALIDATOR" : [UIColor systemTealColor]
+    };
+
+    [tokenColors enumerateKeysAndObjectsUsingBlock:
+     ^(NSString *token, UIColor *color, BOOL *stop) {
+
+        NSRange searchRange = NSMakeRange(0, body.length);
+
+        while (YES) {
+            NSRange found =
+            [body rangeOfString:token
+                         options:NSCaseInsensitiveSearch
+                           range:searchRange];
+
+            if (found.location == NSNotFound) break;
+
             [attr addAttributes:@{
-                NSForegroundColorAttributeName: [UIColor systemBlueColor],
-                NSUnderlineStyleAttributeName: @(NSUnderlineStyleSingle),
-                NSLinkAttributeName: [NSURL URLWithString:urlStr],
-            } range:range];
+                NSForegroundColorAttributeName : color,
+                NSFontAttributeName :
+                    [UIFont monospacedSystemFontOfSize:13
+                                                weight:UIFontWeightBold]
+            } range:found];
+
+            NSUInteger next =
+            found.location + found.length;
+
+            if (next >= body.length) break;
+
+            searchRange =
+            NSMakeRange(next, body.length - next);
+        }
+    }];
+
+#pragma mark - Validator pass/fail coloring
+
+    NSArray<NSDictionary *> *validatorRules = @[
+        @{
+            @"patterns" : @[
+                @"approved",
+                @"approve direct answer",
+                @"direct answer approved",
+                @"validator approved",
+                @"pass"
+            ],
+            @"color" : [UIColor systemGreenColor]
+        },
+        @{
+            @"patterns" : @[
+                @"not approved",
+                @"rejected",
+                @"failed",
+                @"validator denied",
+                @"direct answer denied",
+                @"no direct answer"
+            ],
+            @"color" : [UIColor systemRedColor]
+        }
+    ];
+
+    for (NSDictionary *rule in validatorRules) {
+
+        UIColor *color = rule[@"color"];
+
+        for (NSString *pattern in rule[@"patterns"]) {
+
+            NSRange searchRange =
+            NSMakeRange(0, body.length);
+
+            while (YES) {
+
+                NSRange found =
+                [body rangeOfString:pattern
+                             options:NSCaseInsensitiveSearch
+                               range:searchRange];
+
+                if (found.location == NSNotFound) break;
+
+                [attr addAttributes:@{
+                    NSForegroundColorAttributeName : color,
+                    NSFontAttributeName :
+                        [UIFont systemFontOfSize:13
+                                           weight:UIFontWeightBold]
+                } range:found];
+
+                NSUInteger next =
+                found.location + found.length;
+
+                if (next >= body.length) break;
+
+                searchRange =
+                NSMakeRange(next,
+                            body.length - next);
+            }
         }
     }
 
-    return [attr copy];
+    return attr;
 }
-
 // ── Thumbnail ─────────────────────────────────────────────────────────────────
 
 - (void)setThumbnailImage:(UIImage *)image {
@@ -310,14 +447,32 @@
 // ── UITextViewDelegate (chatKey link taps) ────────────────────────────────────
 
 - (BOOL)textView:(UITextView *)textView
-    shouldInteractWithURL:(NSURL *)URL
-                  inRange:(NSRange)characterRange
-              interaction:(UITextItemInteraction)interaction {
-    if ([URL.scheme isEqualToString:@"ezchat"]) {
-        NSString *key = URL.host; // chatKey lives in the host portion
-        if (key.length) [self.logDelegate logCellDidTapChatKey:key];
+shouldInteractWithURL:(NSURL *)URL
+          inRange:(NSRange)characterRange
+      interaction:(UITextItemInteraction)interaction {
+
+    if ([[URL.scheme lowercaseString] isEqualToString:@"ezchat"]) {
+
+        NSURLComponents *components =
+        [NSURLComponents componentsWithURL:URL
+                   resolvingAgainstBaseURL:NO];
+
+        NSString *chatKey = nil;
+
+        for (NSURLQueryItem *item in components.queryItems) {
+            if ([item.name isEqualToString:@"key"]) {
+                chatKey = item.value;
+                break;
+            }
+        }
+
+        if (chatKey.length > 0) {
+            [self.logDelegate logCellDidTapChatKey:chatKey];
+        }
+
         return NO;
     }
+
     return YES;
 }
 
@@ -363,13 +518,15 @@ static NSString * const kLogEmptyCellID = @"EZLogEmptyCell";
 
 - (NSString *)logFilePath {
     // On a jailbroken device use the fixed path; otherwise Documents directory.
-    NSString *jbPath = @"/var/mobile/Documents/ezui_helpers.log";
+    NSString *jbPath = @"/var/mobile/Documents/ezui_helper.log";
     if ([[NSFileManager defaultManager] fileExistsAtPath:jbPath]) {
         return jbPath;
     }
+    NSString *helperPath = EZHelperLogGetPath();
+    if (helperPath.length) return helperPath;
     NSString *docs = [NSSearchPathForDirectoriesInDomains(
         NSDocumentDirectory, NSUserDomainMask, YES) firstObject];
-    return [docs stringByAppendingPathComponent:@"ezui_helpers.log"];
+    return [docs stringByAppendingPathComponent:@"ezui_helper.log"];
 }
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
@@ -395,7 +552,14 @@ static NSString * const kLogEmptyCellID = @"EZLogEmptyCell";
         initWithBarButtonSystemItem:UIBarButtonSystemItemClose
                              target:self
                              action:@selector(dismissSelf)];
-    self.navigationItem.rightBarButtonItem = closeItem;
+    self.navigationItem.leftBarButtonItem = closeItem;
+
+    UIBarButtonItem *systemLogItem = [[UIBarButtonItem alloc]
+        initWithTitle:@"System Log"
+                style:UIBarButtonItemStylePlain
+               target:self
+               action:@selector(openSystemLog)];
+    self.navigationItem.rightBarButtonItem = systemLogItem;
 
     // Toolbar: share | flex | refresh | flex | clear
     UIBarButtonItem *shareItem = [[UIBarButtonItem alloc]
@@ -415,6 +579,11 @@ static NSString * const kLogEmptyCellID = @"EZLogEmptyCell";
 
     self.toolbarItems = @[shareItem, flex, refreshItem, flex, clearItem];
     self.navigationController.toolbarHidden = NO;
+}
+
+- (void)openSystemLog {
+    SystemLogViewController *systemVC = [[SystemLogViewController alloc] init];
+    [self.navigationController pushViewController:systemVC animated:YES];
 }
 
 // ── Search bar ────────────────────────────────────────────────────────────────
@@ -474,11 +643,30 @@ static NSString * const kLogEmptyCellID = @"EZLogEmptyCell";
 
         if (raw.length) {
             NSArray<NSString *> *lines = [raw componentsSeparatedByString:@"\n"];
+            NSMutableArray<NSString *> *chunks = [NSMutableArray array];
+            NSMutableString *currentChunk = nil;
             for (NSString *line in lines) {
                 NSString *trimmed = [line stringByTrimmingCharactersInSet:
                                      [NSCharacterSet whitespaceAndNewlineCharacterSet]];
                 if (!trimmed.length) continue;
-                [entries addObject:[self parseLogLine:trimmed]];
+                if ([trimmed hasPrefix:@"["]) {
+                    if (currentChunk.length) {
+                        [chunks addObject:[currentChunk copy]];
+                    }
+                    currentChunk = [NSMutableString stringWithString:line];
+                } else {
+                    if (!currentChunk) {
+                        currentChunk = [NSMutableString stringWithString:line];
+                    } else {
+                        [currentChunk appendFormat:@"\n%@", line];
+                    }
+                }
+            }
+            if (currentChunk.length) {
+                [chunks addObject:[currentChunk copy]];
+            }
+            for (NSString *chunk in chunks) {
+                [entries addObject:[self parseLogLine:chunk]];
             }
         }
 

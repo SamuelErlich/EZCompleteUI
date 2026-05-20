@@ -20,6 +20,10 @@ void EZLog(EZLogLevel level, NSString *tag, NSString *message);
 #define EZLogf(level, tag, fmt, ...) EZLog((level),(tag),[NSString stringWithFormat:(fmt),##__VA_ARGS__])
 void EZLogRotateIfNeeded(NSUInteger maxBytes);
 
+NSString *EZHelperLogGetPath(void);
+void EZHelperLog(NSString *tag, NSString *message);
+void EZHelperLogRotateIfNeeded(NSUInteger maxBytes);
+
 typedef NS_ENUM(NSInteger, EZRoutingTier) {
     EZRoutingTierDirect       = 1,
     EZRoutingTierSimple       = 2,

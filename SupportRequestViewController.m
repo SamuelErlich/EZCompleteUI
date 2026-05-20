@@ -1,7 +1,19 @@
 // SupportRequestViewController.m
-// EZCompleteUI v1.2
+// EZCompleteUI v1.3
 //
-// Changes from v1.1:
+// Changes from v1.2:
+//   - Added "Include coin usage" toggle — when on, fetches the user's coin
+//     usage log from the get-usage-log edge function and attaches it as a
+//     CSV file (coin_usage.csv) to the support email. Opens in Numbers/Excel
+//     making it easy to filter and discuss specific charges in disputes.
+//   - Coin balance + total coins spent summary always included in email body
+//     regardless of the toggle, since it's lightweight and always useful.
+//   - Send button disables and shows a spinner in the nav bar while the usage
+//     fetch is in flight — re-enables on completion or error.
+//   - mailto: fallback notes CSV attachment was omitted (same pattern as log).
+//   - Added #import "EZAuthManager.h" (was missing — needed for JWT to call
+//     the get-usage-log edge function).
+//   - Added #import "EZEntitlementManager.h" for coinBalance inline summary.
 //   - sendTapped: canSendMail now gates the send PATH, not whether to send at all
 //   - Fallback to mailto: URL when MFMailComposeViewController is unavailable
 //     (fixes jailbroken iOS 15 where canSendMail returns NO despite mail being configured)
@@ -19,6 +31,8 @@
 
 #import "SupportRequestViewController.h"
 #import "EZKeyVault.h"
+#import "EZAuthManager.h"
+#import "EZEntitlementManager.h"
 #import "helpers.h"
 #import <MessageUI/MessageUI.h>
 
@@ -36,6 +50,7 @@ static NSArray<NSString *> *EZSensitiveUserDefaultsKeys(void) {
 @property (nonatomic, strong) UIScrollView *scrollView;
 @property (nonatomic, strong) UITextView   *messageTextView;
 @property (nonatomic, strong) UISwitch     *includeLogSwitch;
+@property (nonatomic, strong) UISwitch     *includeUsageSwitch;
 @property (nonatomic, strong) UILabel      *settingsPreviewLabel;
 
 @end
@@ -163,10 +178,38 @@ static NSArray<NSString *> *EZSensitiveUserDefaultsKeys(void) {
     y += logHintLabel.frame.size.height + 16;
 
     // ── Separator ────────────────────────────────────────────────────────────
-    UIView *separator2        = [[UIView alloc] initWithFrame:CGRectMake(16, y, contentWidth, 0.5)];
-    separator2.backgroundColor = [UIColor separatorColor];
-    [self.scrollView addSubview:separator2];
+    UIView *separatorUsage        = [[UIView alloc] initWithFrame:CGRectMake(16, y, contentWidth, 0.5)];
+    separatorUsage.backgroundColor = [UIColor separatorColor];
+    [self.scrollView addSubview:separatorUsage];
     y += 16;
+
+    // ── Include coin usage toggle ─────────────────────────────────────────────
+    UILabel *usageToggleLabel = [[UILabel alloc] initWithFrame:CGRectMake(16, y, contentWidth - 60, 22)];
+    usageToggleLabel.text      = @"Include coin usage";
+    usageToggleLabel.font      = [UIFont systemFontOfSize:15];
+    usageToggleLabel.textColor = [UIColor labelColor];
+    [self.scrollView addSubview:usageToggleLabel];
+
+    self.includeUsageSwitch = [[UISwitch alloc] init];
+    CGSize usageSwitchSize = self.includeUsageSwitch.intrinsicContentSize;
+    self.includeUsageSwitch.frame =
+        CGRectMake(contentWidth - usageSwitchSize.width + 16, y - 1,
+                   usageSwitchSize.width, usageSwitchSize.height);
+    self.includeUsageSwitch.on = YES;   // default on — most useful for support requests
+    [self.scrollView addSubview:self.includeUsageSwitch];
+    y += 30;
+
+    UILabel *usageHintLabel = [[UILabel alloc] initWithFrame:CGRectMake(16, y, contentWidth, 0)];
+    usageHintLabel.text =
+        @"Attaches your coin usage history as a CSV file. "
+         "Helps resolve any questions about charges — you can open it in Numbers or Excel.";
+    usageHintLabel.font          = [UIFont systemFontOfSize:12];
+    usageHintLabel.textColor     = [UIColor secondaryLabelColor];
+    usageHintLabel.numberOfLines = 0;
+    [usageHintLabel sizeToFit];
+    usageHintLabel.frame = CGRectMake(16, y, contentWidth, usageHintLabel.frame.size.height);
+    [self.scrollView addSubview:usageHintLabel];
+    y += usageHintLabel.frame.size.height + 16;
 
     // ── Settings snapshot preview ─────────────────────────────────────────────
     [self makeSectionLabel:@"Settings that will be included:" y:&y];
@@ -354,11 +397,150 @@ static NSArray<NSString *> *EZSensitiveUserDefaultsKeys(void) {
         return;
     }
 
+    if (self.includeUsageSwitch.isOn) {
+        // Disable Send and show a spinner while we fetch the usage log
+        self.navigationItem.rightBarButtonItem.enabled = NO;
+        UIActivityIndicatorView *fetchSpinner = [[UIActivityIndicatorView alloc]
+            initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
+        [fetchSpinner startAnimating];
+        self.navigationItem.rightBarButtonItem =
+            [[UIBarButtonItem alloc] initWithCustomView:fetchSpinner];
+
+        [self fetchUsageCSVWithCompletion:^(NSData *csvData) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                // Restore the Send button regardless of outcome
+                self.navigationItem.rightBarButtonItem =
+                    [[UIBarButtonItem alloc] initWithTitle:@"Send"
+                                                     style:UIBarButtonItemStyleDone
+                                                    target:self
+                                                    action:@selector(sendTapped)];
+                [self composeMailTo:recipientEmail csvAttachment:csvData];
+            });
+        }];
+    } else {
+        [self composeMailTo:recipientEmail csvAttachment:nil];
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MARK: - Usage CSV Fetch
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Fetches up to 500 rows from get-usage-log and formats them as UTF-8 CSV.
+/// Calls completion with nil if the user is not signed in or the fetch fails —
+/// the mail is still sent, just without the attachment.
+- (void)fetchUsageCSVWithCompletion:(void (^)(NSData *_Nullable csvData))completion {
+    NSString *accessToken = [EZAuthManager shared].accessToken;
+    if (!accessToken.length) {
+        EZLog(EZLogLevelWarning, @"SUPPORT", @"No auth token — skipping usage CSV attachment");
+        completion(nil);
+        return;
+    }
+
+    static NSString *const kUsageEdgeURL =
+        @"https://spuoimtqofhbdzosrbng.supabase.co/functions/v1/get-usage-log";
+
+    NSURLComponents *components = [NSURLComponents componentsWithString:kUsageEdgeURL];
+    components.queryItems = @[
+        [NSURLQueryItem queryItemWithName:@"page"  value:@"0"],
+        [NSURLQueryItem queryItemWithName:@"limit" value:@"500"],
+    ];
+    NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:components.URL];
+    req.HTTPMethod      = @"GET";
+    req.timeoutInterval = 20;
+    [req setValue:@"application/json" forHTTPHeaderField:@"Accept"];
+    [req setValue:[NSString stringWithFormat:@"Bearer %@", accessToken]
+       forHTTPHeaderField:@"Authorization"];
+
+    [[[NSURLSession sharedSession] dataTaskWithRequest:req
+        completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+
+        if (error || !data) {
+            EZLogf(EZLogLevelError, @"SUPPORT", @"Usage fetch error: %@",
+                   error.localizedDescription);
+            completion(nil);
+            return;
+        }
+
+        id json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+        NSArray<NSDictionary *> *rows = nil;
+
+        if ([json isKindOfClass:[NSDictionary class]]) {
+            id rowsValue = ((NSDictionary *)json)[@"rows"];
+            if ([rowsValue isKindOfClass:[NSArray class]]) rows = rowsValue;
+        } else if ([json isKindOfClass:[NSArray class]]) {
+            rows = json;
+        }
+
+        if (!rows.count) {
+            completion(nil);
+            return;
+        }
+
+        NSData *csvData = [self buildCSVFromRows:rows];
+        completion(csvData);
+    }] resume];
+}
+
+/// Converts usage log rows into UTF-8 CSV data.
+- (NSData *)buildCSVFromRows:(NSArray<NSDictionary *> *)rows {
+    NSMutableString *csv = [NSMutableString string];
+
+    // Header row
+    [csv appendString:@"Date,Feature,Coins Charged,Balance After,Quantity,Status,Prompt\n"];
+
+    // Simple CSV value escaper — wraps in quotes and doubles any internal quotes
+    NSString * (^escape)(id) = ^NSString *(id value) {
+        NSString *stringValue = @"";
+        if (value && value != (id)kCFNull) {
+            if ([value isKindOfClass:[NSString class]]) {
+                stringValue = (NSString *)value;
+            } else {
+                stringValue = [value description];
+            }
+        }
+        // Wrap in double quotes; escape internal double quotes by doubling them
+        NSString *escaped = [stringValue stringByReplacingOccurrencesOfString:@"\""
+                                                                   withString:@"\"\""];
+        return [NSString stringWithFormat:@"\"%@\"", escaped];
+    };
+
+    for (NSDictionary *row in rows) {
+        // Trim ISO timestamp to readable local form
+        NSString *isoDate  = row[@"created_at"] ?: @"";
+        NSString *dateStr  = isoDate.length >= 19 ? [isoDate substringToIndex:19] : isoDate;
+
+        NSString *feature  = row[@"feature"]         ?: @"";
+        NSString *coins    = row[@"coins_charged"]    ? [row[@"coins_charged"] description] : @"";
+        NSString *balance  = row[@"running_balance"]  ? [row[@"running_balance"] description] : @"";
+        NSString *quantity = row[@"quantity"]         ? [row[@"quantity"] description] : @"";
+        NSString *status   = row[@"status"]           ?: @"";
+        NSString *prompt   = row[@"prompt"]           ?: @"";
+
+        [csv appendFormat:@"%@,%@,%@,%@,%@,%@,%@\n",
+            escape(dateStr), escape(feature), coins, balance,
+            quantity, escape(status), escape(prompt)];
+    }
+
+    return [csv dataUsingEncoding:NSUTF8StringEncoding];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MARK: - Mail Composition
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Builds and presents the mail composer. csvAttachment may be nil if the
+/// usage fetch was skipped or failed — email is still sent without it.
+- (void)composeMailTo:(NSString *)recipientEmail csvAttachment:(nullable NSData *)csvData {
     // Build app version string for the subject line
     NSDictionary *infoPlist = [NSBundle mainBundle].infoDictionary;
     NSString *appVersion    = infoPlist[@"CFBundleShortVersionString"] ?: @"?";
     NSString *subject       = [NSString stringWithFormat:@"EZCompleteUI v%@ — Support Request",
                                 appVersion];
+
+    // Coin balance summary — always inline in the body regardless of CSV toggle
+    NSInteger coinBalance = [EZEntitlementManager shared].coinBalance;
+    NSString *tier        = [EZEntitlementManager shared].currentTier ?: @"unknown";
 
     // Build the shared email body
     NSMutableString *body = [NSMutableString string];
@@ -366,21 +548,23 @@ static NSArray<NSString *> *EZSensitiveUserDefaultsKeys(void) {
     [body appendString:@"----------------------------------------\n"];
     [body appendString:self.messageTextView.text];
     [body appendString:@"\n\n\n"];
+    [body appendFormat:@"── Coin Summary ──────────────────────────\n"];
+    [body appendFormat:@"Current Balance     : %ld coins\n", (long)coinBalance];
+    [body appendFormat:@"Subscription Tier   : %@\n", tier];
+    if (csvData) {
+        [body appendString:@"Coin Usage CSV      : attached (coin_usage.csv)\n"];
+    }
+    [body appendString:@"\n"];
     [body appendString:[self buildSettingsSnapshot]];
 
-    // ── Path 1: MFMailComposeViewController (preferred — supports log attachment) ──
-    // canSendMail checks Apple Mail's IPC endpoint. On jailbroken iOS 15 this can
-    // return NO even when mail is configured, so a failed check falls through to
-    // the mailto: fallback rather than blocking the send entirely.
+    // ── Path 1: MFMailComposeViewController (preferred — supports attachments) ─
     if ([MFMailComposeViewController canSendMail]) {
-        // Optionally append the debug log — only possible via the full composer
         if (self.includeLogSwitch.isOn) {
             NSString *logPath    = EZLogGetPath();
             NSString *logContent = [NSString stringWithContentsOfFile:logPath
                                                              encoding:NSUTF8StringEncoding
                                                                 error:nil];
             if (logContent.length > 0) {
-                // Cap at 50 KB — take the most recent portion so the newest events are included
                 NSUInteger maxLogBytes = 50 * 1024;
                 if (logContent.length > maxLogBytes) {
                     logContent = [logContent substringFromIndex:logContent.length - maxLogBytes];
@@ -399,28 +583,35 @@ static NSArray<NSString *> *EZSensitiveUserDefaultsKeys(void) {
         [mailVC setToRecipients:@[recipientEmail]];
         [mailVC setSubject:subject];
         [mailVC setMessageBody:body isHTML:NO];
+
+        // Attach coin usage CSV if available
+        if (csvData) {
+            [mailVC addAttachmentData:csvData
+                            mimeType:@"text/csv"
+                            fileName:@"coin_usage.csv"];
+            EZLog(EZLogLevelInfo, @"SUPPORT", @"Coin usage CSV attached to support email");
+        }
+
         [self presentViewController:mailVC animated:YES completion:nil];
         EZLog(EZLogLevelInfo, @"SUPPORT", @"Mail composer presented (MFMailComposeViewController)");
         return;
     }
 
     // ── Path 2: mailto: URL fallback ─────────────────────────────────────────
-    // Reaches here when canSendMail returns NO — most commonly on jailbroken
-    // devices where the Apple Mail IPC check fails despite a working mail client.
-    // mailto: is handled by whatever mail app the user has set as default.
-    //
-    // Limitation: mailto: body length is practically capped at a few KB by most
-    // clients. The debug log is excluded here to avoid silent truncation; we
-    // inform the user about this so they know what to expect.
     EZLog(EZLogLevelInfo, @"SUPPORT",
           @"canSendMail returned NO — falling back to mailto: URL");
 
     if (self.includeLogSwitch.isOn) {
         [body appendString:@"\n\n-- Debug Log -------------------------\n"];
-        [body appendString:@"[Log omitted: not supported via mailto: fallback. Please send a follow-up with the log from Settings > Helper Stats.]\n"];
+        [body appendString:@"[Log omitted: not supported via mailto: fallback. "
+                            "Please send a follow-up with the log from Settings > Helper Stats.]\n"];
+    }
+    if (csvData) {
+        [body appendString:@"\n\n-- Coin Usage CSV --------------------\n"];
+        [body appendString:@"[CSV attachment omitted: not supported via mailto: fallback. "
+                            "Please send a follow-up requesting your usage log.]\n"];
     }
 
-    // Percent-encode subject and body for the mailto: URL
     NSCharacterSet *mailtoAllowed = [NSCharacterSet
         characterSetWithCharactersInString:
             @"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.~"];
@@ -434,7 +625,6 @@ static NSArray<NSString *> *EZSensitiveUserDefaultsKeys(void) {
     NSURL *mailtoURL = [NSURL URLWithString:mailtoURLString];
 
     if (!mailtoURL || ![[UIApplication sharedApplication] canOpenURL:mailtoURL]) {
-        // No mail client at all — nothing we can do except tell the user
         UIAlertController *noMailAlert =
             [UIAlertController alertControllerWithTitle:@"No Mail App Found"
                                                 message:@"Could not find a mail app to send with. "
@@ -451,7 +641,6 @@ static NSArray<NSString *> *EZSensitiveUserDefaultsKeys(void) {
     [[UIApplication sharedApplication] openURL:mailtoURL options:@{} completionHandler:^(BOOL success) {
         if (success) {
             EZLog(EZLogLevelInfo, @"SUPPORT", @"mailto: URL opened successfully");
-            // Dismiss the support VC — the mail client takes it from here
             dispatch_async(dispatch_get_main_queue(), ^{
                 [self dismissViewControllerAnimated:YES completion:nil];
             });

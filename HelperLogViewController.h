@@ -1,7 +1,7 @@
 // HelperLogViewController.h
 // EZCompleteUI
 //
-// Displays the full ezui_helpers.log in a card-based table view.
+// Displays the full ezui_helper.log in a card-based table view.
 // Features: inline QL thumbnail previews for file/image paths, tappable
 // chatKey deep-links that open the referenced thread via EZOpenChatThread,
 // live search/filter, and a share + clear action.

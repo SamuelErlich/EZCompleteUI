@@ -138,9 +138,9 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
     }
 
     if (item.isCurrentPlan) {
-        [self.actionButton setTitle:@"Current Plan" forState:UIControlStateNormal];
-        self.actionButton.backgroundColor = [UIColor systemGrayColor];
-        self.actionButton.enabled = NO;
+        [self.actionButton setTitle:@"Cancel Plan" forState:UIControlStateNormal];
+        self.actionButton.backgroundColor = [UIColor systemRedColor];
+        self.actionButton.enabled = YES;
     } else if (item.type == EZStoreItemTypeSubscription) {
         [self.actionButton setTitle:@"Subscribe" forState:UIControlStateNormal];
         self.actionButton.backgroundColor = baseColor;
@@ -235,7 +235,12 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
 // ── Build store items ─────────────────────────────────────────────────────────
 
 - (void)buildItems {
-    NSString *currentTier = [EZEntitlementManager shared].currentTier ?: @"none";
+    NSString *currentTier   = [EZEntitlementManager shared].currentTier;
+    NSString *currentStatus = [EZEntitlementManager shared].currentStatus;
+
+    // A plan only counts as "current" if the subscription is actually active.
+    // Cancelled/suspended/expired accounts should see the Subscribe button again.
+    BOOL isActive = [currentStatus isEqualToString:@"active"];
 
     NSMutableArray *items = [NSMutableArray array];
 
@@ -249,7 +254,9 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
     basic.type            = EZStoreItemTypeSubscription;
     basic.coins           = 400;
     basic.accentColor     = [UIColor systemBlueColor];
-    basic.isCurrentPlan   = [currentTier isEqualToString:@"basic"];
+    basic.isCurrentPlan   = isActive && [currentTier isEqualToString:@"basic"];
+    if ([currentTier isEqualToString:@"basic"] && !isActive && currentStatus)
+        basic.badgeText   = currentStatus.uppercaseString;
     [items addObject:basic];
 
     EZStoreItem *standard    = [EZStoreItem new];
@@ -260,8 +267,11 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
     standard.type            = EZStoreItemTypeSubscription;
     standard.coins           = 900;
     standard.accentColor     = [UIColor systemPurpleColor];
-    standard.isCurrentPlan   = [currentTier isEqualToString:@"standard"];
-    standard.badgeText       = @"POPULAR";
+    standard.isCurrentPlan   = isActive && [currentTier isEqualToString:@"standard"];
+    if ([currentTier isEqualToString:@"standard"] && !isActive && currentStatus)
+        standard.badgeText   = currentStatus.uppercaseString;
+    else if (![currentTier isEqualToString:@"standard"] || !isActive)
+        standard.badgeText   = @"POPULAR";
     [items addObject:standard];
 
     EZStoreItem *pro    = [EZStoreItem new];
@@ -272,8 +282,11 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
     pro.type            = EZStoreItemTypeSubscription;
     pro.coins           = 1600;
     pro.accentColor     = [UIColor systemOrangeColor];
-    pro.isCurrentPlan   = [currentTier isEqualToString:@"pro"];
-    pro.badgeText       = @"BEST VALUE";
+    pro.isCurrentPlan   = isActive && [currentTier isEqualToString:@"pro"];
+    if ([currentTier isEqualToString:@"pro"] && !isActive && currentStatus)
+        pro.badgeText    = currentStatus.uppercaseString;
+    else if (![currentTier isEqualToString:@"pro"] || !isActive)
+        pro.badgeText    = @"BEST VALUE";
     [items addObject:pro];
 
     EZStoreItem *ultra    = [EZStoreItem new];
@@ -284,8 +297,11 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
     ultra.type            = EZStoreItemTypeSubscription;
     ultra.coins           = 2500;
     ultra.accentColor     = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:1.0]; // gold
-    ultra.isCurrentPlan   = [currentTier isEqualToString:@"ultra"];
-    ultra.badgeText       = @"ULTRA";
+    ultra.isCurrentPlan   = isActive && [currentTier isEqualToString:@"ultra"];
+    if ([currentTier isEqualToString:@"ultra"] && !isActive && currentStatus)
+        ultra.badgeText   = currentStatus.uppercaseString;
+    else
+        ultra.badgeText   = @"ULTRA";
     [items addObject:ultra];
 
     // ── One-time top-ups ──────────────────────────────────────────────────────
@@ -379,9 +395,21 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
 
 - (void)refreshBalance {
     [[EZEntitlementManager shared] refreshBalanceWithCompletion:^(NSInteger balance) {
-        NSString *tier = [EZEntitlementManager shared].currentTier ?: @"none";
+        NSString *tier   = [EZEntitlementManager shared].currentTier;
+        NSString *status = [EZEntitlementManager shared].currentStatus;
+
+        NSString *planDisplay;
+        if (tier.length && status.length && ![status isEqualToString:@"active"]) {
+            planDisplay = [NSString stringWithFormat:@"%@ (%@)",
+                           tier.capitalizedString, status.capitalizedString];
+        } else if (tier.length) {
+            planDisplay = tier.capitalizedString;
+        } else {
+            planDisplay = @"No plan";
+        }
+
         self.balanceLabel.text = [NSString stringWithFormat:
-            @"🪙 %ld coins   •   %@ plan", (long)balance, tier.capitalizedString];
+            @"🪙 %ld coins   •   %@", (long)balance, planDisplay];
         [self buildItems];
         [self.tableView reloadData];
     }];
@@ -495,6 +523,35 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
         return;
     }
 
+    // If this is the current active plan, offer to cancel instead of re-subscribing
+    if (item.isCurrentPlan && item.type == EZStoreItemTypeSubscription) {
+        UIAlertController *alert = [UIAlertController
+            alertControllerWithTitle:@"Cancel Subscription?"
+                             message:@"Your remaining coins will stay in your account. This cannot be undone."
+                      preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"Keep Plan"
+                                                  style:UIAlertActionStyleCancel
+                                                handler:nil]];
+        [alert addAction:[UIAlertAction actionWithTitle:@"Cancel Plan"
+                                                  style:UIAlertActionStyleDestructive
+                                                handler:^(UIAlertAction *action) {
+            [self.spinner startAnimating];
+            self.tableView.userInteractionEnabled = NO;
+            [self cancelCurrentSubscriptionWithToken:token completion:^(BOOL success) {
+                [self.spinner stopAnimating];
+                self.tableView.userInteractionEnabled = YES;
+                if (success) {
+                    [self showAlert:@"Cancelled" message:@"Your subscription has been cancelled. Your coins remain available."];
+                    [self refreshBalance];
+                } else {
+                    [self showAlert:@"Error" message:@"Could not cancel subscription. Please try again."];
+                }
+            }];
+        }]];
+        [self presentViewController:alert animated:YES completion:nil];
+        return;
+    }
+
     [self.spinner startAnimating];
     self.tableView.userInteractionEnabled = NO;
 
@@ -508,9 +565,12 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
 // ── Subscription checkout ─────────────────────────────────────────────────────
 
 - (void)startSubscriptionForPlanID:(NSString *)planID token:(NSString *)token {
-    // If user has an active subscription, cancel it first then start new one
-    NSString *currentTier = [EZEntitlementManager shared].currentTier;
-    BOOL hasActiveSub = currentTier && ![currentTier isEqualToString:@"none"];
+    NSString *currentTier   = [EZEntitlementManager shared].currentTier;
+    NSString *currentStatus = [EZEntitlementManager shared].currentStatus;
+
+    // Only attempt to cancel if there's a genuinely active subscription.
+    // Cancelled/suspended/expired accounts go straight to checkout.
+    BOOL hasActiveSub = currentTier.length > 0 && [currentStatus isEqualToString:@"active"];
 
     if (hasActiveSub) {
         [self cancelCurrentSubscriptionWithToken:token completion:^(BOOL success) {
@@ -689,10 +749,20 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
             if (http.statusCode == 200 && [json[@"success"] boolValue]) {
                 NSInteger added   = [json[@"coins_added"] integerValue];
                 NSInteger balance = [json[@"balance"] integerValue];
+
+                // Trust the capture response — apply balance directly so
+                // a racing refreshBalance can't overwrite it with a stale value.
+                [[EZEntitlementManager shared] applyKnownBalance:balance];
+
                 [self showCoinCelebration:added newBalance:balance];
-                [self refreshBalance];
                 [[NSNotificationCenter defaultCenter]
                     postNotificationName:@"EZSubscriptionUpdated" object:nil];
+
+                // Delayed refresh to sync any server-side changes after upsert settles
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)),
+                               dispatch_get_main_queue(), ^{
+                    [self refreshBalance];
+                });
             } else {
                 NSString *errMsg = json[@"error"] ?: @"Purchase could not be confirmed.";
                 [self showAlert:@"Purchase Issue" message:errMsg];

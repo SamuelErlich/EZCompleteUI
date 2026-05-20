@@ -8,12 +8,13 @@ include $(THEOS)/makefiles/common.mk
 
 APPLICATION_NAME = EZCompleteUI
 
-EZCompleteUI_FILES = main.m AppDelegate.m helpers.m ViewController+EZTopButtons.m ViewController+EZKeepAwake.m ViewController.m EZModelPickerViewController.m EZImageSettingsViewController.m EZAttachMenuViewController.m SidewaysScrollView.m ChatHistoryViewController.m SettingsViewController.m MemoriesViewController.m EZKeyVault.m SupportRequestViewController.m TextToSpeechViewController.m ElevenLabsCloneViewController.m iCarousel.m ViewController+SidewaysTopRow.m ViewController+EZTitleResolver.m UIViewController+EZViewDidLayoutSwizzle.m WaveformView.m EZAuthManager.m EZEntitlementManager.m LoginViewController.m HelperLogViewController.m EZBubbleCell.m EZSystemCell.m EZCodeBlockCell.m EZCoinStoreViewController.m EZCoinPotView.m EZPhotoGalleryViewController.m EZImageGridCell.m EZCoinLedgerViewController.m EZCoinUsageViewController.m BRGameModel.m BrainRotViewController.m BRGameView.m
+EZCompleteUI_FILES = main.m AppDelegate.m helpers.m ViewController+EZTopButtons.m ViewController+EZKeepAwake.m ViewController.m EZModelPickerViewController.m EZImageSettingsViewController.m EZAttachMenuViewController.m SidewaysScrollView.m ChatHistoryViewController.m SettingsViewController.m MemoriesViewController.m EZKeyVault.m SupportRequestViewController.m TextToSpeechViewController.m ElevenLabsCloneViewController.m iCarousel.m ViewController+SidewaysTopRow.m ViewController+EZTitleResolver.m UIViewController+EZViewDidLayoutSwizzle.m WaveformView.m EZAuthManager.m EZEntitlementManager.m LoginViewController.m HelperLogViewController.m SystemLogViewController.m EZBubbleCell.m EZSystemCell.m EZCodeBlockCell.m EZCoinStoreViewController.m EZCoinPotView.m EZPhotoGalleryViewController.m EZImageGridCell.m EZCoinLedgerViewController.m EZCoinUsageViewController.m BRGameModel.m BrainRotViewController.m BRGameView.m EZTermsAcceptanceViewController.m EZPoliciesViewController.m
 
 EZCompleteUI_FRAMEWORKS = UIKit Foundation AVFoundation Speech QuickLook \
 UniformTypeIdentifiers PDFKit QuickLookThumbnailing Security PhotosUI QuartzCore SafariServices
 
-EZCompleteUI_CFLAGS = -fobjc-arc -Wno-deprecated -Wno-deprecated-declarations -Wno-error
+EZCompleteUI_CFLAGS = -fobjc-arc -Wno-deprecated -Wno-deprecated-declarations -Wno-error \
+    -fmodules-cache-path=$(shell pwd)/.theos/module-cache
 EZCompleteUI_CODESIGN_FLAGS = -Sent.plist
 EZCompleteUI_INFOPLIST_FILE = Resources/Info.plist
 EZCompleteUI_USER  = mobile

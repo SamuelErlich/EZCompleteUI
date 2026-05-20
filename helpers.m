@@ -1,5 +1,5 @@
 // helpers.m
-// EZCompleteUI v7.0
+// EZCompleteUI v7.1
 //
 // This file is the "engine room" of EZCompleteUI. It handles four major
 // responsibilities that span the entire lifetime of every conversation:
@@ -19,16 +19,21 @@
 //   This is helpers.m, so it contains the actual implementations that match
 //   the declarations found in helpers.h.
 //
-// Low-risk update notes (v7.0):
-// - Implements EZCreateMemoryEntry(...) declared in helpers.h
-// - Keeps createMemoryFromCompletion(...) as a backwards-compatible wrapper
-// - Avoids returning unrelated "recent memories" when search has zero keyword overlap
-// - Makes broader thread fallback compatible with current ViewController injection logic
-// - Skips duplicate consecutive memory entries
-// - Adds a few classifier examples without changing the overall prompt structure
+// Changes from v7.0:
+// - Helper model calls now route through the ez-helper Supabase edge function
+//   instead of calling OpenAI directly — the OpenAI key never touches the device
+// - Removed kHelperModel and kChatCompletionsURL constants (no longer used client-side)
+// - Added kEZHelperURL constant pointing to the ez-helper edge function
+// - Renamed apiKey → jwtToken throughout all pipeline functions to reflect what
+//   is actually being passed (a Supabase JWT, not an OpenAI API key)
+// - _callHelperModelSync: updated URL, request body shape ({system, message,
+//   max_tokens}), and response parsing ({result: string}) to match ez-helper API
+// - NSCParameterAssert on jwtToken retained — a missing JWT is still a programming
+//   error (caller should guard before calling into the pipeline)
 
 #import "helpers.h"   // Import our own header so the compiler can verify we
                       // implement everything that was promised there.
+#import "EZAuthManager.h"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MODULE-LEVEL CONSTANTS
@@ -42,19 +47,20 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 // File names — stored in the app's Documents directory (see _documentsDirectory)
-static NSString * const kLogFileName           = @"ezui_helpers.log";   // rolling diagnostic log
+static NSString * const kSystemLogFileName     = @"ezui_system.log";   // rolling diagnostic log (system-wide)
+static NSString * const kHelperLogFileName     = @"ezui_helper.log";   // verbose helper decisions log
 static NSString * const kMemoryJSONFileName    = @"ezui_memory.json";   // current memory store (JSON format)
 static NSString * const kMemoryLegacyFileName  = @"ezui_memory.log";    // old plaintext format; migrated on first run
 static NSString * const kThreadsDirName        = @"EZThreads";          // sub-folder that holds one .json file per thread
 static NSString * const kAttachmentsDirName    = @"EZAttachments";      // sub-folder where user-uploaded files are copied
 
-// The lightweight "helper" model used for cheap, fast classification calls.
-// Deliberately separate from the main GPT model so we can swap it independently.
-static NSString * const kHelperModel           = @"gpt-4.1-nano";
 static NSString * const kHelperTemperatureDefaultsKey = @"helperTemperature";
 
-// OpenAI chat endpoint — all helper model calls go here.
-static NSString * const kChatCompletionsURL    = @"https://api.openai.com/v1/chat/completions";
+// Supabase edge function that proxies all helper-model calls server-side.
+// The OpenAI key lives in Supabase Vault — it never touches the device.
+// Request:  { system: string, message: string, max_tokens: number }
+// Response: { result: string }
+static NSString * const kEZHelperURL = @"https://spuoimtqofhbdzosrbng.supabase.co/functions/v1/ez-helper";
 
 // Minimum confidence score (0–1) required before we trust the triage model's
 // "I can answer this directly" claim and skip the main model entirely.
@@ -76,17 +82,6 @@ static const NSInteger kMemorySearchRankerMaxTokens = 1200;
 // When the Stage 1 triage says "UNCERTAIN", we fetch this many recent turns
 // from the active thread and send them to triage for a second opinion.
 static const NSInteger kTriageUncertainTurnFetch = 3;
-
-// Reads helper-model temperature from settings and keeps it in the supported range.
-// Defaults to 0.2 when unset or invalid.
-static float _helperModelTemperature(void) {
-    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    id storedValue = [defaults objectForKey:kHelperTemperatureDefaultsKey];
-    float temperature = [storedValue respondsToSelector:@selector(floatValue)]
-        ? [storedValue floatValue]
-        : 0.2f;
-    return MIN(0.5f, MAX(0.0f, temperature));
-}
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -629,20 +624,20 @@ static BOOL _looksLikePathOrIdentifier(NSString *term) {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// _callHelperModelSync — Core synchronous OpenAI API call
+// _callHelperModelSync — Core synchronous helper-model call via ez-helper
 //
 // This is the single function that all helper-model calls in this file funnel
-// through. It sends a system prompt + one user message to kHelperModel and
-// returns the model's plain-text reply (or nil on any error).
+// through. It POSTs to the ez-helper Supabase edge function, which runs the
+// actual OpenAI call server-side (OpenAI key lives in Supabase Vault, never
+// on device), and returns the model's plain-text reply (or nil on any error).
 //
 // "Sync" means it BLOCKS the calling thread until the network call completes.
 // This is acceptable because every caller already runs on a background queue
 // (see dispatch_async in analyzePromptForContext and EZCreateMemoryEntry).
 // You must NEVER call this on the main thread.
 //
-// Request structure:
-//   temperature: user-controlled helper setting (0.0–0.5, defaults to 0.2)
-//   max_tokens: caller-specified — different tasks need different budgets
+// Request to ez-helper:  { system: string, message: string, max_tokens: number }
+// Response from ez-helper: { result: string }
 //
 // BEGINNER NOTE — How the semaphore works
 //   NSURLSession is asynchronous — it calls a completion block when done.
@@ -655,27 +650,22 @@ static BOOL _looksLikePathOrIdentifier(NSString *term) {
 // ─────────────────────────────────────────────────────────────────────────────
 static NSString *_callHelperModelSync(NSString *systemPrompt,
                                       NSString *userMessage,
-                                      NSString *apiKey,
+                                      NSString *jwtToken,
                                       NSInteger maxTokens) {
-    if (apiKey.length == 0) return nil;  // no key → bail immediately, don't try to call the API
+    if (jwtToken.length == 0) return nil;  // no JWT → bail immediately
 
-    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:kChatCompletionsURL]];
-    request.HTTPMethod     = @"POST";
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:kEZHelperURL]];
+    request.HTTPMethod      = @"POST";
     request.timeoutInterval = 20;   // 20-second timeout — helper calls should be fast
-    [request setValue:@"application/json"                          forHTTPHeaderField:@"Content-Type"];
-    [request setValue:[NSString stringWithFormat:@"Bearer %@", apiKey] forHTTPHeaderField:@"Authorization"];
+    [request setValue:@"application/json"                              forHTTPHeaderField:@"Content-Type"];
+    [request setValue:[NSString stringWithFormat:@"Bearer %@", jwtToken] forHTTPHeaderField:@"Authorization"];
 
-    // Build the JSON request body.
-    // Helper temperature is clamped to 0.0–0.5 so classifier/ranker behavior
-    // stays stable while still allowing small randomness tuning.
+    // ez-helper accepts { system, message, max_tokens }.
+    // Model selection and temperature are controlled server-side.
     NSDictionary *requestBody = @{
-        @"model":       kHelperModel,
-        @"max_tokens":  @(maxTokens),
-        @"temperature": @(_helperModelTemperature()),
-        @"messages": @[
-            @{@"role": @"system", @"content": systemPrompt ?: @""},
-            @{@"role": @"user",   @"content": userMessage  ?: @""}
-        ]
+        @"system":     systemPrompt ?: @"",
+        @"message":    userMessage  ?: @"",
+        @"max_tokens": @(maxTokens),
     };
 
     NSError *encodingError = nil;
@@ -714,27 +704,16 @@ static NSString *_callHelperModelSync(NSString *systemPrompt,
 
     if (networkError || responseData.length == 0) return nil;
 
-    // Parse the response JSON. OpenAI returns:
-    // { "choices": [ { "message": { "role": "assistant", "content": "..." } } ] }
+    // Parse the response JSON. ez-helper returns: { "result": "..." }
     NSError *parseError = nil;
     NSDictionary *jsonResponse = [NSJSONSerialization JSONObjectWithData:responseData options:0 error:&parseError];
     if (parseError || ![jsonResponse isKindOfClass:[NSDictionary class]]) return nil;
 
-    // Safely walk the nested structure: choices[0].message.content
-    id choices = jsonResponse[@"choices"];
-    if (![choices isKindOfClass:[NSArray class]] || [(NSArray *)choices count] == 0) return nil;
-
-    id firstChoice = ((NSArray *)choices)[0];
-    if (![firstChoice isKindOfClass:[NSDictionary class]]) return nil;
-
-    id message = ((NSDictionary *)firstChoice)[@"message"];
-    if (![message isKindOfClass:[NSDictionary class]]) return nil;
-
-    id content = ((NSDictionary *)message)[@"content"];
-    if (![content isKindOfClass:[NSString class]]) return nil;
+    id resultValue = jsonResponse[@"result"];
+    if (![resultValue isKindOfClass:[NSString class]]) return nil;
 
     // Trim whitespace/newlines from the response before returning it.
-    return [(NSString *)content stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    return [(NSString *)resultValue stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
 }
 
 
@@ -752,7 +731,11 @@ static NSString *_callHelperModelSync(NSString *systemPrompt,
 // Exposed publicly (no `static`) so ViewController can show the log path in
 // the stats UI or offer to share the file.
 NSString *EZLogGetPath(void) {
-    return [_documentsDirectory() stringByAppendingPathComponent:kLogFileName];
+    return [_documentsDirectory() stringByAppendingPathComponent:kSystemLogFileName];
+}
+
+NSString *EZHelperLogGetPath(void) {
+    return [_documentsDirectory() stringByAppendingPathComponent:kHelperLogFileName];
 }
 
 // EZLog — the primary logging function.
@@ -800,11 +783,88 @@ void EZLogRotateIfNeeded(NSUInteger maxSizeBytes) {
 
     NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
     formatter.dateFormat = @"yyyyMMdd_HHmmss";
-    NSString *archiveName = [NSString stringWithFormat:@"ezui_helpers_%@.log",
+    NSString *archiveName = [NSString stringWithFormat:@"ezui_system_%@.log",
                               [formatter stringFromDate:[NSDate date]]];
     NSString *archivePath = [_documentsDirectory() stringByAppendingPathComponent:archiveName];
     [[NSFileManager defaultManager] moveItemAtPath:logPath toPath:archivePath error:nil];
     EZLog(EZLogLevelInfo, @"LOG", [NSString stringWithFormat:@"Rotated to %@", archiveName]);
+}
+
+void EZHelperLog(NSString *tag, NSString *message) {
+    NSString *logLine = [NSString stringWithFormat:@"[%@] [%@] %@",
+                         _timestampForDisplay(),
+                         tag ?: @"HELPER",
+                         message ?: @""];
+#ifdef DEBUG
+    NSLog(@"%@", logLine);
+#endif
+    _appendLineToFile(EZHelperLogGetPath(), logLine);
+}
+
+void EZHelperLogRotateIfNeeded(NSUInteger maxSizeBytes) {
+    NSString *logPath = EZHelperLogGetPath();
+    NSDictionary *attrs = [[NSFileManager defaultManager] attributesOfItemAtPath:logPath error:nil];
+    NSUInteger size = (NSUInteger)[attrs[NSFileSize] unsignedLongLongValue];
+    if (size < maxSizeBytes || size == 0) return;
+
+    NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
+    formatter.dateFormat = @"yyyyMMdd_HHmmss";
+    NSString *archiveName = [NSString stringWithFormat:@"ezui_helper_%@.log",
+                              [formatter stringFromDate:[NSDate date]]];
+    NSString *archivePath = [_documentsDirectory() stringByAppendingPathComponent:archiveName];
+    [[NSFileManager defaultManager] moveItemAtPath:logPath toPath:archivePath error:nil];
+    EZHelperLog(@"LOG", [NSString stringWithFormat:@"Rotated to %@", archiveName]);
+}
+
+static NSString *_helperMetadataDescription(NSDictionary<NSString *, id> *metadata) {
+    if (metadata.count == 0) return @"";
+    NSMutableString *desc = [NSMutableString stringWithString:@"METADATA:\n"];
+    for (NSString *key in metadata) {
+        NSString *value = [NSString stringWithFormat:@"%@", metadata[key] ?: @"(null)"];
+        [desc appendFormat:@"  %@: %@\n", key, value];
+    }
+    return [desc copy];
+}
+
+static void _logHelperEntry(NSString *stageTag, NSString *body, NSDictionary<NSString *, id> *metadata) {
+    NSMutableString *payload = [NSMutableString stringWithString:body ?: @""];
+    NSString *meta = _helperMetadataDescription(metadata);
+    if (meta.length > 0) {
+        if (payload.length > 0 && ![payload hasSuffix:@"\n"]) {
+            [payload appendString:@"\n"];
+        }
+        [payload appendString:meta];
+    }
+    EZHelperLog(stageTag, [payload stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]]);
+}
+
+static void _logHelperAPICall(NSString *stageTag,
+                              NSString *systemPrompt,
+                              NSString *userMessage,
+                              NSString *responseText,
+                              NSDictionary<NSString *, id> *metadata) {
+    NSMutableString *body = [NSMutableString string];
+    [body appendString:@"SYSTEM PROMPT:\n"];
+    [body appendString:systemPrompt.length ? systemPrompt : @"<empty>"];
+    [body appendString:@"\n\nUSER MESSAGE:\n"];
+    [body appendString:userMessage.length ? userMessage : @"<empty>"];
+    [body appendString:@"\n\nRESPONSE:\n"];
+    [body appendString:responseText.length ? responseText : @"<empty>"];
+    _logHelperEntry(stageTag, [body copy], metadata);
+}
+
+static void _logHelperDecision(NSString *stageTag,
+                               NSString *decision,
+                               NSDictionary<NSString *, id> *details) {
+    NSMutableString *body = [NSMutableString stringWithFormat:@"DECISION: %@\n", decision ?: @"<unknown>"];
+    if (details.count > 0) {
+        [body appendString:@"DETAILS:\n"];
+        for (NSString *key in details) {
+            NSString *value = [NSString stringWithFormat:@"%@", details[key] ?: @"(null)"];
+            [body appendFormat:@"  %@: %@\n", key, value];
+        }
+    }
+    _logHelperEntry(stageTag, body, nil);
 }
 
 
@@ -1087,15 +1147,15 @@ static NSInteger _memoryEntryLocalScore(NSDictionary *entry, NSString *query) {
 //
 // If the AI ranker call fails, falls back to the top 3 keyword results.
 // If apiKey is empty, falls back to loadMemoryContext(5) as a dumb fallback.
-NSString *EZThreadSearchMemory(NSString *searchQuery, NSString *apiKey) {
+NSString *EZThreadSearchMemory(NSString *searchQuery, NSString *jwtToken) {
     NSArray<NSDictionary *> *allEntries = _loadMemoryEntries();
     if (allEntries.count == 0) {
         EZLog(EZLogLevelInfo, @"MEMORY", @"Search: memory store is empty");
         return @"";
     }
 
-    // No API key — can't call the ranker. Return the 5 most recent entries raw.
-    if (apiKey.length == 0) {
+    // No JWT — can't call the ranker. Return the 5 most recent entries raw.
+    if (jwtToken.length == 0) {
         return loadMemoryContext(5);
     }
 
@@ -1218,10 +1278,13 @@ NSString *EZThreadSearchMemory(NSString *searchQuery, NSString *apiKey) {
 
     NSString *rankerResponse = _callHelperModelSync(rankerSystemPrompt,
                                                     rankerUserMessage,
-                                                    apiKey,
+                                                    jwtToken,
                                                     kMemorySearchRankerMaxTokens);
     NSString *trimmed = [rankerResponse stringByTrimmingCharactersInSet:
                          [NSCharacterSet whitespaceAndNewlineCharacterSet]];
+
+    _logHelperAPICall(@"Stage2-Ranker", rankerSystemPrompt, rankerUserMessage, trimmed,
+                      @{@"candidate_count": @(candidateLines.count)});
 
     // Ranker failed or returned empty — use the top 3 keyword results as a fallback.
     if (trimmed.length == 0) {
@@ -1736,7 +1799,7 @@ static NSString *_validatedThreadID(NSString *candidate, NSString *fallback) {
 // ─────────────────────────────────────────────────────────────────────────────
 static NSDictionary * _Nullable _runTriageHelper(NSString *userPrompt,
                                                  NSString * _Nullable recentTurnsText,
-                                                 NSString *apiKey) {
+                                                 NSString *jwtToken) {
     // If recent turns were provided (Stage 1b re-evaluation), append them so
     // the model has the same context the user is currently seeing.
     NSMutableString *contextSection = [NSMutableString string];
@@ -1804,7 +1867,9 @@ static NSDictionary * _Nullable _runTriageHelper(NSString *userPrompt,
 
     NSString *userMessage = [NSString stringWithFormat:@"User prompt: \"%@\"%@",
                               userPrompt, contextSection];
-    NSString *rawResponse = _callHelperModelSync(systemPrompt, userMessage, apiKey, 350);
+    NSString *rawResponse = _callHelperModelSync(systemPrompt, userMessage, jwtToken, 350);
+    _logHelperAPICall(@"Stage1-Triage", systemPrompt, userMessage, rawResponse,
+                      @{@"via": @"ez-helper", @"max_tokens": @(350)});
     if (rawResponse.length == 0) return nil;
 
     NSData *data   = [_stripMarkdownFences(rawResponse) dataUsingEncoding:NSUTF8StringEncoding];
@@ -1823,8 +1888,8 @@ static NSDictionary * _Nullable _runTriageHelper(NSString *userPrompt,
 // ─────────────────────────────────────────────────────────────────────────────
 static NSDictionary * _Nullable _runDirectAnswerValidator(NSString *userPrompt,
                                                           NSString *proposedAnswer,
-                                                          NSString *apiKey) {
-    if (userPrompt.length == 0 || proposedAnswer.length == 0 || apiKey.length == 0) return nil;
+                                                          NSString *jwtToken) {
+    if (userPrompt.length == 0 || proposedAnswer.length == 0 || jwtToken.length == 0) return nil;
 
     NSString *systemPrompt =
         @"You are a strict answer validator for an AI assistant.\n"
@@ -1843,7 +1908,9 @@ static NSDictionary * _Nullable _runDirectAnswerValidator(NSString *userPrompt,
         @"User request:\n%@\n\nProposed answer:\n%@",
         userPrompt, proposedAnswer];
 
-    NSString *rawResponse = _callHelperModelSync(systemPrompt, userMessage, apiKey, 220);
+    NSString *rawResponse = _callHelperModelSync(systemPrompt, userMessage, jwtToken, 220);
+    _logHelperAPICall(@"Stage1a-Validator", systemPrompt, userMessage, rawResponse,
+                      @{@"max_tokens": @(220)});
     if (rawResponse.length == 0) return nil;
 
     NSData *data   = [_stripMarkdownFences(rawResponse) dataUsingEncoding:NSUTF8StringEncoding];
@@ -1913,7 +1980,7 @@ static NSString *_formatRecentTurns(NSString *chatKey, NSInteger turnCount) {
 static NSDictionary * _Nullable _runMemoryRanker(NSString *userPrompt,
                                                  NSString * _Nullable recentTurnsText,
                                                  NSString *rankedMemories,
-                                                 NSString *apiKey) {
+                                                 NSString *jwtToken) {
     NSMutableString *contextSection = [NSMutableString string];
     if (recentTurnsText.length > 0) {
         [contextSection appendFormat:@"\nRECENT TURNS:\n%@\n", recentTurnsText];
@@ -1948,7 +2015,9 @@ static NSDictionary * _Nullable _runMemoryRanker(NSString *userPrompt,
         @"User prompt: \"%@\"\n%@\nMemory entries:\n%@",
         userPrompt, contextSection, rankedMemories];
 
-    NSString *rawResponse = _callHelperModelSync(systemPrompt, userMessage, apiKey, 600);
+    NSString *rawResponse = _callHelperModelSync(systemPrompt, userMessage, jwtToken, 600);
+    _logHelperAPICall(@"Stage3-Ranker", systemPrompt, userMessage, rawResponse,
+                      @{@"ranked_memories": rankedMemories ?: @""});
     if (rawResponse.length == 0) return nil;
 
     NSData *data   = [_stripMarkdownFences(rawResponse) dataUsingEncoding:NSUTF8StringEncoding];
@@ -1995,7 +2064,7 @@ static NSDictionary * _Nullable _runMemoryRanker(NSString *userPrompt,
 // ═════════════════════════════════════════════════════════════════════════════
 void analyzePromptForContext(NSString *userPrompt,
                              NSString * _Nullable memoryContext,
-                             NSString *apiKey,
+                             NSString *jwtToken,
                              NSString * _Nullable chatKey,
                              void (^completion)(EZContextResult *result)) {
 
@@ -2003,7 +2072,7 @@ void analyzePromptForContext(NSString *userPrompt,
     // This catches programming errors (calling this without a prompt or key)
     // during development before they reach the network call.
     NSCParameterAssert(userPrompt);
-    NSCParameterAssert(apiKey);
+    NSCParameterAssert(jwtToken);
     NSCParameterAssert(completion);
     EZLog(EZLogLevelInfo, @"TRIAGE", @"Stage 1 — initial triage...");
 
@@ -2020,7 +2089,7 @@ void analyzePromptForContext(NSString *userPrompt,
         __block NSString *recentTurnsText = @"";
 
         // ── STAGE 1: TRIAGE ──────────────────────────────────────────────────
-        NSDictionary *triageResult = _runTriageHelper(userPrompt, nil, apiKey);
+        NSDictionary *triageResult = _runTriageHelper(userPrompt, nil, jwtToken);
 
         if (!triageResult) {
             // Helper call failed (no network, bad key, etc.) — safe fallback:
@@ -2051,6 +2120,12 @@ void analyzePromptForContext(NSString *userPrompt,
 
         result.confidence = confidence;
         result.reason     = reason;
+        NSString *tagSummary = tags.count ? [tags componentsJoinedByString:@", "] : @"";
+        _logHelperDecision(@"Stage1-Verdict",
+                           verdict ?: @"<none>",
+                           @{@"confidence": @(confidence),
+                             @"reason": reason ?: @"",
+                             @"tags": tagSummary});
 
         // ── SHORT-CIRCUIT A: Simple with high-confidence direct answer ────────
         // Stage 1 direct answers must pass a validator helper before use.
@@ -2058,7 +2133,7 @@ void analyzePromptForContext(NSString *userPrompt,
         if ([verdict isEqualToString:@"SIMPLE"] &&
             confidence >= kDirectAnswerConfidenceThreshold &&
             directAnswer.length > 0) {
-            NSDictionary *validatorResult = _runDirectAnswerValidator(userPrompt, directAnswer, apiKey);
+            NSDictionary *validatorResult = _runDirectAnswerValidator(userPrompt, directAnswer, jwtToken);
             BOOL validatorApproved = [validatorResult[@"is_valid"] respondsToSelector:@selector(boolValue)]
                 ? [validatorResult[@"is_valid"] boolValue] : NO;
             float validatorConfidence = [validatorResult[@"confidence"] respondsToSelector:@selector(floatValue)]
@@ -2070,6 +2145,11 @@ void analyzePromptForContext(NSString *userPrompt,
                    validatorApproved, validatorConfidence, validatorReason);
 
             if (validatorApproved && validatorConfidence >= kAnswerValidatorConfidenceThreshold) {
+                _logHelperDecision(@"Stage1-ShortCircuit",
+                                   @"SimpleDirectAnswer",
+                                   @{@"direct_answer": directAnswer ?: @"",
+                                     @"validator_confidence": @(validatorConfidence),
+                                     @"tags": tagSummary});
                 result.tier               = EZRoutingTierDirect;
                 result.needsContext       = NO;
                 result.shortCircuitAnswer = directAnswer;
@@ -2081,6 +2161,9 @@ void analyzePromptForContext(NSString *userPrompt,
 
             if (validatorReason.length > 0) {
                 result.reason = [NSString stringWithFormat:@"Direct answer rejected by validator: %@", validatorReason];
+                _logHelperDecision(@"Stage1-ValidatorDecision",
+                                   @"Rejected",
+                                   @{@"reason": validatorReason, @"validator_confidence": @(validatorConfidence)});
             }
             verdict = @"NEEDS_CONTEXT";
             EZLog(EZLogLevelInfo, @"TRIAGE",
@@ -2090,6 +2173,9 @@ void analyzePromptForContext(NSString *userPrompt,
         // ── SHORT-CIRCUIT B: Complex — straight to main model ────────────────
         // No history needed. Let the main model do the heavy lifting.
         if ([verdict isEqualToString:@"COMPLEX"]) {
+            _logHelperDecision(@"Stage1-ShortCircuit",
+                               @"ComplexMainModel",
+                               @{@"reason": reason ?: @"", @"tags": tagSummary});
             result.tier       = EZRoutingTierSimple;
             result.needsContext = NO;
             EZLog(EZLogLevelInfo, @"TRIAGE", @"✓ SHORT-CIRCUIT B — COMPLEX, skip to main model");
@@ -2105,7 +2191,7 @@ void analyzePromptForContext(NSString *userPrompt,
             EZLog(EZLogLevelInfo, @"TRIAGE", @"Stage 1b — UNCERTAIN, fetching recent turns for re-evaluation...");
             recentTurnsText = _formatRecentTurns(chatKey ?: @"", kTriageUncertainTurnFetch);
 
-            NSDictionary *reEvalResult = _runTriageHelper(userPrompt, recentTurnsText, apiKey);
+            NSDictionary *reEvalResult = _runTriageHelper(userPrompt, recentTurnsText, jwtToken);
 
             if (reEvalResult) {
                 // Overwrite all the stage-1 variables with the re-eval values.
@@ -2121,6 +2207,12 @@ void analyzePromptForContext(NSString *userPrompt,
                                    ? reEvalResult[@"tags"] : @[];
                 result.confidence = confidence;
                 result.reason     = reason;
+                NSString *tagSummaryReeval = tags.count ? [tags componentsJoinedByString:@", "] : @"";
+                _logHelperDecision(@"Stage1b-Verdict",
+                                   verdict ?: @"<none>",
+                                   @{@"confidence": @(confidence),
+                                     @"reason": reason ?: @"",
+                                     @"tags": tagSummaryReeval});
 
                 EZLogf(EZLogLevelInfo,  @"TRIAGE", @"Stage 1b verdict=%-14s conf=%.2f  %@", verdict.UTF8String, confidence, reason);
              //   EZLogf(EZLogLevelDebug, @"TRIAGE", @"Stage 1b checklist=%@", checklist);
@@ -2129,7 +2221,7 @@ void analyzePromptForContext(NSString *userPrompt,
                 if ([verdict isEqualToString:@"SIMPLE"] &&
                     confidence >= kDirectAnswerConfidenceThreshold &&
                     directAnswer.length > 0) {
-                    NSDictionary *validatorResult = _runDirectAnswerValidator(userPrompt, directAnswer, apiKey);
+                    NSDictionary *validatorResult = _runDirectAnswerValidator(userPrompt, directAnswer, jwtToken);
                     BOOL validatorApproved = [validatorResult[@"is_valid"] respondsToSelector:@selector(boolValue)]
                         ? [validatorResult[@"is_valid"] boolValue] : NO;
                     float validatorConfidence = [validatorResult[@"confidence"] respondsToSelector:@selector(floatValue)]
@@ -2141,6 +2233,10 @@ void analyzePromptForContext(NSString *userPrompt,
                            validatorApproved, validatorConfidence, validatorReason);
 
                     if (validatorApproved && validatorConfidence >= kAnswerValidatorConfidenceThreshold) {
+                        _logHelperDecision(@"Stage1b-ShortCircuit",
+                                           @"SimpleDirectAnswer",
+                                           @{@"direct_answer": directAnswer ?: @"",
+                                             @"validator_confidence": @(validatorConfidence)});
                         result.tier               = EZRoutingTierDirect;
                         result.needsContext       = NO;
                         result.shortCircuitAnswer = directAnswer;
@@ -2152,6 +2248,10 @@ void analyzePromptForContext(NSString *userPrompt,
 
                     if (validatorReason.length > 0) {
                         result.reason = [NSString stringWithFormat:@"Direct answer rejected by validator: %@", validatorReason];
+                        _logHelperDecision(@"Stage1b-ValidatorDecision",
+                                           @"Rejected",
+                                           @{@"reason": validatorReason,
+                                             @"validator_confidence": @(validatorConfidence)});
                     }
                     verdict = @"NEEDS_CONTEXT";
                     EZLog(EZLogLevelInfo, @"TRIAGE",
@@ -2160,6 +2260,11 @@ void analyzePromptForContext(NSString *userPrompt,
 
                 // SHORT-CIRCUIT B′: re-eval says complex — go to main model.
                 if ([verdict isEqualToString:@"COMPLEX"] || [verdict isEqualToString:@"SIMPLE"]) {
+                    _logHelperDecision(@"Stage1b-ShortCircuit",
+                                       @"ComplexMainModel",
+                                       @{@"verdict": verdict ?: @"<none>",
+                                         @"reason": reason ?: @"",
+                                         @"tags": tagSummaryReeval});
                     result.tier       = EZRoutingTierSimple;
                     result.needsContext = NO;
                     EZLog(EZLogLevelInfo, @"TRIAGE", @"✓ SHORT-CIRCUIT B′ — COMPLEX after re-eval, skip to main model");
@@ -2189,7 +2294,13 @@ void analyzePromptForContext(NSString *userPrompt,
             }
         }
 
-        NSString *rankedMemories = EZThreadSearchMemory([searchQuery copy], apiKey);
+        NSString *queryString = [searchQuery copy];
+        NSString *rankedMemories = EZThreadSearchMemory(queryString, jwtToken);
+        _logHelperDecision(@"Stage2-Search",
+                           rankedMemories.length > 0 ? @"MemoriesFound" : @"NoMemories",
+                           @{@"search_query": queryString ?: @"",
+                             @"found": rankedMemories.length > 0 ? @"yes" : @"no",
+                             @"ranked_memories": rankedMemories ?: @""});
 
         if (rankedMemories.length == 0) {
             // No relevant memories found. Don't inject anything — routing to
@@ -2204,11 +2315,15 @@ void analyzePromptForContext(NSString *userPrompt,
         // ── STAGE 3: MEMORY RANKER ───────────────────────────────────────────
         EZLog(EZLogLevelInfo, @"TRIAGE", @"Stage 3 — memory ranker...");
 
-        NSDictionary *rankerResult = _runMemoryRanker(userPrompt, recentTurnsText, rankedMemories, apiKey);
+        NSDictionary *rankerResult = _runMemoryRanker(userPrompt, recentTurnsText, rankedMemories, jwtToken);
 
         if (!rankerResult) {
             // Ranker call failed — inject all keyword-ranked memories as-is and
             // route to main model. Imperfect but better than returning nothing.
+            _logHelperDecision(@"Stage3-Verdict",
+                               @"RankerFailed",
+                               @{@"reason": @"No response from ranker",
+                                 @"ranked_memories": rankedMemories ?: @""});
             EZLog(EZLogLevelWarning, @"TRIAGE", @"Stage 3 ranker failed — injecting keyword memories as fallback");
             NSString *enrichedPrompt = [NSString stringWithFormat:
                 @"[Relevant memory context:]\n%@\n\n[User message]\n%@", rankedMemories, userPrompt];
@@ -2234,6 +2349,13 @@ void analyzePromptForContext(NSString *userPrompt,
 
         result.confidence = rankerConfidence;
         result.reason     = _safeString(rankerResult[@"reason"]);
+        _logHelperDecision(@"Stage3-Verdict",
+                           rankerVerdict ?: @"<none>",
+                           @{@"confidence": @(rankerConfidence),
+                             @"ranker_answer": rankerAnswer ?: @"",
+                             @"selected_memories": selectedMems ?: @"",
+                             @"best_chat_key": rankerChatKey ?: @"",
+                             @"ranked_memories": rankedMemories ?: @""});
 
         EZLogf(EZLogLevelInfo,  @"TRIAGE", @"Stage 3  verdict=%-12s conf=%.2f  %@",
                rankerVerdict.UTF8String, rankerConfidence, result.reason);
@@ -2245,6 +2367,10 @@ void analyzePromptForContext(NSString *userPrompt,
         if ([rankerVerdict isEqualToString:@"SIMPLE"] &&
             rankerConfidence >= kDirectAnswerConfidenceThreshold &&
             rankerAnswer.length > 0) {
+            _logHelperDecision(@"Stage3-ShortCircuit",
+                               @"RankerDirectAnswer",
+                               @{@"answer": rankerAnswer ?: @"",
+                                 @"confidence": @(rankerConfidence)});
             result.tier               = EZRoutingTierDirect;
             result.needsContext       = NO;
             result.shortCircuitAnswer = rankerAnswer;
@@ -2258,6 +2384,11 @@ void analyzePromptForContext(NSString *userPrompt,
         // Inject the selected memories into the prompt and route to the main model.
         if ([rankerVerdict isEqualToString:@"COMPLEX"] || [rankerVerdict isEqualToString:@"SIMPLE"]) {
             NSString *memoriesToUse  = selectedMems.length > 0 ? selectedMems : rankedMemories;
+            _logHelperDecision(@"Stage3-ShortCircuit",
+                               @"InjectMemories",
+                               @{@"memories_to_use": memoriesToUse ?: @"",
+                                 @"ranker_verdict": rankerVerdict ?: @"",
+                                 @"confidence": @(rankerConfidence)});
             NSString *enrichedPrompt = [NSString stringWithFormat:
                 @"[Relevant memory context:]\n%@\n\n[User message]\n%@", memoriesToUse, userPrompt];
             result.tier            = EZRoutingTierMemory;
@@ -2272,6 +2403,10 @@ void analyzePromptForContext(NSString *userPrompt,
         // ── FULL THREAD LOAD: Ranker says memories are not enough ─────────────
         // We need to dig up the actual conversation history.
         if ([rankerVerdict isEqualToString:@"NEEDS_THREAD"]) {
+            _logHelperDecision(@"Stage3-ShortCircuit",
+                               @"NeedsThread",
+                               @{@"best_chat_key": rankerChatKey ?: @"",
+                                 @"ranked_memories": rankedMemories ?: @""});
 
             // Resolve the best chatKey using a three-tier priority:
             //   1. The chatKey the AI ranker explicitly returned
@@ -2406,7 +2541,7 @@ static BOOL _memoryEntryLooksDuplicate(NSDictionary *candidate, NSDictionary *ex
 //   userPrompt      — what the user asked
 //   assistantReply  — what the assistant answered (truncated to 1200 chars
 //                     before sending to the summarizer to control cost)
-//   apiKey          — OpenAI API key for the summarizer call
+//   jwtToken        — Supabase JWT for the ez-helper edge function call
 //   promptID        — optional unique ID for the prompt (e.g. for deduplication
 //                     across rapid re-sends); not currently used in scoring
 //   threadID        — optional ID of the current thread (stored as chatKey)
@@ -2434,7 +2569,7 @@ static BOOL _memoryEntryLooksDuplicate(NSDictionary *candidate, NSDictionary *ex
 //   filename generalization) so the model knows exactly what to avoid.
 void EZCreateMemoryEntry(NSString *userPrompt,
                          NSString *assistantReply,
-                         NSString *apiKey,
+                         NSString *jwtToken,
                          NSString * _Nullable promptID,
                          NSString * _Nullable threadID,
                          NSArray<NSString *> * _Nullable attachmentPaths,
@@ -2442,7 +2577,7 @@ void EZCreateMemoryEntry(NSString *userPrompt,
 
     NSCParameterAssert(userPrompt);
     NSCParameterAssert(assistantReply);
-    NSCParameterAssert(apiKey);
+    NSCParameterAssert(jwtToken);
 
     EZLog(EZLogLevelInfo, @"MEMORY", @"Creating summary...");
 
@@ -2517,7 +2652,7 @@ void EZCreateMemoryEntry(NSString *userPrompt,
                 ? [NSString stringWithFormat:@"\nAttachments: %@", attachmentContext] : @"",
             truncatedReply];
 
-        NSString *summary = _callHelperModelSync(systemPrompt, contentToSummarize, apiKey, 150);
+        NSString *summary = _callHelperModelSync(systemPrompt, contentToSummarize, jwtToken, 150);
         if (summary.length == 0) {
             EZLog(EZLogLevelWarning, @"MEMORY", @"Summarizer returned empty — skipping save");
             dispatch_async(dispatch_get_main_queue(), ^{ completion(nil); });
@@ -2576,13 +2711,13 @@ void EZCreateMemoryEntry(NSString *userPrompt,
 //   migrate callers to the new API and eventually delete the wrapper.
 void createMemoryFromCompletion(NSString *userPrompt,
                                 NSString *assistantReply,
-                                NSString *apiKey,
+                                NSString *jwtToken,
                                 NSString * _Nullable chatKey,
                                 NSArray<NSString *> * _Nullable attachmentPaths,
                                 void (^completion)(NSString * _Nullable entry)) {
     EZCreateMemoryEntry(userPrompt,
                         assistantReply,
-                        apiKey,
+                        jwtToken,
                         nil,        // no promptID in the old API
                         chatKey,
                         attachmentPaths,
@@ -2660,11 +2795,12 @@ NSString * _Nullable EZAttachmentPath(NSString *savedFileName) {
 // EZCallHelperModel — public wrapper that exposes _callHelperModelSync to
 // ViewController and other external callers. Useful for one-off tasks that
 // need the helper model without going through the full triage pipeline.
+// Caller is responsible for passing a valid Supabase JWT token.
 NSString *EZCallHelperModel(NSString *systemPrompt,
                             NSString *userMessage,
-                            NSString *apiKey,
+                            NSString *jwtToken,
                             NSInteger maxTokens) {
-    return _callHelperModelSync(systemPrompt, userMessage, apiKey, maxTokens);
+    return _callHelperModelSync(systemPrompt, userMessage, jwtToken, maxTokens);
 }
 
 // EZHelperStats — generates a human-readable summary of the app's state:

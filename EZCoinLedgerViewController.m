@@ -511,7 +511,7 @@ static NSInteger const kPageSize = 50;
             }
             if ([agg isKindOfClass:[NSDictionary class]]) {
                 self.aggregate = agg;
-                self.currentBalance = [EZEntitlementManager shared].coinBalance;
+                self.currentBalance = [EZEntitlementManager shared].coinBalance.integerValue;
                 [self.summaryView configureWithAggregate:agg currentBalance:self.currentBalance];
             }
 

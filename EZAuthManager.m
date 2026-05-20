@@ -27,6 +27,65 @@
         return self.accessToken != nil;
     }
 
+
+- (void)refreshSessionIfNeeded:(void(^)(NSString *token, NSError *error))completion {
+    NSString *current = self.accessToken;
+
+    // If we have a token, check if it's still valid by decoding the exp claim.
+    // JWT format: header.payload.signature — payload is base64url encoded JSON.
+    if (current.length > 0) {
+        NSArray *parts = [current componentsSeparatedByString:@"."];
+        if (parts.count == 3) {
+            NSString *payload = parts[1];
+            // Base64url → base64
+            NSMutableString *base64 = [payload mutableCopy];
+            [base64 replaceOccurrencesOfString:@"-" withString:@"+"
+                                       options:0 range:NSMakeRange(0, base64.length)];
+            [base64 replaceOccurrencesOfString:@"_" withString:@"/"
+                                       options:0 range:NSMakeRange(0, base64.length)];
+            // Pad to multiple of 4
+            while (base64.length % 4 != 0) [base64 appendString:@"="];
+
+            NSData *decoded = [[NSData alloc] initWithBase64EncodedString:base64 options:0];
+            if (decoded) {
+                NSDictionary *claims = [NSJSONSerialization
+                    JSONObjectWithData:decoded options:0 error:nil];
+                NSTimeInterval exp = [claims[@"exp"] doubleValue];
+                // Give 60 second buffer before expiry
+                if (exp > 0 && [[NSDate date] timeIntervalSince1970] < exp - 60) {
+                    // Token still valid — use it directly
+                    completion(current, nil);
+                    return;
+                }
+            }
+        }
+    }
+
+    // Token missing, invalid, or expired — refresh it
+    NSString *refresh = [EZKeyVault loadKeyForIdentifier:kRefreshTokenKey];
+    if (!refresh) {
+        completion(nil, [NSError errorWithDomain:@"EZAuth" code:401
+            userInfo:@{NSLocalizedDescriptionKey: @"No refresh token"}]);
+        return;
+    }
+    NSDictionary *body = @{ @"refresh_token": refresh };
+    [self postToPath:@"/auth/v1/token?grant_type=refresh_token"
+                body:body
+          completion:^(NSDictionary *data, NSError *error) {
+        if (data[@"access_token"]) {
+            self.accessToken = data[@"access_token"];
+            self.userId = data[@"user"][@"id"] ?: self.userId;
+            [EZKeyVault saveKey:self.accessToken forIdentifier:kAccessTokenKey];
+            [EZKeyVault saveKey:data[@"refresh_token"] forIdentifier:kRefreshTokenKey];
+            completion(self.accessToken, nil);
+        } else {
+            [self signOut];
+            completion(nil, error ?: [NSError errorWithDomain:@"EZAuth" code:401
+                userInfo:@{NSLocalizedDescriptionKey: @"Session expired, please sign in again"}]);
+        }
+    }];
+}
+
     - (void)restoreSessionWithCompletion:(void(^)(BOOL loggedIn))completion {
         NSString *token = [EZKeyVault loadKeyForIdentifier:kAccessTokenKey];
         NSString *uid = [EZKeyVault loadKeyForIdentifier:kUserIdKey];

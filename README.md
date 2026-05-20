@@ -42,7 +42,8 @@ EZCompleteUI was built with a simple goal: bring a genuinely capable, modern AI 
 
 ### 🔧 Developer / Power User
 - **Shake to debug** — shake the device to view helper stats, routing tier breakdown, and recent log entries; tap Copy to grab the full log to clipboard
-- Detailed logging to `Documents/ezui_helpers.log` with automatic rotation at 512 KB
+- System log file: `Documents/ezui_system.log` (rotates at 512 KB)
+- Verbose helper decision log: `Documents/ezui_helper.log` (rotates at 512 KB)
 - Per-conversation thread files stored in `Documents/EZThreads/`
 - Attachments stored in `Documents/EZAttachments/`
 

@@ -1,9 +1,11 @@
     // SettingsViewController.m
-    // EZCompleteUI
+    // EZCompleteUI v1.4
     //
-    // All app settings plus ElevenLabs voice cloning.
-    // API keys are stored encrypted via EZKeyVault (AES-256-GCM, Keychain-backed).
-    // Keys are masked after entry — the plaintext is never shown again.
+    // Changes from v1.3:
+    //   - Replaced "Donate via PayPal" button and method with "Legal & Policies"
+    //     button that opens EZPoliciesViewController (Terms / Privacy / Refund).
+    //   - Added #import for EZPoliciesViewController.
+    //   - donate method removed (app now has a coin store; donation button obsolete).
 
     #import "SettingsViewController.h"
     #import "MemoriesViewController.h"
@@ -12,6 +14,7 @@
     #import "SupportRequestViewController.h"
     #import "LoginViewController.h"
     #import "EZCoinStoreViewController.h"
+    #import "EZPoliciesViewController.h"
     #import "EZKeyVault.h"
     #import "EZAuthManager.h"
     #import "EZEntitlementManager.h"
@@ -390,9 +393,9 @@ static NSString *const kSupabaseAnonKey = @"sb_publishable_AzEVhLuIj1nSMwZvIgKw7
                   color:[UIColor systemIndigoColor]
                  action:@selector(showHelperStats)
                       y:&y w:w];
-        [self addButton:@"💙 Donate via PayPal"
-                  color:[UIColor systemBlueColor]
-                 action:@selector(donate)
+        [self addButton:@"📄 Legal & Policies"
+                  color:[UIColor systemIndigoColor]
+                 action:@selector(openPolicies)
                       y:&y w:w];
         [self addButton:@"📬 Support & Feedback"
                   color:[UIColor systemTealColor]
@@ -1075,14 +1078,16 @@ static NSString *const kSupabaseAnonKey = @"sb_publishable_AzEVhLuIj1nSMwZvIgKw7
 
 
     // ─────────────────────────────────────────────────────────────────────────────
-    // MARK: - Donate
+    // MARK: - Legal & Policies
     // ─────────────────────────────────────────────────────────────────────────────
 
-    - (void)donate {
-        [[UIApplication sharedApplication]
-            openURL:[NSURL URLWithString:@"https://paypal.me/i0stweak3r"]
-            options:@{}
-            completionHandler:nil];
+    - (void)openPolicies {
+        EZPoliciesViewController *policiesVC = [EZPoliciesViewController new];
+        policiesVC.initialTab = EZPolicyTabTerms;
+        UINavigationController *nav = [[UINavigationController alloc]
+            initWithRootViewController:policiesVC];
+        nav.modalPresentationStyle = UIModalPresentationPageSheet;
+        [self presentViewController:nav animated:YES completion:nil];
     }
 
 

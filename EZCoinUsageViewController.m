@@ -1,7 +1,15 @@
 // EZCoinUsageViewController.m
-// EZCompleteUI v6.5
+// EZCompleteUI v6.6
 //
-// Changes from v6.4:
+// Changes from v6.5:
+//   - Fixed: balance at top always showed 0. Root cause: self.currentBalance was
+//     never seeded before fetchPage — it started at 0 and updateSummary ran with
+//     that value. Now seeded from [EZEntitlementManager shared].coinBalance in
+//     viewDidLoad so the header shows the correct balance immediately, even before
+//     the network response arrives. The edge function response still updates it
+//     on arrival as before.
+//   - Also calls refreshBalanceWithCompletion before fetchPage so the value is
+//     fresh from the server, not just whatever was last cached in memory.
 //   - Fixed: TTS rows showed "(67 × 0 ea.)" because quantity stores char count,
 //     not a repeating unit — TTS now shows "−2 coins (67 chars)" instead
 //
@@ -358,7 +366,19 @@ static NSNumber *safeNumber(id value) {
 
     [self styleNav];
     [self setupTable];
-    [self fetchPage:self.nextPage];
+
+    // Seed balance from the in-memory cached value immediately so the header
+    // never shows 0 while the network is in flight.
+    self.currentBalance = [EZEntitlementManager shared].coinBalance.integerValue;
+    [self updateSummary];
+
+    // Refresh balance from server, then kick off the usage log fetch.
+    // This ensures we show a fresh coin count even if the cache is stale.
+    [[EZEntitlementManager shared] refreshBalanceWithCompletion:^(NSInteger freshBalance) {
+        self.currentBalance = freshBalance;
+        [self updateSummary];
+        [self fetchPage:0];
+    }];
 }
 
 - (void)styleNav {

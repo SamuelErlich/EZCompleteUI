@@ -1,7 +1,21 @@
 // ViewController.m
-// EZCompleteUI v7.2
+// EZCompleteUI v7.4
 //
-// Changes from v7.1:
+// Changes from v7.3:
+//   - analyzePromptForContext and createMemoryFromCompletion now receive the
+//     Supabase JWT ([EZAuthManager shared].accessToken) instead of nil — fixes
+//     NSCParameterAssert crash and the silent pipeline failure that followed
+//   - handleSendAuthorized: JWT retrieved once at entry with a nil guard;
+//     captured by the fetchRelevantMemories completion block so it's available
+//     to both analyzePromptForContext call sites and the Tier-1
+//     createMemoryFromCompletion call without redundant accessToken lookups
+//   - fetchRelevantMemories: JWT captured before dispatch_async and passed to
+//     EZThreadSearchMemory so the AI-powered memory ranker (Stage 2) now runs
+//     instead of always falling back to loadMemoryContext(5)
+//   - callChatCompletions: createMemoryFromCompletion now passes the already-
+//     captured token (was nil) — memory creation after chat replies now works
+//
+// Changes from v7.2:
 //   - Fixed: tapping Send while keyboard is visible caused first tap to dismiss
 //     keyboard but not send. Root cause: the view-wide UITapGestureRecognizer
 //     (dismissTap) was firing on the same touch as the send button, starting a
@@ -117,6 +131,7 @@
 #import "EZImageGridCell.h"
 #import "EZEntitlementManager.h"
 #import "EZAuthManager.h"         // needed for [EZAuthManager shared].accessToken (edge function JWT)
+#import "EZTermsAcceptanceViewController.h"
 #import "HelperLogViewController.h"
 
 
@@ -239,6 +254,33 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
 @property (nonatomic, strong) UILabel *coinBalanceLabel; // kept for compatibility
 @property (nonatomic, strong) EZCoinPotView *coinPotView;
 
+// Private helpers added since previous interface
+- (void)restoreImageGridCellsForThread:(NSString *)threadID;
+- (void)appendAttachmentBubble:(NSString *)imagePath;
+- (void)presentCoinStoreForFeature:(NSString * _Nullable)featureName;
+- (NSString *)featureLabel:(EZFeature)feature;
+- (void)offerToOpenLocalFile:(NSString *)path;
+- (void)classifyImageIntent:(NSString *)prompt
+              hasLocalImage:(BOOL)hasLocalImage
+                 completion:(void(^)(NSString *intent))completion;
+- (void)callSora:(NSString *)prompt;
+- (BOOL)modelSupportsVision:(NSString *)model;
+- (void)showGPT5StatusBanner;
+- (void)hideGPT5StatusBanner;
+- (void)handleAPIError:(NSString *)msg;
+- (void)checkReplyForLocalFilePaths:(NSString *)reply;
+- (NSArray *)sanitizedContextForAPI:(NSArray *)context
+                  modelSupportsVision:(BOOL)supportsVision
+                      useResponsesAPI:(BOOL)useResponsesAPI;
+- (void)downloadAndSaveImage:(NSString *)urlString purpose:(NSString *)purpose;
+- (void)downloadAndShowVideo:(NSString *)urlString;
+- (void)appendImageGridToChat:(NSArray<NSString *> *)imagePaths
+                       prompt:(NSString *)prompt
+                      isError:(BOOL)isError
+                    errorText:(nullable NSString *)errorText;
+- (void)persistImagePath:(NSString *)path prompt:(NSString *)prompt;
+- (void)callImageEdit:(NSString *)prompt imagePath:(NSString *)imagePath;
+
 @end
 @interface ViewController (EZPrivateForward)
 - (void)scrollChatToBottom;
@@ -260,7 +302,8 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
 
    
     EZLogRotateIfNeeded(512 * 1024);
-    EZLog(EZLogLevelInfo, @"APP", @"EZCompleteUI v7.2 viewDidLoad");
+    EZHelperLogRotateIfNeeded(512 * 1024);
+    EZLog(EZLogLevelInfo, @"APP", @"EZCompleteUI v7.6 viewDidLoad");
     [self setupData];
     [self setupUI];
     [self setupKeyboardObservers];
@@ -550,7 +593,9 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
 - (void)motionEnded:(UIEventSubtype)motion withEvent:(UIEvent *)event {
     if (motion == UIEventSubtypeMotionShake) {
         HelperLogViewController *helperLogVC = [[HelperLogViewController alloc] init];
-        [self presentViewController: helperLogVC animated:YES completion:nil];
+        UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:helperLogVC];
+        nav.modalPresentationStyle = UIModalPresentationFullScreen;
+        [self presentViewController:nav animated:YES completion:nil];
         /*
         NSString *stats = EZHelperStats();
         UIAlertController *a = [UIAlertController alertControllerWithTitle:@"EZHelper Stats"
@@ -995,7 +1040,7 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
 }
 
 - (void)updateCoinBalanceDisplay {
-    NSInteger balance      = [EZEntitlementManager shared].coinBalance;
+    NSInteger balance      = [EZEntitlementManager shared].coinBalance.integerValue;
     NSString  *tier        = [EZEntitlementManager shared].currentTier ?: @"basic";
     NSInteger includedCoins = 400; // default basic
 
@@ -1022,7 +1067,7 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
 }
 
 - (void)handleSubscriptionUpdated {
-    NSInteger previousBalance = [EZEntitlementManager shared].coinBalance;
+    NSInteger previousBalance = [EZEntitlementManager shared].coinBalance.integerValue;
     [[EZEntitlementManager shared] refreshBalanceWithCompletion:^(NSInteger newBalance) {
         NSInteger gained = newBalance - previousBalance;
         if (gained > 0) {
@@ -2101,6 +2146,16 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
 
     if (self.isDictating) [self stopDictation];
 
+    // Retrieve the JWT once here so it can be captured by all nested completion
+    // blocks without redundant accessToken lookups. Every helper pipeline call
+    // (triage, memory search, memory creation) needs it to reach ez-helper.
+    NSString *jwtToken = [EZAuthManager shared].accessToken;
+    if (!jwtToken) {
+        [self appendToChat:@"[Error: Not signed in]"];
+        self.sendButton.enabled = YES;
+        return;
+    }
+
     self.lastUserPrompt = text;
 
     // Inject pending file context
@@ -2115,10 +2170,6 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     }
 
     [self.chatContext addObject:@{@"role": @"user", @"content": fullPrompt}];
-
-    NSString *apiKey = [EZKeyVault loadKeyForIdentifier:EZVaultKeyOpenAI];
-
-    if (!apiKey.length) { self.sendButton.enabled = YES; [self appendToChat:@"[Error: No API Key]"]; return; }
 
     // ── Guard: Whisper is transcription-only, not a chat model ───────────────
     if ([self.selectedModel isEqualToString:@"whisper-1"]) {
@@ -2156,7 +2207,7 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
         }
         BOOL hasLocal = self.lastImageLocalPath.length > 0;
 
-        [self classifyImageIntent:text hasLocalImage:hasLocal apiKey:apiKey
+        [self classifyImageIntent:text hasLocalImage:hasLocal
                        completion:^(NSString *intent) {
             self.sendButton.enabled = YES;
             if ([intent isEqualToString:@"reopen"] && hasLocal) {
@@ -2179,9 +2230,9 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
                     [self callGptImage1:text];
                 } else {
                     if (self.lastImagePrompt.length > 0) {
-                        [self fetchRelevantMemories:text apiKey:apiKey
+                        [self fetchRelevantMemories:text
                                         completion:^(NSString *memories) {
-                            analyzePromptForContext(text, memories, apiKey,
+                            analyzePromptForContext(text, memories, jwtToken,
                                                    self.activeThread.threadID,
                             ^(EZContextResult *result) {
                                 NSString *finalPrompt = text;
@@ -2210,8 +2261,8 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     }
 
     // ── Chat / reasoning models ───────────────────────────────────────────────
-    [self fetchRelevantMemories:text apiKey:apiKey completion:^(NSString *memories) {
-        analyzePromptForContext(text, memories, apiKey, self.activeThread.threadID,
+    [self fetchRelevantMemories:text completion:^(NSString *memories) {
+        analyzePromptForContext(text, memories, jwtToken, self.activeThread.threadID,
         ^(EZContextResult *result) {
             self.sendButton.enabled = YES;
             EZLogf(EZLogLevelInfo, @"SEND",
@@ -2233,7 +2284,7 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
                 }
                 self.pendingImagePath = nil;
 
-                createMemoryFromCompletion(text, answer, apiKey,
+                createMemoryFromCompletion(text, answer, jwtToken,
                                            self.activeThread.threadID,
                                            attachmentsAtSend,
                                            ^(NSString *entry) {
@@ -2267,12 +2318,54 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// MARK: - EZ Edge Function Helper
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// POST JSON body to a Supabase edge function with the user's JWT.
+/// Calls completion on the main queue with the parsed JSON response.
+- (void)postToEZFunction:(NSString *)functionName
+                   token:(NSString *)token
+                    body:(NSDictionary *)body
+              completion:(void(^)(NSDictionary * _Nullable json, NSError * _Nullable error))completion {
+    NSString *urlStr = [NSString stringWithFormat:
+        @"https://spuoimtqofhbdzosrbng.supabase.co/functions/v1/%@", functionName];
+    NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:urlStr]];
+    req.HTTPMethod = @"POST";
+    req.timeoutInterval = 240; // generous — chat/sora can be slow
+    [req setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+    [req setValue:[NSString stringWithFormat:@"Bearer %@", token] forHTTPHeaderField:@"Authorization"];
+
+    NSError *bodyErr;
+    req.HTTPBody = [NSJSONSerialization dataWithJSONObject:body options:0 error:&bodyErr];
+    if (bodyErr) {
+        dispatch_async(dispatch_get_main_queue(), ^{ completion(nil, bodyErr); });
+        return;
+    }
+
+    [[[NSURLSession sharedSession] dataTaskWithRequest:req
+        completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (error) { completion(nil, error); return; }
+            NSError *jsonErr;
+            NSDictionary *json = [NSJSONSerialization
+                JSONObjectWithData:data ?: [NSData data] options:0 error:&jsonErr];
+            completion(json, jsonErr);
+        });
+    }] resume];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // MARK: - Memory Search
 // ─────────────────────────────────────────────────────────────────────────────
 
 - (void)fetchRelevantMemories:(NSString *)prompt
-                       apiKey:(NSString *)apiKey
                    completion:(void (^)(NSString *memories))completion {
+    // Capture the JWT on the calling thread (main thread) before we hop to a
+    // background queue. EZThreadSearchMemory needs it to call the AI ranker via
+    // ez-helper; without it the ranker is skipped and we fall back to recency only.
+    NSString *jwtToken = [EZAuthManager shared].accessToken;
+
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         NSString *memories = @"";
 
@@ -2284,10 +2377,10 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
             }
         }
 
-        if (entryCount >= 5 && apiKey.length > 0) {
+        if (entryCount >= 5) {
             EZLogf(EZLogLevelInfo, @"MEMORY", @"Semantic search over %ld entries for: %@",
                    (long)entryCount, prompt);
-            NSString *searched = EZThreadSearchMemory(prompt, apiKey);
+            NSString *searched = EZThreadSearchMemory(prompt, jwtToken);
             memories = searched.length > 0 ? searched : loadMemoryContext(15);
             EZLogf(EZLogLevelInfo, @"MEMORY", @"Search returned %lu chars",
                    (unsigned long)memories.length);
@@ -2304,9 +2397,6 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
 
 - (void)callChatCompletions {
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    NSString *apiKey = [EZKeyVault loadKeyForIdentifier:EZVaultKeyOpenAI];
-
-    if (!apiKey) { [self appendToChat:@"[Error: No API Key]"]; return; }
 
     BOOL isGPT5          = [self.selectedModel hasPrefix:@"gpt-5"];
     NSSet *webSearchCompatible = [NSSet setWithObjects:
@@ -2321,67 +2411,19 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
             @"[System: Web search skipped — not supported by %@. "
              "Switch to gpt-4o or a gpt-5 model to use web search.]",
             self.selectedModel]];
-        EZLogf(EZLogLevelWarning, @"WEBSEARCH",
-               @"Skipped — model %@ doesn't support Responses API tools", self.selectedModel);
     }
 
-    NSString *endpointStr = useResponsesAPI
-        ? @"https://api.openai.com/v1/responses"
-        : @"https://api.openai.com/v1/chat/completions";
-
-    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:
-        [NSURL URLWithString:endpointStr]];
-    request.HTTPMethod = @"POST";
-    if (isGPT5 && useWebSearch)       request.timeoutInterval = 240;
-    else if (isGPT5)                  request.timeoutInterval = 180;
-    else                              request.timeoutInterval = 90;
-    [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
-    [request setValue:[NSString stringWithFormat:@"Bearer %@", apiKey]
-   forHTTPHeaderField:@"Authorization"];
-
-    NSMutableDictionary *body = [NSMutableDictionary dictionary];
-    body[@"model"] = self.selectedModel;
-    NSString *sys  = [defaults stringForKey:@"systemMessage"];
-
+    NSString *sys = [defaults stringForKey:@"systemMessage"];
     NSArray *cleanContext = [self sanitizedContextForAPI:self.chatContext
-                                           modelSupportsVision:[self modelSupportsVision:self.selectedModel]
-                                               useResponsesAPI:useResponsesAPI];
+                                     modelSupportsVision:[self modelSupportsVision:self.selectedModel]
+                                         useResponsesAPI:useResponsesAPI];
 
-    if (useResponsesAPI) {
-        if (sys.length > 0) body[@"instructions"] = sys;
-        body[@"input"] = cleanContext;
-        if (useWebSearch) {
-            NSString *loc = [defaults stringForKey:@"webSearchLocation"] ?: @"";
-            NSMutableDictionary *webTool = [@{@"type": @"web_search_preview"} mutableCopy];
-            if (loc.length > 0) webTool[@"user_location"] = @{@"type":@"approximate",@"city":loc};
-            body[@"tools"] = @[webTool];
-            EZLog(EZLogLevelInfo, @"WEBSEARCH", @"Tool attached");
-        }
-    } else {
-        float temp = [defaults floatForKey:@"temperature"];
-        body[@"temperature"]       = @(temp > 0 ? temp : 0.7);
-        body[@"frequency_penalty"] = @([defaults floatForKey:@"frequency"]);
-        NSMutableArray *messages   = [NSMutableArray array];
-        if (sys.length > 0) [messages addObject:@{@"role":@"system",@"content":sys}];
-        [messages addObjectsFromArray:cleanContext];
-        body[@"messages"] = messages;
-    }
+    // Token estimation from assembled context
+    NSData *contextData      = [NSJSONSerialization dataWithJSONObject:cleanContext options:0 error:nil];
+    NSInteger inputEstimate  = (NSInteger)(contextData.length / 4);
+    NSInteger outputEstimate = isGPT5 ? 1500 : 800;
+    NSInteger totalEstimate  = inputEstimate + outputEstimate;
 
-    NSError *bodyErr;
-    NSData *bodyData = [NSJSONSerialization dataWithJSONObject:body options:0 error:&bodyErr];
-    if (bodyErr) { [self handleAPIError:@"Failed to build request"]; return; }
-    request.HTTPBody = bodyData;
-
-    // ── Token estimation from actual assembled payload ────────────────────────
-    // Input tokens: payload byte length / 4 (UTF-8 chars ≈ tokens for English).
-    // Output estimate: 800 tokens for standard models, 1500 for GPT-5 (tends
-    // toward longer reasoning responses). These are conservative — any overage
-    // gets refunded after the real usage comes back from the API.
-    NSInteger inputTokenEstimate  = (NSInteger)(bodyData.length / 4);
-    NSInteger outputTokenEstimate = isGPT5 ? 1500 : 800;
-    NSInteger totalTokenEstimate  = inputTokenEstimate + outputTokenEstimate;
-
-    // Map selected model to entitlement tier string
     NSString *featureTier;
     if (isGPT5 || [self.selectedModel hasPrefix:@"o1"] || [self.selectedModel hasPrefix:@"o3"]) {
         featureTier = @"chat_premium";
@@ -2395,155 +2437,90 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
 
     EZLogf(EZLogLevelInfo, @"COINS",
            @"Token estimate: input=%ld output=%ld total=%ld tier=%@",
-           (long)inputTokenEstimate, (long)outputTokenEstimate,
-           (long)totalTokenEstimate, featureTier);
+           (long)inputEstimate, (long)outputEstimate, (long)totalEstimate, featureTier);
 
-    // Check entitlement and deduct estimated coins before firing the API call.
-    NSString *capturedPrompt   = self.lastUserPrompt;
-    NSString *capturedThreadID = self.activeThread.threadID;
+    NSString *capturedPrompt      = self.lastUserPrompt;
+    NSString *capturedThreadID    = self.activeThread.threadID;
     NSMutableArray *capturedAttachments = [NSMutableArray array];
-    if (self.pendingImagePath.length > 0) {
-        [capturedAttachments addObject:self.pendingImagePath];
-    }
+    if (self.pendingImagePath.length > 0) [capturedAttachments addObject:self.pendingImagePath];
     self.pendingImagePath = nil;
 
-    EZLogf(EZLogLevelInfo, @"API", @"→ %@ [%@]%@",
-           endpointStr, self.selectedModel, useWebSearch ? @" +web" : @"");
     if (isGPT5) { dispatch_async(dispatch_get_main_queue(), ^{ [self showGPT5StatusBanner]; }); }
 
-    [[EZEntitlementManager shared] checkEntitlementForFeature:EZFeatureChatMini
-                                                  estimatedTokens:totalTokenEstimate
-                                                      featureTier:featureTier
-                                                           prompt:capturedPrompt
-                                                            model:self.selectedModel
-                                                       completion:^(BOOL allowed,
-                                                                    NSInteger balance,
-                                                                    NSString *reason) {
-        if (!allowed) {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                [self hideGPT5StatusBanner];
-                if ([reason isEqualToString:@"Not logged in"]) {
-                    [self appendToChat:@"[Error: Please sign in to use EZCompleteUI]"];
-                } else if ([reason isEqualToString:@"Insufficient coins"] ||
-                           [reason isEqualToString:@"No account found"]) {
-                    [self presentCoinStoreForFeature:featureTier];
-                } else {
-                    [self appendToChat:[NSString stringWithFormat:
-                        @"[Error: %@]", reason ?: @"Access denied"]];
-                }
-            });
-            return;
-        }
+    // Build ez-chat request body
+    NSMutableDictionary *ezBody = [NSMutableDictionary dictionary];
+    ezBody[@"model"]            = self.selectedModel;
+    ezBody[@"messages"]         = cleanContext;
+    ezBody[@"estimated_tokens"] = @(totalEstimate);
+    ezBody[@"feature_tier"]     = featureTier;
+    if (sys.length > 0)         ezBody[@"system"] = sys;
+    if (useWebSearch)           ezBody[@"web_search"] = @YES;
+    if (capturedPrompt.length > 0) {
+        NSUInteger cap = MIN(capturedPrompt.length, 120);
+        ezBody[@"prompt_preview"] = [capturedPrompt substringToIndex:cap];
+    }
+    NSString *loc = [defaults stringForKey:@"webSearchLocation"] ?: @"";
+    if (loc.length > 0) ezBody[@"location"] = loc;
 
-        [self fireAPIRequest:request
-                 featureTier:featureTier
-            estimatedTokens:totalTokenEstimate
-             capturedPrompt:capturedPrompt
-           capturedThreadID:capturedThreadID
-        capturedAttachments:capturedAttachments
-                     apiKey:apiKey
-             useResponsesAPI:useResponsesAPI
-                     isGPT5:isGPT5];
-    }];
-}
+    NSString *token = [EZAuthManager shared].accessToken;
+    if (!token) {
+        [self appendToChat:@"[Error: Not signed in]"];
+        return;
+    }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// MARK: - Fire API Request (after entitlement check passes)
-// ─────────────────────────────────────────────────────────────────────────────
+    NSURL *ezURL = [NSURL URLWithString:@"https://spuoimtqofhbdzosrbng.supabase.co/functions/v1/ez-chat"];
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:ezURL];
+    request.HTTPMethod = @"POST";
+    if (isGPT5 && useWebSearch)  request.timeoutInterval = 240;
+    else if (isGPT5)             request.timeoutInterval = 180;
+    else                         request.timeoutInterval = 90;
+    [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+    [request setValue:[NSString stringWithFormat:@"Bearer %@", token] forHTTPHeaderField:@"Authorization"];
+    request.HTTPBody = [NSJSONSerialization dataWithJSONObject:ezBody options:0 error:nil];
 
-- (void)fireAPIRequest:(NSMutableURLRequest *)request
-           featureTier:(NSString *)featureTier
-       estimatedTokens:(NSInteger)estimatedTokens
-        capturedPrompt:(NSString *)capturedPrompt
-      capturedThreadID:(NSString *)capturedThreadID
-   capturedAttachments:(NSArray *)capturedAttachments
-                apiKey:(NSString *)apiKey
-       useResponsesAPI:(BOOL)useResponsesAPI
-               isGPT5:(BOOL)isGPT5 {
+    EZLogf(EZLogLevelInfo, @"API", @"→ ez-chat [%@]%@", self.selectedModel, useWebSearch ? @" +web" : @"");
 
     [[[NSURLSession sharedSession] dataTaskWithRequest:request
         completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
-        if (error) {
-            dispatch_async(dispatch_get_main_queue(), ^{ [self hideGPT5StatusBanner]; });
-            [self handleAPIError:error.localizedDescription]; return;
-        }
+        dispatch_async(dispatch_get_main_queue(), ^{ [self hideGPT5StatusBanner]; });
+
+        if (error) { [self handleAPIError:error.localizedDescription]; return; }
 
         NSError *jsonErr;
-        id jsonObj = [NSJSONSerialization JSONObjectWithData:data options:0 error:&jsonErr];
-        if (jsonErr || !jsonObj || [jsonObj isKindOfClass:[NSNull class]]) {
-            [self handleAPIError:@"Could not parse API response"]; return;
-        }
-        NSDictionary *json = jsonObj;
+        NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data ?: [NSData data]
+                                                             options:0 error:&jsonErr];
+        if (jsonErr || !json) { [self handleAPIError:@"Could not parse API response"]; return; }
 
         id errObj = json[@"error"];
         if (errObj && ![errObj isKindOfClass:[NSNull class]]) {
-            id msg = ((NSDictionary *)errObj)[@"message"];
-            [self handleAPIError:(msg && ![msg isKindOfClass:[NSNull class]])
-                ? (NSString *)msg : @"Unknown API error"];
+            NSString *errMsg = [errObj isKindOfClass:[NSString class]] ? errObj : @"API error";
+            // Insufficient coins — show store
+            if ([errMsg isEqualToString:@"Insufficient coins"] ||
+                [json[@"reason"] isEqualToString:@"Insufficient coins"]) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [self presentCoinStoreForFeature:featureTier];
+                });
+            } else {
+                [self handleAPIError:errMsg];
+            }
             return;
         }
 
-        // ── Parse actual token usage and refund overage ───────────────────────
-        NSInteger actualTokens = 0;
-        id usageObj = json[@"usage"];
-        if (usageObj && ![usageObj isKindOfClass:[NSNull class]]) {
-            id total = ((NSDictionary *)usageObj)[@"total_tokens"];
-            if (total && ![total isKindOfClass:[NSNull class]]) {
-                actualTokens = [total integerValue];
-            }
-        }
-        if (actualTokens > 0 && estimatedTokens > 0) {
-            EZLogf(EZLogLevelInfo, @"COINS",
-                   @"Actual tokens=%ld estimated=%ld",
-                   (long)actualTokens, (long)estimatedTokens);
-            [[EZEntitlementManager shared] refundTokensForTier:featureTier
-                                               estimatedTokens:estimatedTokens
-                                                  actualTokens:actualTokens];
-        }
-
-        NSString *reply = nil;
-        if (useResponsesAPI) {
-            id outputObj = json[@"output"];
-            if (outputObj && ![outputObj isKindOfClass:[NSNull class]]) {
-                for (id item in (NSArray *)outputObj) {
-                    if ([item isKindOfClass:[NSNull class]]) continue;
-                    NSDictionary *d = item;
-                    if (![[d[@"type"] description] isEqualToString:@"message"]) continue;
-                    id contentArr = d[@"content"];
-                    if (!contentArr || [contentArr isKindOfClass:[NSNull class]]) continue;
-                    for (id block in (NSArray *)contentArr) {
-                        if ([block isKindOfClass:[NSNull class]]) continue;
-                        NSDictionary *b = block;
-                        if (![[b[@"type"] description] isEqualToString:@"output_text"]) continue;
-                        id t = b[@"text"];
-                        if (t && ![t isKindOfClass:[NSNull class]]) { reply = (NSString *)t; break; }
-                    }
-                    if (reply) break;
-                }
-            }
-        } else {
-            id choicesObj = json[@"choices"];
-            if (choicesObj && ![choicesObj isKindOfClass:[NSNull class]]
-                && [(NSArray *)choicesObj count] > 0) {
-                id first = ((NSArray *)choicesObj)[0];
-                if (first && ![first isKindOfClass:[NSNull class]]) {
-                    id msgObj = ((NSDictionary *)first)[@"message"];
-                    if (msgObj && ![msgObj isKindOfClass:[NSNull class]]) {
-                        id c = ((NSDictionary *)msgObj)[@"content"];
-                        if (c && ![c isKindOfClass:[NSNull class]]) reply = (NSString *)c;
-                    }
-                }
-            }
-        }
-
+        NSString *reply = json[@"reply"];
         if (!reply.length) {
-            EZLogf(EZLogLevelError, @"API", @"No reply. Raw: %@", json);
+            EZLogf(EZLogLevelError, @"API", @"No reply in ez-chat response: %@", json);
             [self handleAPIError:@"Unexpected response format"]; return;
         }
+
+        // Update balance from response
+        id balanceObj = json[@"balance"];
+        if (balanceObj && ![balanceObj isKindOfClass:[NSNull class]]) {
+            [[EZEntitlementManager shared] applyKnownBalance:[balanceObj integerValue]];
+        }
+
         EZLogf(EZLogLevelInfo, @"API", @"Reply %lu chars", (unsigned long)reply.length);
 
         dispatch_async(dispatch_get_main_queue(), ^{
-            [self hideGPT5StatusBanner];
             self.lastAIResponse = reply;
             [self.chatContext addObject:@{@"role": @"assistant", @"content": reply}];
 
@@ -2558,14 +2535,10 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
             [self appendToChat:[NSString stringWithFormat:@"AI: %@", displayReply]];
             [self saveActiveThread];
             [self checkReplyForLocalFilePaths:reply];
-
-            // Refresh coin display after refund settles
-            [[EZEntitlementManager shared] refreshBalanceWithCompletion:^(NSInteger balance) {
-                [self updateCoinBalanceDisplay];
-            }];
+            [self updateCoinBalanceDisplay];
         });
 
-        createMemoryFromCompletion(capturedPrompt ?: @"", reply, apiKey, capturedThreadID,
+        createMemoryFromCompletion(capturedPrompt ?: @"", reply, token, capturedThreadID,
                                    capturedAttachments,
         ^(NSString *entry) {
             if (entry) EZLogf(EZLogLevelInfo, @"MEMORY", @"Saved %lu chars",
@@ -2577,44 +2550,42 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
 
 - (void)callDalle3:(NSString *)prompt {
     [self appendToChat:@"[System: Generating Image...]"];
-    EZLog(EZLogLevelInfo, @"DALLE", @"Sending DALL-E 3 request");
-    NSString *apiKey = [EZKeyVault loadKeyForIdentifier:EZVaultKeyOpenAI];
+    EZLog(EZLogLevelInfo, @"DALLE", @"Sending DALL-E 3 request via ez-image");
 
-    NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:
-        [NSURL URLWithString:@"https://api.openai.com/v1/images/generations"]];
-    req.HTTPMethod = @"POST";
-    [req setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
-    [req setValue:[NSString stringWithFormat:@"Bearer %@", apiKey] forHTTPHeaderField:@"Authorization"];
-    req.HTTPBody = [NSJSONSerialization dataWithJSONObject:@{
-        @"model":@"dall-e-3", @"prompt":prompt, @"n":@1, @"size":@"1024x1024"
-    } options:0 error:nil];
+    NSString *token = [EZAuthManager shared].accessToken;
+    if (!token) { [self handleAPIError:@"Not signed in"]; return; }
+
+    NSDictionary *body = @{
+        @"action":  @"generate",
+        @"model":   @"dall-e-3",
+        @"prompt":  prompt,
+        @"n":       @1,
+        @"size":    @"1024x1024",
+        @"quality": @"standard",
+    };
 
     NSString *savedPrompt = prompt;
-    [[[NSURLSession sharedSession] dataTaskWithRequest:req
-        completionHandler:^(NSData *data, NSURLResponse *resp, NSError *error) {
-        if (!data) { [self handleAPIError:error.localizedDescription ?: @"DALL-E failed"]; return; }
-        NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+    [self postToEZFunction:@"ez-image" token:token body:body
+                completion:^(NSDictionary *json, NSError *error) {
+        if (error) { [self handleAPIError:error.localizedDescription]; return; }
         id errObj = json[@"error"];
         if (errObj && ![errObj isKindOfClass:[NSNull class]]) {
-            id m = ((NSDictionary *)errObj)[@"message"];
-            [self handleAPIError:(m && ![m isKindOfClass:[NSNull class]]) ? m : @"DALL-E error"];
+            [self handleAPIError:[errObj isKindOfClass:[NSString class]] ? errObj : @"DALL-E error"];
             return;
         }
-        id dataArr = json[@"data"];
-        if (!dataArr || [dataArr isKindOfClass:[NSNull class]] || [(NSArray *)dataArr count] == 0) {
-            [self handleAPIError:@"No image in response"]; return;
-        }
-        id imgObj = ((NSArray *)dataArr)[0];
-        id imgURL = ([imgObj isKindOfClass:[NSDictionary class]]) ? imgObj[@"url"] : nil;
-        if (!imgURL || [imgURL isKindOfClass:[NSNull class]]) {
-            [self handleAPIError:@"No image URL"]; return;
-        }
-        EZLog(EZLogLevelInfo, @"DALLE", @"Image URL received");
-        dispatch_async(dispatch_get_main_queue(), ^{
-            self.lastImagePrompt = savedPrompt;
-        });
-        [self downloadAndSaveImage:(NSString *)imgURL purpose:@"dalle"];
-    }] resume];
+        NSArray *images = json[@"images"];
+        if (!images.count) { [self handleAPIError:@"No image in response"]; return; }
+
+        // Update balance
+        id balanceObj = json[@"balance"];
+        if (balanceObj && ![balanceObj isKindOfClass:[NSNull class]])
+            [[EZEntitlementManager shared] applyKnownBalance:[balanceObj integerValue]];
+
+        // Download from signed URL and save
+        NSString *signedURL = images[0][@"url"];
+        dispatch_async(dispatch_get_main_queue(), ^{ self.lastImagePrompt = savedPrompt; });
+        [self downloadAndSaveImage:signedURL purpose:@"dalle"];
+    }];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2623,77 +2594,52 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
 
 - (void)callGptImage1:(NSString *)prompt {
     [self appendToChat:@"[System: Generating image with gpt-image-1...]"];
-    EZLog(EZLogLevelInfo, @"GPTIMAGE", @"Sending generation request");
-    NSString *apiKey = [EZKeyVault loadKeyForIdentifier:EZVaultKeyOpenAI];
+    EZLog(EZLogLevelInfo, @"GPTIMAGE", @"Sending generation request via ez-image");
 
-    NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:
-        [NSURL URLWithString:@"https://api.openai.com/v1/images/generations"]];
-    req.HTTPMethod = @"POST";
-    req.timeoutInterval = 120;
-    [req setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
-    [req setValue:[NSString stringWithFormat:@"Bearer %@", apiKey] forHTTPHeaderField:@"Authorization"];
-    NSUserDefaults *imgDefaults = [NSUserDefaults standardUserDefaults];
-    NSString *imgSize    = [imgDefaults stringForKey:@"imgSize"]    ?: @"1024x1024";
-    NSString *imgQuality = [imgDefaults stringForKey:@"imgQuality"] ?: @"auto";
-    NSString *imgFormat  = [imgDefaults stringForKey:@"imgFormat"]  ?: @"png";
-    NSString *imgBg      = [imgDefaults stringForKey:@"imgBackground"] ?: @"auto";
-    
-    // Use the actual selected model so gpt-image-1.5, -mini, chatgpt-image-latest all work
+    NSString *token = [EZAuthManager shared].accessToken;
+    if (!token) { [self handleAPIError:@"Not signed in"]; return; }
+
+    NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
+    NSString *imgSize    = [d stringForKey:@"imgSize"]       ?: @"1024x1024";
+    NSString *imgQuality = [d stringForKey:@"imgQuality"]    ?: @"auto";
+    NSString *imgFormat  = [d stringForKey:@"imgFormat"]     ?: @"png";
+    NSString *imgBg      = [d stringForKey:@"imgBackground"] ?: @"auto";
     NSString *imgModel   = self.selectedModel;
     if ([imgModel isEqualToString:@"gpt-image-1-edit"]) imgModel = @"gpt-image-1";
-    NSInteger imgN = [[NSUserDefaults standardUserDefaults] integerForKey:@"imgVariations"];
+    NSInteger imgN = [d integerForKey:@"imgVariations"];
     if (imgN < 1 || imgN > 4) imgN = 1;
-    NSMutableDictionary *imgParams = [@{
-        @"model":           imgModel,
-        @"prompt":          prompt,
-        @"n":               @(imgN),
-        @"size":            imgSize,
-        @"quality":         imgQuality,
-        @"output_format":   imgFormat
+
+    NSMutableDictionary *body = [@{
+        @"action":        @"generate",
+        @"model":         imgModel,
+        @"prompt":        prompt,
+        @"n":             @(imgN),
+        @"size":          imgSize,
+        @"quality":       imgQuality,
+        @"output_format": imgFormat,
+        @"background":    imgBg,
     } mutableCopy];
 
-    // background is only valid when output_format supports transparency (png/webp).
-    // Skip it when format is jpeg to avoid an API error.
-    if (![imgFormat isEqualToString:@"jpeg"]) {
-        imgParams[@"background"] = imgBg;
-    }
-    // NOTE: "moderation" is NOT a valid parameter for the generations endpoint —
-    // it is edits-only. Removed entirely.
-
-    // output_format=png always returns b64_json for gpt-image-1 family.
-    // Request b64 explicitly so we can save directly without a second download.
-    //imgParams[@"response_format"] = @"b64_json";
-    req.HTTPBody = [NSJSONSerialization dataWithJSONObject:imgParams options:0 error:nil];
-
     NSString *savedPrompt = prompt;
-    [[[NSURLSession sharedSession] dataTaskWithRequest:req
-        completionHandler:^(NSData *data, NSURLResponse *resp, NSError *error) {
-        if (!data) { [self handleAPIError:error.localizedDescription ?: @"gpt-image-1 request failed"]; return; }
-        NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
-        // Sanitized log — never dump b64 image data into the log
-        NSMutableDictionary *logJson = [json mutableCopy];
-        if ([logJson[@"data"] isKindOfClass:[NSArray class]]) {
-            NSMutableArray *sanitized = [NSMutableArray array];
-            for (NSDictionary *item in logJson[@"data"]) {
-                NSMutableDictionary *s = [item mutableCopy];
-                if (s[@"b64_json"]) s[@"b64_json"] = [NSString stringWithFormat:@"<b64 %lu bytes>", (unsigned long)[(NSString *)s[@"b64_json"] length]];
-                [sanitized addObject:s];
-            }
-            logJson[@"data"] = sanitized;
-        }
-        EZLogf(EZLogLevelDebug, @"GPTIMAGE", @"Response: %@", logJson);
+    [self postToEZFunction:@"ez-image" token:token body:body
+                completion:^(NSDictionary *json, NSError *error) {
+        if (error) { [self handleAPIError:error.localizedDescription]; return; }
         id errObj = json[@"error"];
         if (errObj && ![errObj isKindOfClass:[NSNull class]]) {
-            id m = ((NSDictionary *)errObj)[@"message"];
-            NSString *errMsg = (m && ![m isKindOfClass:[NSNull class]]) ? m : @"gpt-image-1 error";
+            NSString *errMsg = [errObj isKindOfClass:[NSString class]] ? errObj : @"Image error";
             [self handleAPIError:errMsg];
             dispatch_async(dispatch_get_main_queue(), ^{
                 [self appendImageGridToChat:@[] prompt:savedPrompt isError:YES errorText:errMsg];
             });
             return;
         }
-        id dataArr = json[@"data"];
-        if (!dataArr || [dataArr isKindOfClass:[NSNull class]] || [(NSArray *)dataArr count] == 0) {
+
+        id balanceObj = json[@"balance"];
+        if (balanceObj && ![balanceObj isKindOfClass:[NSNull class]])
+            [[EZEntitlementManager shared] applyKnownBalance:[balanceObj integerValue]];
+
+        NSArray *images = json[@"images"];
+        if (!images.count) {
             NSString *errMsg = @"No image in response";
             [self handleAPIError:errMsg];
             dispatch_async(dispatch_get_main_queue(), ^{
@@ -2701,30 +2647,20 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
             });
             return;
         }
-        // Collect all returned images (n variations)
+
+        // Download each signed URL and save locally
         NSMutableArray<NSString *> *savedPaths = [NSMutableArray array];
-        for (NSDictionary *imgObj in (NSArray *)dataArr) {
-            NSString *imgURL = [imgObj isKindOfClass:[NSDictionary class]] ? imgObj[@"url"]      : nil;
-            NSString *b64    = [imgObj isKindOfClass:[NSDictionary class]] ? imgObj[@"b64_json"] : nil;
-            if (b64 && ![b64 isKindOfClass:[NSNull class]]) {
-                NSData *imgData = [[NSData alloc] initWithBase64EncodedString:b64 options:0];
-                if (imgData) {
-                    NSString *fname = [NSString stringWithFormat:@"gptimage_%lu.png",
-                                      (unsigned long)savedPaths.count + 1];
-                    NSString *path = EZAttachmentSave(imgData, fname);
-                    if (path) [savedPaths addObject:path];
-                }
-            } else if (imgURL && ![imgURL isKindOfClass:[NSNull class]]) {
-                // URL-format: download synchronously on this background thread
-                NSData *imgData = [NSData dataWithContentsOfURL:[NSURL URLWithString:imgURL]];
-                if (imgData) {
-                    NSString *fname = [NSString stringWithFormat:@"gptimage_%lu.png",
-                                      (unsigned long)savedPaths.count + 1];
-                    NSString *path = EZAttachmentSave(imgData, fname);
-                    if (path) [savedPaths addObject:path];
-                }
-            }
+        for (NSDictionary *imgObj in images) {
+            NSString *signedURL = imgObj[@"url"];
+            if (!signedURL.length) continue;
+            NSData *imgData = [NSData dataWithContentsOfURL:[NSURL URLWithString:signedURL]];
+            if (!imgData) continue;
+            NSString *fname = [NSString stringWithFormat:@"gptimage_%lu.png",
+                               (unsigned long)savedPaths.count + 1];
+            NSString *path = EZAttachmentSave(imgData, fname);
+            if (path) [savedPaths addObject:path];
         }
+
         NSString *firstPath = savedPaths.firstObject;
         dispatch_async(dispatch_get_main_queue(), ^{
             self.lastImagePrompt = savedPrompt;
@@ -2739,24 +2675,14 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
             }
             if (savedPaths.count > 0) {
                 [self appendImageGridToChat:[savedPaths copy]
-                                     prompt:savedPrompt
-                                    isError:NO
-                                  errorText:nil];
-                [[EZEntitlementManager shared]
-                    completeUsageLogWithImagesReturned:(NSInteger)savedPaths.count
-                                            errorText:nil];
+                                     prompt:savedPrompt isError:NO errorText:nil];
             } else {
                 NSString *errMsg = @"Image generated but could not be saved.";
-                [self appendImageGridToChat:@[]
-                                     prompt:savedPrompt
-                                    isError:YES
-                                  errorText:errMsg];
-                [[EZEntitlementManager shared]
-                    completeUsageLogWithImagesReturned:0
-                                            errorText:errMsg];
+                [self appendImageGridToChat:@[] prompt:savedPrompt isError:YES errorText:errMsg];
             }
+            [self updateCoinBalanceDisplay];
         });
-    }] resume];
+    }];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2769,9 +2695,10 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
         [self appendToChat:@"[Error: No image attached for editing]"]; return;
     }
     [self appendToChat:@"[System: Editing image with gpt-image-1...]"];
-    EZLog(EZLogLevelInfo, @"IMGEDIT", @"Sending image edit request");
+    EZLog(EZLogLevelInfo, @"IMGEDIT", @"Sending image edit request via ez-image");
 
-    NSString *apiKey = [EZKeyVault loadKeyForIdentifier:EZVaultKeyOpenAI];
+    NSString *token = [EZAuthManager shared].accessToken;
+    if (!token) { [self handleAPIError:@"Not signed in"]; return; }
 
     NSData *imageData = [NSData dataWithContentsOfFile:imagePath]
                      ?: [NSData dataWithContentsOfURL:[NSURL fileURLWithPath:imagePath]];
@@ -2779,93 +2706,54 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
         self.sendButton.enabled = YES;
         [self appendToChat:@"[Error: Could not read image for editing]"]; return;
     }
-
     UIImage *img = [UIImage imageWithData:imageData];
     if (!img) { self.sendButton.enabled = YES; [self appendToChat:@"[Error: Could not decode image for editing]"]; return; }
     NSData *pngData = UIImagePNGRepresentation(img);
     if (!pngData) { self.sendButton.enabled = YES; [self appendToChat:@"[Error: Could not convert image to PNG]"]; return; }
-    EZLogf(EZLogLevelInfo, @"IMGEDIT", @"PNG ready: %lu bytes", (unsigned long)pngData.length);
 
-    NSString *boundary = [NSString stringWithFormat:@"Boundary-%@", [[NSUUID UUID] UUIDString]];
-    NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:
-        [NSURL URLWithString:@"https://api.openai.com/v1/images/edits"]];
-    req.HTTPMethod      = @"POST";
-    req.timeoutInterval = 120;
-    [req setValue:[NSString stringWithFormat:@"multipart/form-data; boundary=%@", boundary]
-       forHTTPHeaderField:@"Content-Type"];
-    [req setValue:[NSString stringWithFormat:@"Bearer %@", apiKey]
-       forHTTPHeaderField:@"Authorization"];
-
-    NSMutableData *body = [NSMutableData data];
-
-    [body appendData:[[NSString stringWithFormat:@"--%@\r\n", boundary] dataUsingEncoding:NSUTF8StringEncoding]];
-    [body appendData:[@"Content-Disposition: form-data; name=\"model\"\r\n\r\ngpt-image-1\r\n" dataUsingEncoding:NSUTF8StringEncoding]];
-    [body appendData:[[NSString stringWithFormat:@"--%@\r\n", boundary] dataUsingEncoding:NSUTF8StringEncoding]];
-    [body appendData:[@"Content-Disposition: form-data; name=\"image\"; filename=\"image.png\"\r\n" dataUsingEncoding:NSUTF8StringEncoding]];
-    [body appendData:[@"Content-Type: image/png\r\n\r\n" dataUsingEncoding:NSUTF8StringEncoding]];
-    [body appendData:pngData];
-    [body appendData:[@"\r\n" dataUsingEncoding:NSUTF8StringEncoding]];
-    [body appendData:[[NSString stringWithFormat:@"--%@\r\n", boundary] dataUsingEncoding:NSUTF8StringEncoding]];
-    [body appendData:[@"Content-Disposition: form-data; name=\"prompt\"\r\n\r\n" dataUsingEncoding:NSUTF8StringEncoding]];
-    [body appendData:[prompt dataUsingEncoding:NSUTF8StringEncoding]];
-    [body appendData:[@"\r\n" dataUsingEncoding:NSUTF8StringEncoding]];
-    NSUserDefaults *editDefaults = [NSUserDefaults standardUserDefaults];
-    NSString *editSize   = [editDefaults stringForKey:@"imgSize"]       ?: @"1024x1024";
-    NSString *editQual   = [editDefaults stringForKey:@"imgQuality"]    ?: @"auto";
-    NSString *editFmt    = [editDefaults stringForKey:@"imgFormat"]     ?: @"png";
-    NSString *editBg     = [editDefaults stringForKey:@"imgBackground"] ?: @"auto";
-    NSString *editModeration = [editDefaults stringForKey:@"imgModeration"] ?: @"low";
-
-    // Helper block to append a form field
-    void (^addField)(NSString *, NSString *) = ^(NSString *name, NSString *value) {
-        [body appendData:[[NSString stringWithFormat:@"--%@\r\n", boundary]
-                         dataUsingEncoding:NSUTF8StringEncoding]];
-        [body appendData:[[NSString stringWithFormat:
-            @"Content-Disposition: form-data; name=\"%@\"\r\n\r\n%@\r\n", name, value]
-            dataUsingEncoding:NSUTF8StringEncoding]];
-    };
-    NSInteger editN = [[NSUserDefaults standardUserDefaults] integerForKey:@"imgVariations"];
+    NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
+    NSString *editSize = [d stringForKey:@"imgSize"]        ?: @"1024x1024";
+    NSString *editQual = [d stringForKey:@"imgQuality"]     ?: @"auto";
+    NSString *editFmt  = [d stringForKey:@"imgFormat"]      ?: @"png";
+    NSString *editBg   = [d stringForKey:@"imgBackground"]  ?: @"auto";
+    NSString *editMod  = [d stringForKey:@"imgModeration"]  ?: @"low";
+    NSInteger editN    = [d integerForKey:@"imgVariations"];
     if (editN < 1 || editN > 4) editN = 1;
-    addField(@"n",             [NSString stringWithFormat:@"%ld", (long)editN]);
-    addField(@"size",          editSize);
-    addField(@"quality",       editQual);
-    addField(@"output_format", editFmt);
-    addField(@"background",    editBg);
-    addField(@"moderation",    editModeration);
-    [body appendData:[[NSString stringWithFormat:@"--%@--\r\n", boundary]
-                     dataUsingEncoding:NSUTF8StringEncoding]];
-    req.HTTPBody = body;
 
-    EZLogf(EZLogLevelInfo, @"IMGEDIT", @"Sending — prompt: %@", prompt);
+    NSString *b64Image = [pngData base64EncodedStringWithOptions:0];
 
-    [[[NSURLSession sharedSession] dataTaskWithRequest:req
-        completionHandler:^(NSData *data, NSURLResponse *resp, NSError *error) {
-        if (!data) { [self handleAPIError:error.localizedDescription ?: @"Image edit failed"]; return; }
-        NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
-        // Log sanitized response — never dump b64 image data into the log
-        NSMutableDictionary *logJson = [json mutableCopy];
-        if ([logJson[@"data"] isKindOfClass:[NSArray class]]) {
-            NSMutableArray *sanitized = [NSMutableArray array];
-            for (NSDictionary *item in logJson[@"data"]) {
-                NSMutableDictionary *s = [item mutableCopy];
-                if (s[@"b64_json"]) s[@"b64_json"] = [NSString stringWithFormat:@"<b64 %lu bytes>", (unsigned long)[(NSString *)s[@"b64_json"] length]];
-                [sanitized addObject:s];
-            }
-            logJson[@"data"] = sanitized;
-        }
-        EZLogf(EZLogLevelDebug, @"IMGEDIT", @"Response: %@", logJson);
+    NSDictionary *body = @{
+        @"action":        @"edit",
+        @"model":         @"gpt-image-1",
+        @"prompt":        prompt,
+        @"image_b64":     b64Image,
+        @"n":             @(editN),
+        @"size":          editSize,
+        @"quality":       editQual,
+        @"output_format": editFmt,
+        @"background":    editBg,
+        @"moderation":    editMod,
+    };
+
+    [self postToEZFunction:@"ez-image" token:token body:body
+                completion:^(NSDictionary *json, NSError *error) {
+        if (error) { [self handleAPIError:error.localizedDescription]; return; }
         id errObj = json[@"error"];
         if (errObj && ![errObj isKindOfClass:[NSNull class]]) {
-            id m = ((NSDictionary *)errObj)[@"message"];
-            NSString *errMsg = (m && ![m isKindOfClass:[NSNull class]]) ? m : @"Image edit error";
+            NSString *errMsg = [errObj isKindOfClass:[NSString class]] ? errObj : @"Image edit error";
             [self handleAPIError:errMsg];
             dispatch_async(dispatch_get_main_queue(), ^{
                 [self appendImageGridToChat:@[] prompt:prompt isError:YES errorText:errMsg];
             });
             return;
         }
-        id dataArr = json[@"data"];
-        if (!dataArr || [dataArr isKindOfClass:[NSNull class]] || [(NSArray *)dataArr count] == 0) {
+
+        id balanceObj = json[@"balance"];
+        if (balanceObj && ![balanceObj isKindOfClass:[NSNull class]])
+            [[EZEntitlementManager shared] applyKnownBalance:[balanceObj integerValue]];
+
+        NSArray *images = json[@"images"];
+        if (!images.count) {
             NSString *errMsg = @"No image in edit response";
             [self handleAPIError:errMsg];
             dispatch_async(dispatch_get_main_queue(), ^{
@@ -2873,24 +2761,19 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
             });
             return;
         }
-        // Collect all returned edit images
+
         NSMutableArray<NSString *> *savedPaths = [NSMutableArray array];
-        for (NSDictionary *imgObj in (NSArray *)dataArr) {
-            NSString *imgURL = [imgObj isKindOfClass:[NSDictionary class]] ? imgObj[@"url"]      : nil;
-            NSString *b64    = [imgObj isKindOfClass:[NSDictionary class]] ? imgObj[@"b64_json"] : nil;
-            NSData *imgData = nil;
-            if (b64 && ![b64 isKindOfClass:[NSNull class]]) {
-                imgData = [[NSData alloc] initWithBase64EncodedString:b64 options:0];
-            } else if (imgURL && ![imgURL isKindOfClass:[NSNull class]]) {
-                imgData = [NSData dataWithContentsOfURL:[NSURL URLWithString:imgURL]];
-            }
-            if (imgData) {
-                NSString *fname = [NSString stringWithFormat:@"edit_%lu.png",
-                                  (unsigned long)savedPaths.count + 1];
-                NSString *path = EZAttachmentSave(imgData, fname);
-                if (path) [savedPaths addObject:path];
-            }
+        for (NSDictionary *imgObj in images) {
+            NSString *signedURL = imgObj[@"url"];
+            if (!signedURL.length) continue;
+            NSData *imgData = [NSData dataWithContentsOfURL:[NSURL URLWithString:signedURL]];
+            if (!imgData) continue;
+            NSString *fname = [NSString stringWithFormat:@"edit_%lu.png",
+                               (unsigned long)savedPaths.count + 1];
+            NSString *path = EZAttachmentSave(imgData, fname);
+            if (path) [savedPaths addObject:path];
         }
+
         NSString *firstPath = savedPaths.firstObject;
         dispatch_async(dispatch_get_main_queue(), ^{
             self.lastImagePrompt = prompt;
@@ -2907,25 +2790,14 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
                 [self persistImagePath:firstPath prompt:prompt];
             }
             if (savedPaths.count > 0) {
-                [self appendImageGridToChat:[savedPaths copy]
-                                     prompt:prompt
-                                    isError:NO
-                                  errorText:nil];
-                [[EZEntitlementManager shared]
-                    completeUsageLogWithImagesReturned:(NSInteger)savedPaths.count
-                                            errorText:nil];
+                [self appendImageGridToChat:[savedPaths copy] prompt:prompt isError:NO errorText:nil];
             } else {
                 NSString *errMsg = @"Edit produced no image output.";
-                [self appendImageGridToChat:@[]
-                                     prompt:prompt
-                                    isError:YES
-                                  errorText:errMsg];
-                [[EZEntitlementManager shared]
-                    completeUsageLogWithImagesReturned:0
-                                            errorText:errMsg];
+                [self appendImageGridToChat:@[] prompt:prompt isError:YES errorText:errMsg];
             }
+            [self updateCoinBalanceDisplay];
         });
-    }] resume];
+    }];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2944,11 +2816,12 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
 
 - (void)callSora:(NSString *)prompt {
     [self appendToChat:@"[System: Submitting Sora 2 video job...]"];
-    EZLog(EZLogLevelInfo, @"SORA", @"Sending request");
+    EZLog(EZLogLevelInfo, @"SORA", @"Sending request via ez-sora");
 
-    NSUserDefaults *d    = [NSUserDefaults standardUserDefaults];
-    NSString *apiKey = [EZKeyVault loadKeyForIdentifier:EZVaultKeyOpenAI];
+    NSString *token = [EZAuthManager shared].accessToken;
+    if (!token) { [self handleAPIError:@"Not signed in"]; return; }
 
+    NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
     NSString *videoModel = [d stringForKey:@"soraModel"] ?: @"sora-2";
     NSString *resolution = [d stringForKey:@"soraSize"]  ?: @"720p";
     NSInteger rawDur     = [d integerForKey:@"soraDuration"] ?: 4;
@@ -2976,90 +2849,56 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     NSArray<NSString *> *validRes = @[@"1280x720", @"720x1280", @"1024x1792", @"1792x1024"];
     if (![validRes containsObject:resolution]) {
         NSDictionary *resMap = @{
-            @"480p":   @"1280x720",
-            @"720p":   @"1280x720",
-            @"1080p":  @"1792x1024",
-            @"portrait": @"720x1280",
-            @"landscape": @"1280x720",
-            @"480x270":  @"1280x720",
-            @"1280x720": @"1280x720",
-            @"1920x1080":@"1792x1024"
+            @"480p": @"1280x720", @"720p": @"1280x720", @"1080p": @"1792x1024",
+            @"portrait": @"720x1280", @"landscape": @"1280x720",
+            @"1280x720": @"1280x720", @"1920x1080": @"1792x1024"
         };
         resolution = resMap[resolution] ?: @"1280x720";
     }
 
     if (rawDur != secondsStr.integerValue) {
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [self appendToChat:[NSString stringWithFormat:
-                @"[System: Duration snapped to %@s (valid for %@)]",
-                secondsStr, videoModel]];
-        });
+        [self appendToChat:[NSString stringWithFormat:
+            @"[System: Duration snapped to %@s (valid for %@)]", secondsStr, videoModel]];
     }
 
-    NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:
-        [NSURL URLWithString:@"https://api.openai.com/v1/videos"]];
-    req.HTTPMethod = @"POST";
-    req.timeoutInterval = 30;
-    [req setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
-    [req setValue:[NSString stringWithFormat:@"Bearer %@", apiKey] forHTTPHeaderField:@"Authorization"];
+    NSDictionary *body = @{
+        @"action":   @"create",
+        @"model":    videoModel,
+        @"prompt":   prompt,
+        @"size":     resolution,
+        @"seconds":  secondsStr,
+    };
 
-    NSError *bodyErr;
-    req.HTTPBody = [NSJSONSerialization dataWithJSONObject:@{
-        @"model":   videoModel,
-        @"prompt":  prompt,
-        @"size":    resolution,
-        @"seconds": secondsStr
-    } options:0 error:&bodyErr];
-    if (bodyErr) { [self handleAPIError:@"Failed to build Sora request"]; return; }
-
-    EZLogf(EZLogLevelInfo, @"SORA", @"model=%@ size=%@ seconds=%@", videoModel, resolution, secondsStr);
-
-    [[[NSURLSession sharedSession] dataTaskWithRequest:req
-        completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+    [self postToEZFunction:@"ez-sora" token:token body:body
+                completion:^(NSDictionary *json, NSError *error) {
         if (error) { [self handleAPIError:error.localizedDescription]; return; }
-
-        NSString *rawBody = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] ?: @"(unreadable)";
-        EZLogf(EZLogLevelDebug, @"SORA", @"Raw response: %@", rawBody);
-
-        NSError *parseErr;
-        id jsonObj = [NSJSONSerialization JSONObjectWithData:data options:0 error:&parseErr];
-        if (parseErr || !jsonObj || [jsonObj isKindOfClass:[NSNull class]]) {
-            EZLogf(EZLogLevelError, @"SORA", @"Parse failed. Raw: %@", rawBody);
-            [self handleAPIError:@"Could not parse Sora response — check log"]; return;
-        }
-        NSDictionary *json = jsonObj;
         id errObj = json[@"error"];
         if (errObj && ![errObj isKindOfClass:[NSNull class]]) {
-            id m = ((NSDictionary *)errObj)[@"message"];
-            [self handleAPIError:(m && ![m isKindOfClass:[NSNull class]]) ? m : @"Sora error"];
+            [self handleAPIError:[errObj isKindOfClass:[NSString class]] ? errObj : @"Sora error"];
             return;
         }
 
-        NSString *jobId = nil;
-        id topId = json[@"id"];
-        if (topId && ![topId isKindOfClass:[NSNull class]]) jobId = (NSString *)topId;
+        NSString *jobId = json[@"job_id"];
+        if (!jobId.length) { [self handleAPIError:@"Sora returned no job ID"]; return; }
 
-        if (!jobId.length) {
-            EZLogf(EZLogLevelError, @"SORA", @"No job ID. Full response: %@", json);
-            [self handleAPIError:@"Sora returned no job ID — check log"]; return;
-        }
+        id balanceObj = json[@"balance"];
+        if (balanceObj && ![balanceObj isKindOfClass:[NSNull class]])
+            [[EZEntitlementManager shared] applyKnownBalance:[balanceObj integerValue]];
 
-        EZLogf(EZLogLevelInfo, @"SORA", @"Job created: %@  status: %@", jobId, json[@"status"] ?: @"?");
-
-        // Only persist the job ID — never store the API key in NSUserDefaults.
-        // On resume, the key is reloaded from EZKeyVault (Keychain).
         [[NSUserDefaults standardUserDefaults] setObject:jobId forKey:@"soraActivejobId"];
+        [[NSUserDefaults standardUserDefaults] setObject:json[@"log_id"] ?: @"" forKey:@"soraActiveLogId"];
         [[NSUserDefaults standardUserDefaults] synchronize];
 
+        EZLogf(EZLogLevelInfo, @"SORA", @"Job created: %@  status: %@", jobId, json[@"status"] ?: @"?");
         dispatch_async(dispatch_get_main_queue(), ^{
             [self appendToChat:[NSString stringWithFormat:
                 @"[Sora: Job queued (%@) — polling for completion...]", jobId]];
         });
-        [self pollSoraJob:jobId apiKey:apiKey];
-    }] resume];
+        [self pollSoraJob:jobId token:token];
+    }];
 }
 
-- (void)pollSoraJob:(NSString *)jobId apiKey:(NSString *)apiKey {
+- (void)pollSoraJob:(NSString *)jobId token:(NSString *)token {
     __block NSInteger attempts = 0;
     dispatch_queue_t q = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
 
@@ -3078,19 +2917,12 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
         }
         NSTimeInterval delay = (attempts <= 6) ? 5.0 : 10.0;
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay * NSEC_PER_SEC)), q, ^{
-            NSString *pollURL = [NSString stringWithFormat:@"https://api.openai.com/v1/videos/%@", jobId];
-            NSMutableURLRequest *r = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:pollURL]];
-            r.HTTPMethod = @"GET";
-            [r setValue:[NSString stringWithFormat:@"Bearer %@", apiKey] forHTTPHeaderField:@"Authorization"];
-
-            [[[NSURLSession sharedSession] dataTaskWithRequest:r
-                completionHandler:^(NSData *data, NSURLResponse *resp, NSError *err) {
+            NSDictionary *pollBody = @{ @"action": @"poll", @"job_id": jobId };
+            [self postToEZFunction:@"ez-sora" token:token body:pollBody
+                        completion:^(NSDictionary *jd, NSError *err) {
                 void (^s)(void) = weakPoll;
-                if (!data || err) { if (s) s(); return; }
+                if (err || !jd) { if (s) s(); return; }
 
-                id j = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
-                if (!j || [j isKindOfClass:[NSNull class]]) { if (s) s(); return; }
-                NSDictionary *jd = j;
                 NSString *status = jd[@"status"] ?: @"";
                 EZLogf(EZLogLevelInfo, @"SORA", @"Poll %ld — status: %@", (long)attempts, status);
 
@@ -3110,12 +2942,9 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
                 }
 
                 if ([status isEqualToString:@"failed"] || [status isEqualToString:@"error"]) {
-                    id errDetail = jd[@"error"];
-                    NSString *msg = (errDetail && ![errDetail isKindOfClass:[NSNull class]])
-                        ? [errDetail description] : @"Video generation failed";
                     [[NSUserDefaults standardUserDefaults] removeObjectForKey:@"soraActivejobId"];
                     dispatch_async(dispatch_get_main_queue(), ^{
-                        [self appendToChat:[NSString stringWithFormat:@"[Sora failed: %@]", msg]];
+                        [self appendToChat:@"[Sora failed: video generation error]"];
                     });
                     return;
                 }
@@ -3126,12 +2955,12 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
                 if (done) {
                     [[NSUserDefaults standardUserDefaults] removeObjectForKey:@"soraActivejobId"];
                     EZLogf(EZLogLevelInfo, @"SORA", @"Job complete — fetching content");
-                    [self fetchSoraContent:jobId apiKey:apiKey];
+                    NSString *logId = [[NSUserDefaults standardUserDefaults] stringForKey:@"soraActiveLogId"];
+                    [self fetchSoraContent:jobId logId:logId token:token];
                     return;
                 }
-
                 if (s) s();
-            }] resume];
+            }];
         });
     };
     weakPoll = poll;
@@ -3142,79 +2971,38 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     if (!self.isViewLoaded || !self.view.window) return;
     NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
     NSString *jobId   = [d stringForKey:@"soraActivejobId"];
-    // CHANGED: reload key from EZKeyVault — never stored in NSUserDefaults
-    NSString *apiKey  = [EZKeyVault loadKeyForIdentifier:EZVaultKeyOpenAI];
-    if (!jobId.length || !apiKey.length) return;
+    NSString *token   = [EZAuthManager shared].accessToken;
+    if (!jobId.length || !token.length) return;
     EZLogf(EZLogLevelInfo, @"SORA", @"Resuming poll for job: %@", jobId);
-    [self appendToChat:[NSString stringWithFormat:
-        @"[Sora: Resuming poll for job %@...]", jobId]];
-    [self pollSoraJob:jobId apiKey:apiKey];
+    [self appendToChat:[NSString stringWithFormat:@"[Sora: Resuming poll for job %@...]", jobId]];
+    [self pollSoraJob:jobId token:token];
 }
 
-- (void)fetchSoraContent:(NSString *)jobId apiKey:(NSString *)apiKey {
-    NSString *contentURL = [NSString stringWithFormat:
-        @"https://api.openai.com/v1/videos/%@/content", jobId];
-    NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:contentURL]];
-    req.HTTPMethod = @"GET";
-    [req setValue:[NSString stringWithFormat:@"Bearer %@", apiKey] forHTTPHeaderField:@"Authorization"];
+- (void)fetchSoraContent:(NSString *)jobId logId:(NSString *)logId token:(NSString *)token {
+    NSMutableDictionary *fetchBody = [@{ @"action": @"fetch", @"job_id": jobId } mutableCopy];
+    if (logId.length) fetchBody[@"log_id"] = logId;
 
-    [[[NSURLSession sharedSession] dataTaskWithRequest:req
-        completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+    [self postToEZFunction:@"ez-sora" token:token body:fetchBody
+                completion:^(NSDictionary *json, NSError *error) {
         if (error) { [self handleAPIError:error.localizedDescription]; return; }
-
-        NSHTTPURLResponse *http = (NSHTTPURLResponse *)response;
-        EZLogf(EZLogLevelInfo, @"SORA", @"Content fetch HTTP %ld, %lu bytes",
-               (long)http.statusCode, (unsigned long)data.length);
-
-        if (http.statusCode == 200 && data.length > 10000) {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                NSString *savedPath = EZAttachmentSave(data, @"sora_video.mp4");
-                NSURL *tmp = [NSURL fileURLWithPath:
-                    [NSTemporaryDirectory() stringByAppendingPathComponent:@"sora_gen.mp4"]];
-                [data writeToURL:tmp atomically:YES];
-                if (savedPath) {
-                    self.activeThread.lastVideoLocalPath = savedPath;
-                    [self saveActiveThread];
-                }
-                [self appendToChat:@"[Sora: Video ready \u2713]"];
-                // Present immediately if visible; defer to viewWillAppear if backgrounded
-                if (self.view.window) {
-                    self.previewURL = tmp;
-                    QLPreviewController *ql = [[QLPreviewController alloc] init];
-                    ql.dataSource = self;
-                    [self presentViewController:ql animated:YES completion:nil];
-                    EZLog(EZLogLevelInfo, @"SORA", @"Video saved and presented");
-                } else {
-                    self.pendingVideoURL = tmp;
-                    EZLog(EZLogLevelInfo, @"SORA", @"Video saved — deferred (app backgrounded)");
-                }
-            });
+        id errObj = json[@"error"];
+        if (errObj && ![errObj isKindOfClass:[NSNull class]]) {
+            [self handleAPIError:[errObj isKindOfClass:[NSString class]] ? errObj : @"Sora fetch error"];
             return;
         }
 
-        NSError *parseErr;
-        id jsonObj = [NSJSONSerialization JSONObjectWithData:data options:0 error:&parseErr];
-        if (!parseErr && jsonObj && ![jsonObj isKindOfClass:[NSNull class]]) {
-            NSDictionary *json = jsonObj;
-            EZLogf(EZLogLevelDebug, @"SORA", @"Content JSON: %@", json);
-            id urlObj = json[@"url"] ?: json[@"download_url"] ?: json[@"video_url"];
-            if (urlObj && ![urlObj isKindOfClass:[NSNull class]]) {
-                [self downloadAndShowVideo:(NSString *)urlObj]; return;
-            }
+        // ez-sora returns a signed URL — download directly from Supabase Storage
+        NSString *signedURL = json[@"url"];
+        if (signedURL.length) {
+            [self downloadAndShowVideo:signedURL];
+        } else {
+            [self handleAPIError:@"Could not retrieve Sora video URL"];
         }
-
-        NSURL *finalURL = response.URL;
-        if (finalURL && ![finalURL.absoluteString containsString:@"/content"]) {
-            EZLogf(EZLogLevelInfo, @"SORA", @"Following redirect to: %@", finalURL);
-            [self downloadAndShowVideo:finalURL.absoluteString]; return;
-        }
-
-        [self handleAPIError:@"Could not retrieve Sora video content"];
-        EZLogf(EZLogLevelError, @"SORA", @"Content fetch failed. HTTP %ld body: %@",
-               (long)http.statusCode,
-               [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] ?: @"?");
-    }] resume];
+    }];
 }
+
+// MARK: - Image Download / Save / QuickLook
+// ─────────────────────────────────────────────────────────────────────────────
 
 - (void)downloadAndShowVideo:(NSString *)urlString {
     EZLog(EZLogLevelInfo, @"SORA", @"Downloading video...");
@@ -3239,7 +3027,7 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
 
         EZLog(EZLogLevelInfo, @"SORA", @"Video ready");
         dispatch_async(dispatch_get_main_queue(), ^{
-            [self appendToChat:@"[Sora: Video ready \u2713]"];
+            [self appendToChat:@"[Sora: Video ready ✓]"];
             if (self.view.window) {
                 self.previewURL = tmp;
                 QLPreviewController *ql = [[QLPreviewController alloc] init];
@@ -3253,10 +3041,6 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
         });
     }] resume];
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// MARK: - Image Download / Save / QuickLook
-// ─────────────────────────────────────────────────────────────────────────────
 
 - (void)downloadAndSaveImage:(NSString *)urlString purpose:(NSString *)purpose {
     [[[NSURLSession sharedSession] downloadTaskWithURL:[NSURL URLWithString:urlString]
@@ -3306,44 +3090,43 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
 
 - (void)transcribeAudio:(NSURL *)fileURL {
     [self appendToChat:@"[System: Whisper uploading...]"];
-    EZLog(EZLogLevelInfo, @"WHISPER", @"Starting transcription");
-    // CHANGED: Use EZKeyVault instead of legacy NSUserDefaults @"apiKey"
-    NSString *apiKey = [EZKeyVault loadKeyForIdentifier:EZVaultKeyOpenAI];
-    NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:
-        [NSURL URLWithString:@"https://api.openai.com/v1/audio/transcriptions"]];
-    req.HTTPMethod = @"POST";
-    NSString *boundary = [NSString stringWithFormat:@"Boundary-%@", [[NSUUID UUID] UUIDString]];
-    [req setValue:[NSString stringWithFormat:@"multipart/form-data; boundary=%@", boundary]
-       forHTTPHeaderField:@"Content-Type"];
-    [req setValue:[NSString stringWithFormat:@"Bearer %@", apiKey]
-       forHTTPHeaderField:@"Authorization"];
-    NSMutableData *body = [NSMutableData data];
-    [body appendData:[[NSString stringWithFormat:@"--%@\r\n", boundary] dataUsingEncoding:NSUTF8StringEncoding]];
-    [body appendData:[[NSString stringWithFormat:
-        @"Content-Disposition: form-data; name=\"file\"; filename=\"%@\"\r\n",
-        fileURL.lastPathComponent] dataUsingEncoding:NSUTF8StringEncoding]];
-    [body appendData:[@"Content-Type: audio/mpeg\r\n\r\n" dataUsingEncoding:NSUTF8StringEncoding]];
-    [body appendData:[NSData dataWithContentsOfURL:fileURL]];
-    [body appendData:[@"\r\n" dataUsingEncoding:NSUTF8StringEncoding]];
-    [body appendData:[[NSString stringWithFormat:@"--%@\r\n", boundary] dataUsingEncoding:NSUTF8StringEncoding]];
-    [body appendData:[@"Content-Disposition: form-data; name=\"model\"\r\n\r\nwhisper-1\r\n"
-                      dataUsingEncoding:NSUTF8StringEncoding]];
-    [body appendData:[[NSString stringWithFormat:@"--%@--\r\n", boundary] dataUsingEncoding:NSUTF8StringEncoding]];
-    req.HTTPBody = body;
+    EZLog(EZLogLevelInfo, @"WHISPER", @"Starting transcription via ez-whisper");
 
-    [[[NSURLSession sharedSession] dataTaskWithRequest:req
-        completionHandler:^(NSData *data, NSURLResponse *resp, NSError *error) {
-        if (!data) {
+    NSString *token = [EZAuthManager shared].accessToken;
+    if (!token) { [self appendToChat:@"[Error: Not signed in]"]; return; }
+
+    NSData *audioData = [NSData dataWithContentsOfURL:fileURL];
+    if (!audioData) {
+        EZLog(EZLogLevelError, @"WHISPER", @"Could not read audio file");
+        [self appendToChat:@"[Error: Could not read audio file]"]; return;
+    }
+
+    NSString *b64Audio   = [audioData base64EncodedStringWithOptions:0];
+    NSString *filename   = fileURL.lastPathComponent ?: @"recording.m4a";
+    NSDictionary *body   = @{ @"audio_b64": b64Audio, @"filename": filename };
+
+    [self postToEZFunction:@"ez-whisper" token:token body:body
+                completion:^(NSDictionary *json, NSError *error) {
+        if (error) {
             EZLogf(EZLogLevelError, @"WHISPER", @"Failed: %@", error.localizedDescription); return;
         }
-        NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+        id errObj = json[@"error"];
+        if (errObj && ![errObj isKindOfClass:[NSNull class]]) {
+            EZLogf(EZLogLevelError, @"WHISPER", @"API error: %@", errObj); return;
+        }
+
+        id balanceObj = json[@"balance"];
+        if (balanceObj && ![balanceObj isKindOfClass:[NSNull class]])
+            [[EZEntitlementManager shared] applyKnownBalance:[balanceObj integerValue]];
+
         NSString *formatted = [self formatWhisperTranscript:json[@"text"]];
         EZLogf(EZLogLevelInfo, @"WHISPER", @"Done (%lu chars)", (unsigned long)formatted.length);
         dispatch_async(dispatch_get_main_queue(), ^{
             self.messageTextField.text = formatted;
             [self appendToChat:[NSString stringWithFormat:@"[Whisper]: %@", formatted]];
+            [self updateCoinBalanceDisplay];
         });
-    }] resume];
+    }];
 }
 
 - (NSString *)formatWhisperTranscript:(NSString *)raw {
@@ -3506,10 +3289,24 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
 - (void)handleAPIError:(NSString *)msg {
     EZLogf(EZLogLevelError, @"API", @"Error: %@", msg);
     dispatch_async(dispatch_get_main_queue(), ^{
+        [self hideGPT5StatusBanner];  // ← ADD THIS
         self.sendButton.enabled = YES;
-        [self appendToChat:[NSString stringWithFormat:@"[API Error]: %@", msg]];
+
+        // ── Friendly message for OpenAI rate limit errors ─────────────────
+        NSString *display = msg;
+        if ([msg containsString:@"Rate limit"] ||
+            [msg containsString:@"rate_limit"] ||
+            [msg containsString:@"tokens per min"] ||
+            [msg containsString:@"429"]) {
+            display = @"OpenAI rate limit reached — the request was too large "
+                       "or too many requests were sent at once. Please wait a "
+                       "moment and try again.";
+        }
+
+        [self appendToChat:[NSString stringWithFormat:@"[API Error]: %@", display]];
     });
 }
+
 
 - (void)keyboardWillChange:(NSNotification *)notification {
     CGRect kbFrame  = [notification.userInfo[UIKeyboardFrameEndUserInfoKey] CGRectValue];
@@ -3626,7 +3423,6 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
 
 - (void)classifyImageIntent:(NSString *)prompt
               hasLocalImage:(BOOL)hasLocalImage
-                     apiKey:(NSString *)apiKey
                  completion:(void(^)(NSString *intent))completion {
 
     NSString *lower = prompt.lowercaseString;
@@ -3675,32 +3471,41 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
         return;
     }
 
-    if (!hasLocalImage || !apiKey.length) {
+    if (!hasLocalImage) {
         dispatch_async(dispatch_get_main_queue(), ^{ completion(@"generate"); });
         return;
     }
 
-    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-        NSString *sys =
-            @"You classify user intent for an AI image app. The user may want to:\n"
-             "  REOPEN — view/display a previously generated image they already have\n"
-             "  GENERATE — create a brand new image from a description\n"
-             "  EDIT — modify/edit a previously generated image\n\n"
-             "Reply with exactly one word: REOPEN, GENERATE, or EDIT. Nothing else.";
-        NSString *msg = [NSString stringWithFormat:
-            @"User prompt: \"%@\"\nContext: User has a previously generated image available.",
-            prompt];
+    // Tier 2 — ambiguous: use ez-helper for classification
+    NSString *token = [EZAuthManager shared].accessToken;
+    if (!token) {
+        dispatch_async(dispatch_get_main_queue(), ^{ completion(@"generate"); });
+        return;
+    }
 
-        NSString *raw = EZCallHelperModel(sys, msg, apiKey, 10);
+    NSString *sys =
+        @"You classify user intent for an AI image app. The user may want to:\n"
+         "  REOPEN — view/display a previously generated image they already have\n"
+         "  GENERATE — create a brand new image from a description\n"
+         "  EDIT — modify/edit a previously generated image\n\n"
+         "Reply with exactly one word: REOPEN, GENERATE, or EDIT. Nothing else.";
+    NSString *msg = [NSString stringWithFormat:
+        @"User prompt: \"%@\"\nContext: User has a previously generated image available.",
+        prompt];
+
+    NSDictionary *body = @{ @"system": sys, @"message": msg, @"max_tokens": @10 };
+    [self postToEZFunction:@"ez-helper" token:token body:body
+                completion:^(NSDictionary *json, NSError *error) {
+        NSString *raw    = json[@"result"] ?: @"";
         NSString *result = [[raw uppercaseString]
                             stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
         EZLogf(EZLogLevelInfo, @"IMAGE", @"Tier 2 classifier: %@ → %@", prompt, result);
 
         NSString *intent = @"generate";
         if ([result isEqualToString:@"REOPEN"]) intent = @"reopen";
-        else if ([result isEqualToString:@"EDIT"])   intent = @"edit";
+        else if ([result isEqualToString:@"EDIT"]) intent = @"edit";
         dispatch_async(dispatch_get_main_queue(), ^{ completion(intent); });
-    });
+    }];
 }
 
 - (void)checkReplyForLocalFilePaths:(NSString *)reply {
@@ -4174,6 +3979,24 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
         ql.dataSource = self;
         [self presentViewController:ql animated:YES completion:nil];
         EZLog(EZLogLevelInfo, @"SORA", @"Deferred Sora video presented on viewWillAppear");
+    }
+}
+
+// ── One-time terms acceptance check ─────────────────────────────────────────
+// Static flag prevents re-presenting on subsequent viewDidAppear calls
+// (e.g. after the user dismisses a child modal during the same session).
+- (void)viewDidAppear:(BOOL)animated {
+    [super viewDidAppear:animated];
+    static BOOL termsCheckPerformed = NO;
+    if (!termsCheckPerformed) {
+        termsCheckPerformed = YES;
+        if (![EZTermsAcceptanceViewController hasUserAcceptedCurrentTerms]) {
+            EZTermsAcceptanceViewController *acceptanceVC =
+                [EZTermsAcceptanceViewController new];
+            acceptanceVC.modalPresentationStyle = UIModalPresentationOverFullScreen;
+            acceptanceVC.modalTransitionStyle   = UIModalTransitionStyleCrossDissolve;
+            [self presentViewController:acceptanceVC animated:YES completion:nil];
+        }
     }
 }
 

@@ -1,11 +1,12 @@
-//
+
+    //
 // TextToSpeechViewController.m//
 // Notes:
 //  
 //  - Adds a proper NSTimer property `stopMeterTimer` and safe invalidation.
 //  - Includes ElevenLabs TTS integration with safe fallback to mp3_44100_128,
 //    voice listing, MP3->M4A conversion, PCM->WAV wrapping, UI styling, and safe-area inset.
-//  - Uses EZKeyVault.loadKeyForIdentifier:EZVaultKeyElevenLabs for API key retrieval.
+
 //  - Requires helpers.h (EZLog / EZLogf) and EZKeyVault.h in the project.
 //  - Link against AVFoundation and UIKit.
 //
