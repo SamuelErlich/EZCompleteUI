@@ -1,12 +1,19 @@
 // BRGameView.h
 // BrainRotGame
-// EZCompleteUI v1.2
+// EZCompleteUI v1.5
 //
-// Changes from v1.1:
-//   - floorsTransparent now suppresses grid lines and wall fills entirely —
-//     in image mode the background UIImageView IS the map, so only item/exit/
-//     enemy dots are drawn on top. Grid lines and wall squares survive only in
-//     the solid-color fallback mode (no background image loaded).
+// Changes from v1.4:
+//   - backgroundImage property added. When set, drawRect crops the portion of
+//     the image corresponding to the current viewport and draws it as the base
+//     layer, automatically synchronized with cameraCol/cameraRow. The separate
+//     backgroundImageView in the ViewController is no longer needed.
+//   - floorsTransparent removed. Tile passability overlays are now always drawn
+//     on top of the background image: wall tiles get a dark semi-transparent
+//     overlay so the player can always see where they can't walk; floor tiles
+//     draw nothing (the image shows through). This replaces the old approach
+//     of relying on image brightness to communicate passability, which was
+//     unreliable across different AI-generated art styles.
+//   - hidePlayerDot behaviour unchanged; enemy indicators still always draw.
 
 #import <UIKit/UIKit.h>
 #import "BRGameModel.h"
@@ -17,16 +24,27 @@ NS_ASSUME_NONNULL_BEGIN
 
 @property (nonatomic, strong, nullable) BRGameModel *model;
 
-/// When YES, all tile fills and grid lines are suppressed so the background
-/// UIImageView placed behind this view shows through completely. Only item dots,
-/// the exit tile highlight, and (when hidePlayerDot=NO) enemy/player dots are
-/// drawn. Set to NO for the solid-color fallback when no background image loaded.
-@property (nonatomic, assign) BOOL floorsTransparent;
+/// When set, drawRect crops the viewport region of this image and draws it
+/// as the bottom layer, perfectly synchronized with the camera offset.
+/// Set to nil to use solid-color tile fills (fallback mode).
+@property (nonatomic, strong, nullable) UIImage *backgroundImage;
 
-/// When YES, the player circle is not drawn. Use when the ViewController
-/// is rendering the hero with an animated UIImageView overlay instead.
-/// Also gates the inline enemy dots (image mode uses UIImageView overlays for enemies).
+/// When YES, the player dot is not drawn. Use when the ViewController
+/// renders the hero with an animated UIImageView overlay instead.
+/// Does NOT affect enemy indicators — those always draw.
 @property (nonatomic, assign) BOOL hidePlayerDot;
+
+/// Number of tile columns visible at once. Default 9.
+@property (nonatomic, assign) NSInteger viewportCols;
+
+/// Number of tile rows visible at once. Default 9.
+@property (nonatomic, assign) NSInteger viewportRows;
+
+/// Left edge of the visible window in model tile coordinates.
+@property (nonatomic, assign) NSInteger cameraCol;
+
+/// Top edge of the visible window in model tile coordinates.
+@property (nonatomic, assign) NSInteger cameraRow;
 
 @end
 

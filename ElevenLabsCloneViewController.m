@@ -1,4 +1,5 @@
 // ElevenLabsCloneViewController.m
+// EZCompleteUI v2.0
 //
 // Combines:
 //  - All working record/playback/upload logic from the previous version
@@ -7,18 +8,32 @@
 //  - "My Cloned Voices" section: fetched from GET /v1/voices, per-voice
 //    DELETE /v1/voices/:id with optimistic removal + server-error rollback
 //
-// Requires: WaveformView.h (add @property (nonatomic, assign) CGFloat progress;
-//           if not already there — see compiler fix notes)
+// Changes from v1.x:
+//   - All ElevenLabs API calls routed through ez-elevenlabs Supabase edge
+//     function. No API key on device. Auth via EZAuthManager JWT.
+//   - EZKeyVault import and apiKey method removed entirely.
+//   - uploadIVCWithAPIKey:, createPVCWithAPIKey:, uploadPVCSampleWithAPIKey:
+//     replaced by callEZElevenLabs:completion: edge function helper.
+//   - deleteVoiceWithID: and refreshVoicesFromServer route through edge function.
+//   - PVC segment (index 1) disabled + alpha 0.5 until Creator plan active.
+//     Code retained so re-enabling is a one-line change.
+//   - 402 (insufficient coins) and 403 (slot limit / membership required)
+//     responses handled with descriptive alerts.
+//   - Slot count and limit returned from edge function, shown in success alert.
+//
+// Requires: WaveformView.h
 
 #import "ElevenLabsCloneViewController.h"
 #import "WaveformView.h"
 #import <AVFoundation/AVFoundation.h>
 #import <QuickLook/QuickLook.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
-#import "EZKeyVault.h"
 #import "helpers.h"
+#import "EZAuthManager.h"
 
-static NSString * const kMyVoicesDefaultsKey = @"ELMyClonedVoices";
+static NSString * const kMyVoicesDefaultsKey    = @"ELMyClonedVoices";
+static NSString * const kEZElevenLabsURL         =
+    @"https://spuoimtqofhbdzosrbng.supabase.co/functions/v1/ez-elevenlabs";
 
 // ---------------------------------------------------------------------------
 #pragma mark - Interface
@@ -167,6 +182,11 @@ static NSString * const kMyVoicesDefaultsKey = @"ELMyClonedVoices";
                         initWithItems:@[@"Instant (IVC)", @"Professional (PVC)"]];
     self.modeControl.frame = CGRectMake(m, y, w, 32);
     self.modeControl.selectedSegmentIndex = 0;
+    // PVC disabled until Creator plan active — segment stays in UI so
+    // re-enabling is removing these two lines only.
+    [self.modeControl setEnabled:NO forSegmentAtIndex:1];
+    [self.modeControl setTitleTextAttributes:@{NSForegroundColorAttributeName:
+        [UIColor tertiaryLabelColor]} forState:UIControlStateDisabled];
     [self.modeControl addTarget:self
                          action:@selector(modeChanged:)
                forControlEvents:UIControlEventValueChanged];
@@ -174,7 +194,7 @@ static NSString * const kMyVoicesDefaultsKey = @"ELMyClonedVoices";
     y += 38;
 
     UILabel *pvcNote = [[UILabel alloc] initWithFrame:CGRectMake(m, y, w, 18)];
-    pvcNote.text = @"⚠️ PVC requires a Creator plan or higher.";
+    pvcNote.text = @"⚠️ Professional Voice Clone — Creator plan required (coming soon)";
     pvcNote.font = [UIFont systemFontOfSize:11];
     pvcNote.textColor = [UIColor secondaryLabelColor];
     [self.scrollView addSubview:pvcNote];
@@ -854,8 +874,10 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
 #pragma mark - Upload / Clone
 // ---------------------------------------------------------------------------
 
-- (NSString *)apiKey {
-    return [EZKeyVault loadKeyForIdentifier:EZVaultKeyElevenLabs] ?: @"";
+/// Returns the current user's JWT for authenticating edge function calls.
+/// Returns nil when the user is not signed in.
+- (NSString *)userJWT {
+    return [EZAuthManager shared].accessToken;
 }
 
 - (void)uploadClone:(id)sender {
@@ -864,298 +886,145 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
                 message:@"Please record or import a sample first."];
         return;
     }
-    NSString *name = [self.nameField.text ?: @""
-        stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    NSString *name = [[self.nameField.text ?: @""
+        stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet]
+        copy];
     if (name.length == 0) {
         [self showAlert:@"Missing Name" message:@"Enter a voice name."];
         return;
     }
-    NSString *key = [self apiKey];
-    if (key.length == 0) {
-        [self showAlert:@"Missing API Key"
-                message:@"Set your ElevenLabs API key in Settings."];
+    NSString *jwt = [self userJWT];
+    if (jwt.length == 0) {
+        [self showAlert:@"Not Signed In"
+                message:@"Sign in to your EZComplete account to clone voices."];
         return;
     }
+
+    // PVC is currently disabled — segment index 1 is greyed out in buildUI.
+    // If somehow triggered, route it to the server which will return 403 plan_required.
+    NSString *action = (self.modeControl.selectedSegmentIndex == 0)
+                     ? @"clone_voice" : @"pvc_clone";
+
+    NSData *audioData = [NSData dataWithContentsOfURL:self.recordedFileURL];
+    if (audioData.length == 0) {
+        [self showAlert:@"Empty File" message:@"The recording file is empty."];
+        return;
+    }
+    NSString *audioB64     = [audioData base64EncodedStringWithOptions:0];
+    NSString *audioFilename = self.recordedFileURL.lastPathComponent ?: @"sample.wav";
+    BOOL noiseRemoval      = self.noiseSwitch.isOn;
 
     [self setLoading:YES];
+    NSDictionary *payload = @{
+        @"action":                    action,
+        @"name":                      name,
+        @"audio_b64":                 audioB64,
+        @"filename":                  audioFilename,
+        @"remove_background_noise":   @(noiseRemoval),
+    };
 
-    if (self.modeControl.selectedSegmentIndex == 0) {
-        // ---- IVC ----
-        [self uploadIVCWithAPIKey:key
-                       completion:^(NSString *voiceID, NSError *err) {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                [self setLoading:NO];
-                if (err) {
-                    [self showAlert:@"IVC Upload Failed"
-                            message:err.localizedDescription];
-                    EZLogf(EZLogLevelError, @"IVC", @"Upload failed: %@", err);
-                    return;
-                }
-                NSDictionary *v = @{@"voice_id": voiceID,
-                                    @"name": name,
-                                    @"category": @"cloned"};
-                [self saveVoiceLocally:v];
-                [self showAlert:@"Instant Clone Created"
-                        message:[NSString stringWithFormat:@"Voice ID: %@", voiceID]];
-                EZLogf(EZLogLevelInfo, @"IVC", @"Created voice %@", voiceID);
-            });
-        }];
-    } else {
-        // ---- PVC: create then upload sample ----
-        [self createPVCWithAPIKey:key
-                       completion:^(NSString *voiceID, NSError *err) {
-            if (err || voiceID.length == 0) {
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    [self setLoading:NO];
-                    [self showAlert:@"PVC Create Failed"
-                            message:err.localizedDescription ?: @"No voice ID returned."];
-                    EZLogf(EZLogLevelError, @"PVC", @"Create failed: %@",
-                           err ?: @"No voice id");
-                });
+    [self callEZElevenLabs:payload jwt:jwt
+               completion:^(NSDictionary *responseDict, NSInteger statusCode, NSError *networkError) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self setLoading:NO];
+
+            if (networkError) {
+                [self showAlert:@"Network Error" message:networkError.localizedDescription];
                 return;
             }
-            self.createdPVCVoiceID = voiceID;
-            [self uploadPVCSampleWithAPIKey:key
-                                    voiceID:voiceID
-                                 completion:^(NSError *uErr) {
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    [self setLoading:NO];
-                    if (uErr) {
-                        [self showAlert:@"PVC Sample Upload Failed"
-                                message:uErr.localizedDescription];
-                        EZLogf(EZLogLevelError, @"PVC",
-                               @"Sample upload failed for %@: %@", voiceID, uErr);
-                        return;
-                    }
-                    NSDictionary *v = @{@"voice_id": voiceID,
-                                        @"name": name,
-                                        @"category": @"professional"};
-                    [self saveVoiceLocally:v];
-                    [self showAlert:@"PVC Voice Created"
-                            message:[NSString stringWithFormat:
-                                     @"Voice ID: %@\nComplete verification and "
-                                     @"training to activate.", voiceID]];
-                    EZLogf(EZLogLevelInfo, @"PVC",
-                           @"Created PVC voice %@", voiceID);
-                });
-            }];
-        }];
-    }
+            if (statusCode == 402) {
+                NSInteger balance = [responseDict[@"balance"] integerValue];
+                NSInteger cost    = [responseDict[@"cost"]    integerValue];
+                [self showAlert:@"Need More Coins"
+                        message:[NSString stringWithFormat:
+                                 @"You have %ld coins but cloning costs %ld coins.",
+                                 (long)balance, (long)cost]];
+                return;
+            }
+            if (statusCode == 403) {
+                NSString *errKey = responseDict[@"error"] ?: @"";
+                NSString *reason = responseDict[@"reason"] ?: @"Access denied.";
+                NSString *title  = [errKey isEqualToString:@"clone_slot_limit"]
+                                 ? @"Voice Slot Full"
+                                 : [errKey isEqualToString:@"membership_required"]
+                                 ? @"Subscription Required"
+                                 : @"Not Available";
+                [self showAlert:title message:reason];
+                return;
+            }
+            if (statusCode < 200 || statusCode >= 300) {
+                NSString *msg = responseDict[@"error"] ?: responseDict[@"detail"]
+                             ?: @"Upload failed.";
+                [self showAlert:@"Clone Failed" message:msg];
+                return;
+            }
+
+            NSString *voiceID     = responseDict[@"voice_id"];
+            NSInteger slotsUsed   = [responseDict[@"slots_used"]  integerValue];
+            NSInteger slotsLimit  = [responseDict[@"slots_limit"] integerValue];
+
+            if (voiceID.length == 0) {
+                [self showAlert:@"Clone Failed" message:@"No voice ID in response."];
+                return;
+            }
+
+            NSDictionary *voiceEntry = @{
+                @"voice_id": voiceID,
+                @"name":     name,
+                @"category": @"cloned",
+            };
+            [self saveVoiceLocally:voiceEntry];
+
+            NSString *slotInfo = (slotsLimit > 0)
+                ? [NSString stringWithFormat:@"\nSlots used: %ld / %ld",
+                   (long)slotsUsed, (long)slotsLimit]
+                : @"";
+            [self showAlert:@"Voice Cloned"
+                    message:[NSString stringWithFormat:@"Voice ID: %@%@", voiceID, slotInfo]];
+            EZLogf(EZLogLevelInfo, @"CLONE", @"Created voice %@", voiceID);
+        });
+    }];
 }
 
 // ---------------------------------------------------------------------------
-#pragma mark IVC: POST /v1/voices/add (multipart)
+#pragma mark - Edge Function Helper
 // ---------------------------------------------------------------------------
 
-- (void)uploadIVCWithAPIKey:(NSString *)apiKey
-                 completion:(void(^)(NSString *voiceID, NSError *err))completion {
-    if (![NSFileManager.defaultManager fileExistsAtPath:self.recordedFileURL.path]) {
-        completion(nil, [NSError errorWithDomain:@"VoiceCloner" code:-10
-                                       userInfo:@{NSLocalizedDescriptionKey:
-                                                  @"No recorded file on disk."}]);
-        return;
-    }
-    NSData *fileData = [NSData dataWithContentsOfURL:self.recordedFileURL];
-    if (fileData.length == 0) {
-        completion(nil, [NSError errorWithDomain:@"VoiceCloner" code:-11
-                                       userInfo:@{NSLocalizedDescriptionKey:
-                                                  @"Recorded file is empty."}]);
-        return;
-    }
-
+/// Posts a JSON payload to the ez-elevenlabs edge function and returns the
+/// decoded response dictionary, HTTP status code, and any network error.
+/// Always called on a background thread; completion is NOT dispatched to main —
+/// callers are responsible for their own dispatch_async(main) if needed.
+- (void)callEZElevenLabs:(NSDictionary *)payload
+                     jwt:(NSString *)jwt
+              completion:(void (^)(NSDictionary *responseDict,
+                                   NSInteger     statusCode,
+                                   NSError      *networkError))completion {
     NSMutableURLRequest *req =
-        [NSMutableURLRequest requestWithURL:
-         [NSURL URLWithString:@"https://api.elevenlabs.io/v1/voices/add"]];
-    req.HTTPMethod = @"POST";
-    [req setValue:apiKey       forHTTPHeaderField:@"xi-api-key"];
-    [req setValue:@"application/json" forHTTPHeaderField:@"Accept"];
-
-    NSString *boundary = [NSUUID UUID].UUIDString;
-    [req setValue:[NSString stringWithFormat:@"multipart/form-data; boundary=%@",
-                   boundary] forHTTPHeaderField:@"Content-Type"];
-
-    NSString *voiceName = [(self.nameField.text ?: @"My Voice") stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-    NSString *rbn = self.noiseSwitch.isOn ? @"true" : @"false";
-    NSString *filename = self.recordedFileURL.lastPathComponent ?: @"sample.wav";
-
-    NSMutableData *body = [NSMutableData data];
-    [body appendData:[[NSString stringWithFormat:
-        @"--%@\r\nContent-Disposition: form-data; name=\"name\"\r\n\r\n%@\r\n",
-        boundary, voiceName] dataUsingEncoding:NSUTF8StringEncoding]];
-    [body appendData:[[NSString stringWithFormat:
-        @"--%@\r\nContent-Disposition: form-data; name=\"remove_background_noise\"\r\n\r\n%@\r\n",
-        boundary, rbn] dataUsingEncoding:NSUTF8StringEncoding]];
-    [body appendData:[[NSString stringWithFormat:
-        @"--%@\r\nContent-Disposition: form-data; name=\"files\"; filename=\"%@\"\r\n"
-        @"Content-Type: audio/wav\r\n\r\n",
-        boundary, filename] dataUsingEncoding:NSUTF8StringEncoding]];
-    [body appendData:fileData];
-    [body appendData:[[NSString stringWithFormat:@"\r\n--%@--\r\n", boundary]
-                      dataUsingEncoding:NSUTF8StringEncoding]];
-    req.HTTPBody = body;
+        [NSMutableURLRequest requestWithURL:[NSURL URLWithString:kEZElevenLabsURL]];
+    req.HTTPMethod      = @"POST";
+    req.timeoutInterval = 60;
+    [req setValue:@"application/json"                       forHTTPHeaderField:@"Content-Type"];
+    [req setValue:[NSString stringWithFormat:@"Bearer %@", jwt] forHTTPHeaderField:@"Authorization"];
+    req.HTTPBody = [NSJSONSerialization dataWithJSONObject:payload options:0 error:nil];
 
     [[[NSURLSession sharedSession] dataTaskWithRequest:req
-                                    completionHandler:^(NSData *data,
-                                                        NSURLResponse *resp,
-                                                        NSError *error) {
-        if (error) { completion(nil, error); return; }
-        NSHTTPURLResponse *hr = (NSHTTPURLResponse *)resp;
-        if (hr.statusCode < 200 || hr.statusCode >= 300) {
-            NSString *msg = [self.class prettyAPIErrMsgFromData:data
-                                                     defaultMsg:@"Server error"];
-            completion(nil, [NSError errorWithDomain:@"VoiceCloner"
-                                               code:hr.statusCode
-                                           userInfo:@{NSLocalizedDescriptionKey: msg}]);
-            return;
+        completionHandler:^(NSData *data, NSURLResponse *resp, NSError *networkError) {
+        NSHTTPURLResponse *httpResp = (NSHTTPURLResponse *)resp;
+        NSInteger statusCode = httpResp.statusCode;
+        NSDictionary *responseDict = nil;
+        if (data.length > 0) {
+            id parsed = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+            if ([parsed isKindOfClass:[NSDictionary class]]) responseDict = parsed;
         }
-        NSError *jsonErr = nil;
-        NSDictionary *dict =
-            [NSJSONSerialization JSONObjectWithData:data options:0 error:&jsonErr];
-        if (jsonErr || ![dict isKindOfClass:NSDictionary.class]) {
-            completion(nil, jsonErr ?: [NSError errorWithDomain:@"VoiceCloner"
-                                                          code:-2
-                                                      userInfo:@{NSLocalizedDescriptionKey:
-                                                                 @"Invalid response"}]);
-            return;
-        }
-        NSString *voiceID = dict[@"voice_id"] ?: dict[@"voiceId"] ?: dict[@"id"];
-        if (!voiceID) {
-            completion(nil, [NSError errorWithDomain:@"VoiceCloner" code:-3
-                                           userInfo:@{NSLocalizedDescriptionKey:
-                                                      @"No voice_id in response"}]);
-            return;
-        }
-        completion(voiceID, nil);
-    }] resume];
-}
-
-// ---------------------------------------------------------------------------
-#pragma mark PVC: POST /v1/voices/pvc (JSON)
-// ---------------------------------------------------------------------------
-
-- (void)createPVCWithAPIKey:(NSString *)apiKey
-                 completion:(void(^)(NSString *voiceID, NSError *err))completion {
-    NSMutableURLRequest *req =
-        [NSMutableURLRequest requestWithURL:
-         [NSURL URLWithString:@"https://api.elevenlabs.io/v1/voices/pvc"]];
-    req.HTTPMethod = @"POST";
-    [req setValue:apiKey              forHTTPHeaderField:@"xi-api-key"];
-    [req setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
-    [req setValue:@"application/json" forHTTPHeaderField:@"Accept"];
-
-    NSString *proVoiceName = [(self.nameField.text ?: @"MyProVoice") stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-    if (proVoiceName.length == 0) {
-        proVoiceName = @"MyProVoice";
-    }
-
-    NSString *languageCode = [(self.langField.text ?: @"en") stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-    if (languageCode.length == 0) {
-        languageCode = @"en";
-    }
-
-    req.HTTPBody = [NSJSONSerialization
-                    dataWithJSONObject:@{@"name": proVoiceName,
-                                         @"language": languageCode}
-                               options:0
-                                 error:nil];
-    [[[NSURLSession sharedSession] dataTaskWithRequest:req
-                                    completionHandler:^(NSData *data,
-                                                        NSURLResponse *resp,
-                                                        NSError *error) {
-        if (error) { completion(nil, error); return; }
-        NSHTTPURLResponse *hr = (NSHTTPURLResponse *)resp;
-        if (hr.statusCode < 200 || hr.statusCode >= 300) {
-            NSString *msg = [self.class prettyAPIErrMsgFromData:data
-                                                     defaultMsg:@"Server error"];
-            completion(nil, [NSError errorWithDomain:@"VoiceCloner"
-                                               code:hr.statusCode
-                                           userInfo:@{NSLocalizedDescriptionKey: msg}]);
-            return;
-        }
-        NSError *jsonErr = nil;
-        NSDictionary *dict =
-            [NSJSONSerialization JSONObjectWithData:data options:0 error:&jsonErr];
-        NSString *voiceID = dict[@"voice_id"] ?: dict[@"id"];
-        if (!voiceID) {
-            completion(nil, [NSError errorWithDomain:@"VoiceCloner" code:-3
-                                           userInfo:@{NSLocalizedDescriptionKey:
-                                                      @"No voice_id in PVC response"}]);
-            return;
-        }
-        completion(voiceID, nil);
-    }] resume];
-}
-
-// ---------------------------------------------------------------------------
-#pragma mark PVC Samples: POST /v1/voices/pvc/:id/samples (multipart)
-// ---------------------------------------------------------------------------
-
-- (void)uploadPVCSampleWithAPIKey:(NSString *)apiKey
-                          voiceID:(NSString *)voiceID
-                       completion:(void(^)(NSError *err))completion {
-    if (![NSFileManager.defaultManager fileExistsAtPath:self.recordedFileURL.path]) {
-        completion([NSError errorWithDomain:@"VoiceCloner" code:-10
-                                  userInfo:@{NSLocalizedDescriptionKey:
-                                             @"No recorded file on disk."}]);
-        return;
-    }
-    NSData *fileData = [NSData dataWithContentsOfURL:self.recordedFileURL];
-    if (fileData.length == 0) {
-        completion([NSError errorWithDomain:@"VoiceCloner" code:-11
-                                  userInfo:@{NSLocalizedDescriptionKey:
-                                             @"Recorded file is empty."}]);
-        return;
-    }
-
-    NSString *endpoint = [NSString stringWithFormat:
-                          @"https://api.elevenlabs.io/v1/voices/pvc/%@/samples",
-                          [self urlEncode:voiceID]];
-    NSMutableURLRequest *req =
-        [NSMutableURLRequest requestWithURL:[NSURL URLWithString:endpoint]];
-    req.HTTPMethod = @"POST";
-    [req setValue:apiKey              forHTTPHeaderField:@"xi-api-key"];
-    [req setValue:@"application/json" forHTTPHeaderField:@"Accept"];
-
-    NSString *boundary = [NSUUID UUID].UUIDString;
-    [req setValue:[NSString stringWithFormat:@"multipart/form-data; boundary=%@",
-                   boundary] forHTTPHeaderField:@"Content-Type"];
-
-    NSString *rbn      = self.noiseSwitch.isOn ? @"true" : @"false";
-    NSString *filename = self.recordedFileURL.lastPathComponent ?: @"sample.wav";
-
-    NSMutableData *body = [NSMutableData data];
-    [body appendData:[[NSString stringWithFormat:
-        @"--%@\r\nContent-Disposition: form-data; name=\"remove_background_noise\"\r\n\r\n%@\r\n",
-        boundary, rbn] dataUsingEncoding:NSUTF8StringEncoding]];
-    [body appendData:[[NSString stringWithFormat:
-        @"--%@\r\nContent-Disposition: form-data; name=\"files\"; filename=\"%@\"\r\n"
-        @"Content-Type: audio/wav\r\n\r\n",
-        boundary, filename] dataUsingEncoding:NSUTF8StringEncoding]];
-    [body appendData:fileData];
-    [body appendData:[[NSString stringWithFormat:@"\r\n--%@--\r\n", boundary]
-                      dataUsingEncoding:NSUTF8StringEncoding]];
-    req.HTTPBody = body;
-
-    [[[NSURLSession sharedSession] dataTaskWithRequest:req
-                                    completionHandler:^(NSData *data,
-                                                        NSURLResponse *resp,
-                                                        NSError *error) {
-        if (error) { completion(error); return; }
-        NSHTTPURLResponse *hr = (NSHTTPURLResponse *)resp;
-        if (hr.statusCode < 200 || hr.statusCode >= 300) {
-            NSString *msg = [self.class prettyAPIErrMsgFromData:data
-                                                     defaultMsg:@"Server error"];
-            completion([NSError errorWithDomain:@"VoiceCloner"
-                                          code:hr.statusCode
-                                      userInfo:@{NSLocalizedDescriptionKey: msg}]);
-            return;
-        }
-        completion(nil);
+        completion(responseDict ?: @{}, statusCode, networkError);
     }] resume];
 }
 
 // ---------------------------------------------------------------------------
 #pragma mark - My Voices: persistence
+// ---------------------------------------------------------------------------
+
+
 // ---------------------------------------------------------------------------
 
 - (void)loadCachedVoices {
@@ -1199,45 +1068,27 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
 }
 
 - (void)refreshVoicesFromServer {
-    NSString *key = [self apiKey];
-    if (key.length == 0) return; // no key yet — silently skip
+    NSString *jwt = [self userJWT];
+    if (jwt.length == 0) return; // not signed in — silently skip
 
     self.refreshVoicesButton.hidden = YES;
     [self.voicesSpinner startAnimating];
 
-    NSMutableURLRequest *req =
-        [NSMutableURLRequest requestWithURL:
-         [NSURL URLWithString:@"https://api.elevenlabs.io/v1/voices"]];
-    [req setValue:key              forHTTPHeaderField:@"xi-api-key"];
-    [req setValue:@"application/json" forHTTPHeaderField:@"Accept"];
-
     __weak typeof(self) weakSelf = self;
-    [[[NSURLSession sharedSession] dataTaskWithRequest:req
-                                    completionHandler:^(NSData *data,
-                                                        NSURLResponse *resp,
-                                                        NSError *error) {
+    NSDictionary *payload = @{ @"action": @"fetch_voices" };
+    [self callEZElevenLabs:payload jwt:jwt
+               completion:^(NSDictionary *responseDict, NSInteger statusCode, NSError *networkError) {
         dispatch_async(dispatch_get_main_queue(), ^{
             weakSelf.refreshVoicesButton.hidden = NO;
             [weakSelf.voicesSpinner stopAnimating];
-            if (error || !data) return;
+            if (networkError || statusCode < 200 || statusCode >= 300) return;
 
-            NSHTTPURLResponse *hr = (NSHTTPURLResponse *)resp;
-            if (hr.statusCode < 200 || hr.statusCode >= 300) return;
+            NSArray *voices = responseDict[@"voices"];
+            if (![voices isKindOfClass:[NSArray class]]) return;
 
-            NSError *jsonErr = nil;
-            NSDictionary *dict =
-                [NSJSONSerialization JSONObjectWithData:data
-                                               options:0
-                                                 error:&jsonErr];
-            if (jsonErr || ![dict isKindOfClass:NSDictionary.class]) return;
-
-            NSArray *voices = dict[@"voices"];
-            if (![voices isKindOfClass:NSArray.class]) return;
-
-            // Keep only voices this account cloned
             NSMutableArray *cloned = [NSMutableArray array];
             for (NSDictionary *v in voices) {
-                if (![v isKindOfClass:NSDictionary.class]) continue;
+                if (![v isKindOfClass:[NSDictionary class]]) continue;
                 NSString *cat = v[@"category"];
                 if ([cat isEqualToString:@"cloned"] ||
                     [cat isEqualToString:@"professional"]) {
@@ -1251,7 +1102,7 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
                                                      forKey:kMyVoicesDefaultsKey];
             [weakSelf rebuildVoiceRows];
         });
-    }] resume];
+    }];
 }
 
 - (id)plistSafeObject:(id)obj {
@@ -1456,10 +1307,10 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
 }
 
 - (void)deleteVoiceWithID:(NSString *)voiceID atIndex:(NSUInteger)index {
-    NSString *key = [self apiKey];
-    if (key.length == 0) {
-        [self showAlert:@"Missing API Key"
-                message:@"Set your ElevenLabs API key in Settings."];
+    NSString *jwt = [self userJWT];
+    if (jwt.length == 0) {
+        [self showAlert:@"Not Signed In"
+                message:@"Sign in to delete voices."];
         return;
     }
     if (index >= self.myVoices.count) return;
@@ -1469,41 +1320,28 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     [self.myVoices removeObjectAtIndex:index];
     [self rebuildVoiceRows];
 
-    NSString *urlStr = [NSString stringWithFormat:
-                        @"https://api.elevenlabs.io/v1/voices/%@",
-                        [self urlEncode:voiceID]];
-    NSMutableURLRequest *req =
-        [NSMutableURLRequest requestWithURL:[NSURL URLWithString:urlStr]];
-    req.HTTPMethod = @"DELETE";
-    [req setValue:key              forHTTPHeaderField:@"xi-api-key"];
-    [req setValue:@"application/json" forHTTPHeaderField:@"Accept"];
-
     __weak typeof(self) weakSelf = self;
-    [[[NSURLSession sharedSession] dataTaskWithRequest:req
-                                    completionHandler:^(NSData *data,
-                                                        NSURLResponse *resp,
-                                                        NSError *error) {
+    NSDictionary *payload = @{ @"action": @"delete_voice", @"voice_id": voiceID };
+    [self callEZElevenLabs:payload jwt:jwt
+               completion:^(NSDictionary *responseDict, NSInteger statusCode, NSError *networkError) {
         dispatch_async(dispatch_get_main_queue(), ^{
-            NSHTTPURLResponse *hr = (NSHTTPURLResponse *)resp;
-            BOOL ok = (!error && hr.statusCode >= 200 && hr.statusCode < 300);
+            BOOL ok = (!networkError && statusCode >= 200 && statusCode < 300);
             if (!ok) {
-                // Roll back
+                // Roll back optimistic removal
                 NSUInteger restoreAt = MIN(index, weakSelf.myVoices.count);
                 [weakSelf.myVoices insertObject:removed atIndex:restoreAt];
                 [weakSelf rebuildVoiceRows];
-                NSString *msg = error.localizedDescription
-                    ?: [weakSelf.class prettyAPIErrMsgFromData:data
-                                                    defaultMsg:@"Delete failed."];
+                NSString *msg = networkError.localizedDescription
+                    ?: responseDict[@"error"] ?: @"Delete failed.";
                 [weakSelf showAlert:@"Delete Failed" message:msg];
-                EZLogf(EZLogLevelError, @"DEL",
-                       @"Delete voice %@ failed: %@", voiceID, msg);
+                EZLogf(EZLogLevelError, @"DEL", @"Delete voice %@ failed: %@", voiceID, msg);
             } else {
                 [[NSUserDefaults standardUserDefaults]
                     setObject:weakSelf.myVoices forKey:kMyVoicesDefaultsKey];
                 EZLogf(EZLogLevelInfo, @"DEL", @"Deleted voice %@", voiceID);
             }
         });
-    }] resume];
+    }];
 }
 
 // ---------------------------------------------------------------------------

@@ -539,7 +539,7 @@ static NSArray<NSString *> *EZSensitiveUserDefaultsKeys(void) {
                                 appVersion];
 
     // Coin balance summary — always inline in the body regardless of CSV toggle
-    NSInteger coinBalance = [EZEntitlementManager shared].coinBalance;
+    NSInteger coinBalance = [EZEntitlementManager shared].coinBalance.integerValue;
     NSString *tier        = [EZEntitlementManager shared].currentTier ?: @"unknown";
 
     // Build the shared email body

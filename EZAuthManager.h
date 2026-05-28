@@ -23,10 +23,18 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (void)signOut;
 
+- (void)saveSession:(NSDictionary *)data;
+
+- (void)postToPath:(NSString *)path
+              body:(NSDictionary *)body
+        completion:(void(^)(NSDictionary *data, NSError *error))completion;
+
 - (void)restoreSessionWithCompletion:(void(^)(BOOL loggedIn))completion;
 
 - (void)refreshSessionIfNeeded:(void(^)(NSString * _Nullable freshToken,
                                         NSError  * _Nullable error))completion;
+
+- (NSString *)friendlyErrorFromData:(NSDictionary *)data networkError:(NSError *)error;
 
 /// Returns YES if the user hasn't authenticated in over 7 days.
 /// Check this before restoreSessionWithCompletion: and present LoginViewController if YES.

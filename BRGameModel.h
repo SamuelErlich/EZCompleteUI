@@ -1,56 +1,85 @@
+// BRGameModel.h
+// BrainRotGame
+// EZCompleteUI v1.0
 //
-//  BRGameModel.h
-//  BrainRotGame
-//
-//  A compact model for a simple maze + items + enemies.
-//  Keeps data structures light so the entire game can run from the view controller.
-//
+// Grid-based maze model. Tile topology is generated from a seed using a
+// depth-first recursive backtracker so the same seed always produces the
+// same maze. The ViewController can override tile types after generation
+// (e.g. brightness-based reclassification from a background image).
 
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
 
 NS_ASSUME_NONNULL_BEGIN
 
+#pragma mark - BRTile
+
 typedef NS_ENUM(NSInteger, BRTileType) {
-    BRTileTypeWall,
-    BRTileTypeFloor,
-    BRTileTypeExit
+    BRTileTypeWall  = 0,
+    BRTileTypeFloor = 1,
+    BRTileTypeExit  = 2,
 };
 
-@interface BRTile : NSObject <NSCopying>
-@property (nonatomic) BRTileType type;
-@property (nonatomic) BOOL visited; // for generation or gameplay flags
-@property (nonatomic, strong, nullable) NSString *itemName;
-@property (nonatomic, strong, nullable) NSString *enemyName;
+/// A single grid cell. Mutable so the ViewController can carve corridors,
+/// place items/enemies, and reclassify tiles after image-based generation.
+@interface BRTile : NSObject
+@property (nonatomic, assign) BRTileType  type;
+@property (nonatomic, copy,   nullable) NSString *itemName;   ///< non-nil when a collectible is here
+@property (nonatomic, copy,   nullable) NSString *enemyName;  ///< non-nil when an enemy is here
 @end
+
+#pragma mark - BRGameModel
 
 @interface BRGameModel : NSObject
 
+// ── Grid dimensions ───────────────────────────────────────────────────────────
 @property (nonatomic, readonly) NSInteger cols;
 @property (nonatomic, readonly) NSInteger rows;
-@property (nonatomic, strong, readonly) NSMutableArray<BRTile*> *grid; // row-major: index = r*cols + c
 
-@property (nonatomic) NSInteger playerCol;
-@property (nonatomic) NSInteger playerRow;
-@property (nonatomic) NSInteger playerHP;
+// ── Player state ──────────────────────────────────────────────────────────────
+@property (nonatomic, assign) NSInteger playerCol;
+@property (nonatomic, assign) NSInteger playerRow;
+@property (nonatomic, assign) NSInteger playerHP;
 
-@property (nonatomic) NSInteger exitCol;
-@property (nonatomic) NSInteger exitRow;
+/// Maximum HP — used by the HUD to draw the correct number of heart outlines.
+@property (nonatomic, readonly) NSInteger maxHP;
 
-@property (nonatomic, strong) NSString *levelFlavor; // text from AI
-@property (nonatomic, strong) NSArray<NSString*> *aiItems; // item names from AI
-@property (nonatomic, strong) NSArray<NSString*> *aiEnemies; // enemy descriptions from AI
-@property (nonatomic, strong) NSString *vulnerableHint; // hint text from AI
+// ── Exit position ─────────────────────────────────────────────────────────────
+@property (nonatomic, readonly) NSInteger exitCol;
+@property (nonatomic, readonly) NSInteger exitRow;
 
-- (instancetype)initWithCols:(NSInteger)cols rows:(NSInteger)rows seed:(nullable NSNumber*)seed;
-- (BRTile *)tileAtCol:(NSInteger)c row:(NSInteger)r;
-- (void)generateMaze;
-- (void)placePlayerAtCenter;
-- (void)placeExitAtEdge;
-- (BOOL)movePlayerByDC:(NSInteger)dc DR:(NSInteger)dr; // returns YES if moved
-- (NSArray<NSValue*>*)neighborsOfCol:(NSInteger)c row:(NSInteger)r; // list of NSValue points
-- (void)placeItems:(NSArray<NSString*>*)items count:(NSInteger)count;
-- (void)placeEnemies:(NSArray<NSString*>*)enemies count:(NSInteger)count;
+// ── AI-generated metadata (set by ViewController after asset build) ───────────
+@property (nonatomic, copy,   nullable) NSString             *levelFlavor;
+@property (nonatomic, copy,   nullable) NSString             *vulnerableHint;
+@property (nonatomic, strong, nullable) NSArray<NSString *>  *aiItems;
+@property (nonatomic, strong, nullable) NSArray<NSString *>  *aiEnemies;
+
+/// Designated initialiser. Generates the maze immediately using a seeded
+/// depth-first backtracker; the same seed always produces the same layout.
+- (instancetype)initWithCols:(NSInteger)cols rows:(NSInteger)rows seed:(NSNumber *)seed
+    NS_DESIGNATED_INITIALIZER;
+- (instancetype)init NS_UNAVAILABLE;
+
+/// Returns the tile at (col, row), or nil if out of bounds.
+- (nullable BRTile *)tileAtCol:(NSInteger)col row:(NSInteger)row;
+
+/// Attempts to move the player by (deltaCol, deltaRow).
+/// Returns YES and updates playerCol/playerRow if the destination is floor or exit.
+/// Returns NO if the destination is a wall or out of bounds.
+- (BOOL)movePlayerByDC:(NSInteger)deltaCol DR:(NSInteger)deltaRow;
+
+/// Returns NSValue-wrapped CGPoints for the four cardinal neighbors of (col, row)
+/// that are within the grid bounds. Does not filter by tile type.
+- (NSArray<NSValue *> *)neighborsOfCol:(NSInteger)col row:(NSInteger)row;
+
+/// Randomly places up to count items from the itemNames array on floor tiles
+/// that don't already have an item or enemy, excluding the player start and exit.
+- (void)placeItems:(NSArray<NSString *> *)itemNames count:(NSInteger)count;
+
+/// Randomly places up to count enemies from the enemyNames array on floor tiles
+/// that are not adjacent to the player start, don't already have an enemy or item,
+/// and are not the exit tile.
+- (void)placeEnemies:(NSArray<NSString *> *)enemyNames count:(NSInteger)count;
 
 @end
 

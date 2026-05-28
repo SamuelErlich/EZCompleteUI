@@ -309,8 +309,12 @@
         NSString *chatKey = [body substringWithRange:keyRange];
 
         // Use query param so NSURL parsing stops being annoying
+        NSString *encoded =
+            [entry.chatKey stringByAddingPercentEncodingWithAllowedCharacters:
+                [NSCharacterSet URLPathAllowedCharacterSet]];
+
         NSString *urlString =
-        [NSString stringWithFormat:@"ezchat://open?key=%@", chatKey];
+            [NSString stringWithFormat:@"ezchat://CHATKEY=%@", encoded];
 
         NSURL *url = [NSURL URLWithString:urlString];
 
@@ -446,27 +450,39 @@
 
 // ── UITextViewDelegate (chatKey link taps) ────────────────────────────────────
 
+#pragma mark - UITextViewDelegate
+
 - (BOOL)textView:(UITextView *)textView
 shouldInteractWithURL:(NSURL *)URL
-          inRange:(NSRange)characterRange
-      interaction:(UITextItemInteraction)interaction {
+        inRange:(NSRange)characterRange
+interaction:(UITextItemInteraction)interaction {
 
-    if ([[URL.scheme lowercaseString] isEqualToString:@"ezchat"]) {
+    if ([[URL scheme] isEqualToString:@"ezchat"]) {
 
-        NSURLComponents *components =
-        [NSURLComponents componentsWithURL:URL
-                   resolvingAgainstBaseURL:NO];
+        NSString *absolute = URL.absoluteString ?: @"";
 
+        // ezchat://CHATKEY=2026-05-19T22:22:03
         NSString *chatKey = nil;
 
-        for (NSURLQueryItem *item in components.queryItems) {
-            if ([item.name isEqualToString:@"key"]) {
-                chatKey = item.value;
-                break;
-            }
+        NSRange prefixRange = [absolute rangeOfString:@"ezchat://"];
+        if (prefixRange.location != NSNotFound) {
+            chatKey = [absolute substringFromIndex:
+                prefixRange.location + prefixRange.length];
         }
 
-        if (chatKey.length > 0) {
+        // remove optional CHATKEY=
+        if ([chatKey hasPrefix:@"CHATKEY="]) {
+            chatKey = [chatKey substringFromIndex:8];
+        }
+
+        // URL decode just in case
+        chatKey = [chatKey stringByRemovingPercentEncoding];
+
+        NSLog(@"[EZLOG] tapped chatKey: %@", chatKey);
+
+        if (chatKey.length > 0 &&
+            [self.logDelegate respondsToSelector:@selector(logCellDidTapChatKey:)]) {
+
             [self.logDelegate logCellDidTapChatKey:chatKey];
         }
 

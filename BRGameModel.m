@@ -1,216 +1,278 @@
+// BRGameModel.m
+// BrainRotGame
+// EZCompleteUI v1.0
 //
-//  BRGameModel.m
-//  BrainRotGame
-//
+// Maze generation: depth-first recursive backtracker with a seeded LCG so
+// the same NSNumber seed always produces the same maze. The algorithm works
+// on a (cols/2) × (rows/2) logical grid then expands each logical cell to a
+// 2×2 block of tiles, with the wall between two cells carved when the
+// backtracker connects them. This guarantees a perfect maze (exactly one path
+// between any two floor tiles) which the ViewController's BFS reachability
+// check can then verify. Odd col/row counts are handled by treating the last
+// column/row as a permanent wall border.
 
 #import "BRGameModel.h"
 
+static const NSInteger kBRDefaultMaxHP = 3;
+
+#pragma mark - BRTile
+
 @implementation BRTile
-- (instancetype)init {
-    if (self = [super init]) {
-        _type = BRTileTypeWall;
-        _visited = NO;
-        _itemName = nil;
-        _enemyName = nil;
-    }
-    return self;
-}
-- (id)copyWithZone:(NSZone *)zone {
-    BRTile *t = [[[self class] allocWithZone:zone] init];
-    t.type = self.type;
-    t.visited = self.visited;
-    t.itemName = self.itemName;
-    t.enemyName = self.enemyName;
-    return t;
-}
 @end
 
+#pragma mark - Seeded LCG random
+
+/// Tiny linear-congruential generator seeded from the game seed.
+/// Not cryptographically secure; used only for reproducible maze generation.
+typedef struct {
+    uint64_t state;
+} BRLCG;
+
+static void brLCGSeed(BRLCG *rng, uint64_t seed) {
+    rng->state = seed ^ 0x123456789ABCDEFULL;
+}
+
+/// Returns a pseudo-random NSInteger in [0, upperBound).
+static NSInteger brLCGNext(BRLCG *rng, NSInteger upperBound) {
+    // Multiplier and increment from Knuth TAOCP vol.2
+    rng->state = rng->state * 6364136223846793005ULL + 1442695040888963407ULL;
+    uint64_t shifted = (rng->state >> 33) ^ rng->state;
+    return (NSInteger)(shifted % (uint64_t)upperBound);
+}
+
+#pragma mark - BRGameModel
+
 @interface BRGameModel ()
-@property (nonatomic, strong) NSMutableArray<BRTile*> *grid;
+@property (nonatomic, strong) NSMutableArray<BRTile *> *tiles; ///< row-major flat array
+@property (nonatomic, assign) NSInteger _cols;
+@property (nonatomic, assign) NSInteger _rows;
+@property (nonatomic, assign) NSInteger _exitCol;
+@property (nonatomic, assign) NSInteger _exitRow;
+@property (nonatomic, assign) NSInteger _maxHP;
 @end
 
 @implementation BRGameModel
 
-- (instancetype)initWithCols:(NSInteger)cols rows:(NSInteger)rows seed:(nullable NSNumber*)seed {
-    if (self = [super init]) {
-        _cols = MAX(7, cols);
-        _rows = MAX(7, rows);
-        _grid = [NSMutableArray arrayWithCapacity:_cols * _rows];
-        for (NSInteger i=0;i<_cols*_rows;i++) {
-            [_grid addObject:[[BRTile alloc] init]];
-        }
-        if (seed) {
-            srandom((unsigned)seed.integerValue);
-        } else {
-            srandom((unsigned)time(NULL));
-        }
-        _playerHP = 10;
-        _levelFlavor = @"";
-        _aiItems = @[];
-        _aiEnemies = @[];
-        _vulnerableHint = @"";
-        [self generateMaze];
-        [self placePlayerAtCenter];
-        [self placeExitAtEdge];
+- (NSInteger)cols    { return self._cols;    }
+- (NSInteger)rows    { return self._rows;    }
+- (NSInteger)exitCol { return self._exitCol; }
+- (NSInteger)exitRow { return self._exitRow; }
+- (NSInteger)maxHP   { return self._maxHP;   }
+
+- (instancetype)initWithCols:(NSInteger)cols rows:(NSInteger)rows seed:(NSNumber *)seed {
+    self = [super init];
+    if (!self) return nil;
+
+    // Enforce odd dimensions so the backtracker expansion always produces a clean border
+    self._cols  = (cols  % 2 == 0) ? cols  + 1 : cols;
+    self._rows  = (rows  % 2 == 0) ? rows  + 1 : rows;
+    self._maxHP = kBRDefaultMaxHP;
+    self.playerHP = kBRDefaultMaxHP;
+
+    // Allocate all tiles as walls
+    NSInteger totalTiles = self._cols * self._rows;
+    NSMutableArray<BRTile *> *tiles = [NSMutableArray arrayWithCapacity:totalTiles];
+    for (NSInteger tileIndex = 0; tileIndex < totalTiles; tileIndex++) {
+        BRTile *tile = [[BRTile alloc] init];
+        tile.type = BRTileTypeWall;
+        [tiles addObject:tile];
     }
+    self.tiles = tiles;
+
+    BRLCG rng;
+    brLCGSeed(&rng, (uint64_t)seed.integerValue);
+
+    // ── Depth-first backtracker on the logical (odd-indexed) grid ────────────
+    // Logical grid dimensions (each logical cell maps to an odd tile index)
+    NSInteger logicalCols = (self._cols - 1) / 2;
+    NSInteger logicalRows = (self._rows - 1) / 2;
+    NSInteger logicalCount = logicalCols * logicalRows;
+
+    // Visited flags for logical cells
+    NSMutableData *visitedStorage = [NSMutableData dataWithLength:logicalCount];
+    uint8_t       *visited        = visitedStorage.mutableBytes;
+
+    // Stack for backtracking (stores logical cell index)
+    NSMutableArray<NSNumber *> *backtrackStack = [NSMutableArray array];
+
+    // Start at logical cell (0,0) → tile (1,1)
+    NSInteger startLogicalIndex = 0;
+    visited[startLogicalIndex]  = 1;
+    [backtrackStack addObject:@(startLogicalIndex)];
+
+    // Cardinal direction offsets in logical space
+    const NSInteger logicalDC[] = { 0,  0, -1, 1 };
+    const NSInteger logicalDR[] = {-1,  1,  0, 0 };
+
+    while (backtrackStack.count > 0) {
+        NSInteger currentLogical   = backtrackStack.lastObject.integerValue;
+        NSInteger currentLogicalCol = currentLogical % logicalCols;
+        NSInteger currentLogicalRow = currentLogical / logicalCols;
+
+        // Collect unvisited logical neighbors
+        NSMutableArray<NSNumber *> *unvisitedDirections = [NSMutableArray array];
+        for (NSInteger direction = 0; direction < 4; direction++) {
+            NSInteger neighborLogicalCol = currentLogicalCol + logicalDC[direction];
+            NSInteger neighborLogicalRow = currentLogicalRow + logicalDR[direction];
+            if (neighborLogicalCol < 0 || neighborLogicalCol >= logicalCols ||
+                neighborLogicalRow < 0 || neighborLogicalRow >= logicalRows) continue;
+            NSInteger neighborLogicalIndex = neighborLogicalRow * logicalCols + neighborLogicalCol;
+            if (!visited[neighborLogicalIndex]) {
+                [unvisitedDirections addObject:@(direction)];
+            }
+        }
+
+        if (unvisitedDirections.count == 0) {
+            [backtrackStack removeLastObject];
+            continue;
+        }
+
+        // Pick a random unvisited neighbor
+        NSInteger chosenDirection    = unvisitedDirections[brLCGNext(&rng, unvisitedDirections.count)].integerValue;
+        NSInteger neighborLogicalCol = currentLogicalCol + logicalDC[chosenDirection];
+        NSInteger neighborLogicalRow = currentLogicalRow + logicalDR[chosenDirection];
+        NSInteger neighborLogicalIdx = neighborLogicalRow * logicalCols + neighborLogicalCol;
+
+        // Tile coordinates of the current and neighbor logical cells
+        NSInteger currentTileCol  = currentLogicalCol  * 2 + 1;
+        NSInteger currentTileRow  = currentLogicalRow  * 2 + 1;
+        NSInteger neighborTileCol = neighborLogicalCol * 2 + 1;
+        NSInteger neighborTileRow = neighborLogicalRow * 2 + 1;
+
+        // Carve the logical cells
+        [self tileAtCol:currentTileCol  row:currentTileRow ].type = BRTileTypeFloor;
+        [self tileAtCol:neighborTileCol row:neighborTileRow].type = BRTileTypeFloor;
+
+        // Carve the wall between them (the tile at the midpoint)
+        NSInteger wallCol = (currentTileCol  + neighborTileCol) / 2;
+        NSInteger wallRow = (currentTileRow  + neighborTileRow) / 2;
+        [self tileAtCol:wallCol row:wallRow].type = BRTileTypeFloor;
+
+        visited[neighborLogicalIdx] = 1;
+        [backtrackStack addObject:@(neighborLogicalIdx)];
+    }
+
+    // ── Player start: top-left interior cell (1,1) ────────────────────────────
+    self.playerCol = 1;
+    self.playerRow = 1;
+    [self tileAtCol:1 row:1].type = BRTileTypeFloor; // ensure always walkable
+
+    // ── Exit: bottom-right interior cell ─────────────────────────────────────
+    NSInteger exitTileCol = self._cols - 2;
+    NSInteger exitTileRow = self._rows - 2;
+    self._exitCol = exitTileCol;
+    self._exitRow = exitTileRow;
+    [self tileAtCol:exitTileCol row:exitTileRow].type = BRTileTypeExit;
+
     return self;
 }
 
-- (BRTile *)tileAtCol:(NSInteger)c row:(NSInteger)r {
-    if (c < 0 || c >= _cols || r < 0 || r >= _rows) return nil;
-    return _grid[r * _cols + c];
+#pragma mark - Tile access
+
+- (nullable BRTile *)tileAtCol:(NSInteger)col row:(NSInteger)row {
+    if (col < 0 || col >= self._cols || row < 0 || row >= self._rows) return nil;
+    return self.tiles[row * self._cols + col];
 }
 
-- (void)generateMaze {
-    // Simple randomized DFS maze generator on an odd-sized grid
-    // We'll treat tiles as cells; convert grid coordinates to cell centers.
-    // For simplicity, create a grid where every cell default floor and surrounding odd walls
-    // A simple carve algorithm:
-    for (NSInteger r=0;r<_rows;r++) {
-        for (NSInteger c=0;c<_cols;c++) {
-            BRTile *t = [self tileAtCol:c row:r];
-            // initialize border walls, interior floors to allow simple pathing
-            if (c==0 || r==0 || c==_cols-1 || r==_rows-1) {
-                t.type = BRTileTypeWall;
-            } else {
-                // randomly carve floor or wall to make a different maze each time
-                float p = ((float)random() / (float)RAND_MAX);
-                t.type = (p > 0.35) ? BRTileTypeFloor : BRTileTypeWall;
-            }
-            t.itemName = nil;
-            t.enemyName = nil;
-            t.visited = NO;
-        }
-    }
-    // Make sure center is floor and a path exists: run a few random walk carve passes
-    NSInteger passes = (_cols * _rows) / 20;
-    NSInteger c = _cols/2, r = _rows/2;
-    [self tileAtCol:c row:r].type = BRTileTypeFloor;
-    for (NSInteger i=0;i<passes;i++) {
-        int dir = random() % 4;
-        if (dir==0 && c+1 < _cols-1) c++;
-        else if (dir==1 && c-1 > 0) c--;
-        else if (dir==2 && r+1 < _rows-1) r++;
-        else if (dir==3 && r-1 > 0) r--;
-        [self tileAtCol:c row:r].type = BRTileTypeFloor;
-    }
-    // Ensure some floor around center
-    for (NSInteger rr = _rows/2 -1; rr<=_rows/2 +1; rr++) {
-        for (NSInteger cc = _cols/2 -1; cc<=_cols/2 +1; cc++) {
-            BRTile *t = [self tileAtCol:cc row:rr];
-            if (t) t.type = BRTileTypeFloor;
-        }
-    }
-}
+#pragma mark - Player movement
 
-- (void)placePlayerAtCenter {
-    self.playerCol = _cols/2;
-    self.playerRow = _rows/2;
-    if ([self tileAtCol:self.playerCol row:self.playerRow].type == BRTileTypeWall) {
-        [self tileAtCol:self.playerCol row:self.playerRow].type = BRTileTypeFloor;
-    }
-}
-
-- (void)placeExitAtEdge {
-    // choose a random point on an edge that's a floor (or carve it)
-    NSMutableArray<NSValue*> *candidates = [NSMutableArray array];
-    for (NSInteger c=0;c<_cols;c++) {
-        [candidates addObject:[NSValue valueWithCGPoint:CGPointMake(c, 0)]];
-        [candidates addObject:[NSValue valueWithCGPoint:CGPointMake(c, _rows-1)]];
-    }
-    for (NSInteger r=1;r<_rows-1;r++) {
-        [candidates addObject:[NSValue valueWithCGPoint:CGPointMake(0, r)]];
-        [candidates addObject:[NSValue valueWithCGPoint:CGPointMake(_cols-1, r)]];
-    }
-    // shuffle
-    for (NSInteger i=candidates.count-1;i>0;i--) {
-        NSInteger j = random() % (i+1);
-        [candidates exchangeObjectAtIndex:i withObjectAtIndex:j];
-    }
-    for (NSValue *v in candidates) {
-        CGPoint p = v.CGPointValue;
-        BRTile *t = [self tileAtCol:p.x row:p.y];
-        if (!t) continue;
-        if (t.type == BRTileTypeFloor) {
-            t.type = BRTileTypeExit;
-            self.exitCol = p.x;
-            self.exitRow = p.y;
-            return;
-        }
-    }
-    // fallback: carve an exit
-    CGPoint p = [[candidates firstObject] CGPointValue];
-    [self tileAtCol:p.x row:p.y].type = BRTileTypeExit;
-    self.exitCol = p.x;
-    self.exitRow = p.y;
-}
-
-- (BOOL)movePlayerByDC:(NSInteger)dc DR:(NSInteger)dr {
-    NSInteger nc = self.playerCol + dc;
-    NSInteger nr = self.playerRow + dr;
-    BRTile *t = [self tileAtCol:nc row:nr];
-    if (!t) return NO;
-    if (t.type == BRTileTypeWall) {
-        // bump
-        return NO;
-    }
-    // move
-    self.playerCol = nc;
-    self.playerRow = nr;
-    // if there's an enemy, take some HP
-    if (t.enemyName) {
-        self.playerHP -= 2;
-        // remove enemy to simulate a scuffle
-        t.enemyName = nil;
-    }
+- (BOOL)movePlayerByDC:(NSInteger)deltaCol DR:(NSInteger)deltaRow {
+    NSInteger targetCol = self.playerCol + deltaCol;
+    NSInteger targetRow = self.playerRow + deltaRow;
+    BRTile   *targetTile = [self tileAtCol:targetCol row:targetRow];
+    if (!targetTile || targetTile.type == BRTileTypeWall) return NO;
+    self.playerCol = targetCol;
+    self.playerRow = targetRow;
     return YES;
 }
 
-- (NSArray<NSValue*>*)neighborsOfCol:(NSInteger)c row:(NSInteger)r {
-    NSMutableArray *arr = [NSMutableArray array];
-    NSArray *deltas = @[@{@(1):@(0)}, @{@(-1):@(0)}, @{@(0):@(1)}, @{@(0):@(-1)}];
-    for (NSDictionary *d in deltas) {
-        NSInteger dc = [[[d allKeys] firstObject] integerValue];
-        NSInteger dr = [[[d allValues] firstObject] integerValue];
-        NSInteger nc = c + dc;
-        NSInteger nr = r + dr;
-        if (nc>=0 && nc<_cols && nr>=0 && nr<_rows) {
-            [arr addObject:[NSValue valueWithCGPoint:CGPointMake(nc, nr)]];
+#pragma mark - Neighbors
+
+- (NSArray<NSValue *> *)neighborsOfCol:(NSInteger)col row:(NSInteger)row {
+    NSMutableArray<NSValue *> *neighbors = [NSMutableArray arrayWithCapacity:4];
+    const NSInteger dc[] = { 0,  0, -1, 1 };
+    const NSInteger dr[] = {-1,  1,  0, 0 };
+    for (NSInteger direction = 0; direction < 4; direction++) {
+        NSInteger neighborCol = col + dc[direction];
+        NSInteger neighborRow = row + dr[direction];
+        if ([self tileAtCol:neighborCol row:neighborRow]) {
+            [neighbors addObject:[NSValue valueWithCGPoint:CGPointMake(neighborCol, neighborRow)]];
         }
     }
-    return arr;
+    return [neighbors copy];
 }
 
-- (void)placeItems:(NSArray<NSString*>*)items count:(NSInteger)count {
-    if (items.count==0) return;
-    for (NSInteger i=0;i<count;i++) {
-        NSInteger attempts = 0;
-        while (attempts++ < 200) {
-            NSInteger c = (random() % (_cols-2)) + 1;
-            NSInteger r = (random() % (_rows-2)) + 1;
-            BRTile *t = [self tileAtCol:c row:r];
-            if (t && t.type == BRTileTypeFloor && !t.itemName && !(c==self.playerCol && r==self.playerRow)) {
-                t.itemName = items[random() % items.count];
-                break;
+#pragma mark - Item + enemy placement
+
+- (void)placeItems:(NSArray<NSString *> *)itemNames count:(NSInteger)count {
+    if (itemNames.count == 0 || count <= 0) return;
+    NSMutableArray<BRTile *> *candidateTiles = [self floorTilesExcludingPlayerAndExit];
+    NSInteger placed = 0;
+    NSInteger nameCount = (NSInteger)itemNames.count;
+    while (placed < count && candidateTiles.count > 0) {
+        NSInteger randomIndex = arc4random_uniform((uint32_t)candidateTiles.count);
+        BRTile   *tile        = candidateTiles[randomIndex];
+        if (!tile.itemName && !tile.enemyName) {
+            tile.itemName = itemNames[placed % nameCount];
+            placed++;
+        }
+        [candidateTiles removeObjectAtIndex:randomIndex];
+    }
+}
+
+- (void)placeEnemies:(NSArray<NSString *> *)enemyNames count:(NSInteger)count {
+    if (enemyNames.count == 0 || count <= 0) return;
+
+    // Enemies must not spawn adjacent to player start — give the player breathing room
+    NSArray<NSValue *> *startNeighbors = [self neighborsOfCol:self.playerCol row:self.playerRow];
+    NSMutableSet<NSString *> *forbiddenKeys = [NSMutableSet set];
+    for (NSValue *posValue in startNeighbors) {
+        CGPoint pos = posValue.CGPointValue;
+        [forbiddenKeys addObject:[NSString stringWithFormat:@"%ld,%ld",
+                                  (long)pos.x, (long)pos.y]];
+    }
+    [forbiddenKeys addObject:[NSString stringWithFormat:@"%ld,%ld",
+                               (long)self.playerCol, (long)self.playerRow]];
+
+    NSMutableArray<BRTile *> *candidateTiles = [NSMutableArray array];
+    for (NSInteger row = 0; row < self._rows; row++) {
+        for (NSInteger col = 0; col < self._cols; col++) {
+            BRTile *tile = [self tileAtCol:col row:row];
+            if (tile.type != BRTileTypeFloor) continue;
+            if (tile.itemName || tile.enemyName) continue;
+            NSString *key = [NSString stringWithFormat:@"%ld,%ld", (long)col, (long)row];
+            if ([forbiddenKeys containsObject:key]) continue;
+            [candidateTiles addObject:tile];
+        }
+    }
+
+    NSInteger placed    = 0;
+    NSInteger nameCount = (NSInteger)enemyNames.count;
+    while (placed < count && candidateTiles.count > 0) {
+        NSInteger randomIndex = arc4random_uniform((uint32_t)candidateTiles.count);
+        BRTile   *tile        = candidateTiles[randomIndex];
+        tile.enemyName = enemyNames[placed % nameCount];
+        placed++;
+        [candidateTiles removeObjectAtIndex:randomIndex];
+    }
+}
+
+#pragma mark - Private helpers
+
+/// Returns all floor tiles that are not the player start or exit tile.
+- (NSMutableArray<BRTile *> *)floorTilesExcludingPlayerAndExit {
+    NSMutableArray<BRTile *> *result = [NSMutableArray array];
+    for (NSInteger row = 0; row < self._rows; row++) {
+        for (NSInteger col = 0; col < self._cols; col++) {
+            if (col == self.playerCol && row == self.playerRow) continue;
+            if (col == self._exitCol  && row == self._exitRow)  continue;
+            BRTile *tile = [self tileAtCol:col row:row];
+            if (tile.type == BRTileTypeFloor) {
+                [result addObject:tile];
             }
         }
     }
-}
-
-- (void)placeEnemies:(NSArray<NSString*>*)enemies count:(NSInteger)count {
-    if (enemies.count==0) return;
-    for (NSInteger i=0;i<count;i++) {
-        NSInteger attempts = 0;
-        while (attempts++ < 200) {
-            NSInteger c = (random() % (_cols-2)) + 1;
-            NSInteger r = (random() % (_rows-2)) + 1;
-            BRTile *t = [self tileAtCol:c row:r];
-            if (t && t.type == BRTileTypeFloor && !t.enemyName && !(c==self.playerCol && r==self.playerRow)) {
-                t.enemyName = enemies[random() % enemies.count];
-                break;
-            }
-        }
-    }
+    return result;
 }
 
 @end

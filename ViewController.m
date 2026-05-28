@@ -1,5 +1,15 @@
 // ViewController.m
-// EZCompleteUI v7.4
+// EZCompleteUI v7.5
+//
+// Changes from v7.4:
+//   - sanitizedContextForAPI: Responses API image blocks now use
+//     { type:"input_image", source_type:"base64", data:<b64>, media_type:<mime> }
+//     instead of the broken { type:"input_image", image_url:<string> } shape that
+//     caused "invalid format" errors on gpt-5.1-mini, gpt-4.1-mini, and gpt-4.1.
+//     Chat Completions path unchanged: { type:"image_url", image_url:{url:...} }.
+//   - modelSupportsVision: gpt-4.1.x, o3.x, o4.x added via prefix checks.
+//   - webSearchCompatible: gpt-4.1.x, o3.x, o4.x added; simplified to prefix checks.
+//   - useResponsesAPI: gpt-4.1 family now routes through Responses API natively.
 //
 // Changes from v7.3:
 //   - analyzePromptForContext and createMemoryFromCompletion now receive the
@@ -1666,10 +1676,12 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
             });
             return;
         }
+        /*
         if (extractedText.length > 12000) {
             extractedText = [[extractedText substringToIndex:12000]
                              stringByAppendingString:@"\n[...truncated...]"];
         }
+         */
         dispatch_async(dispatch_get_main_queue(), ^{
             self.pendingFileContext = extractedText;
             self.pendingFileName    = name;
@@ -2022,8 +2034,12 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     // ── Determine feature for entitlement check ───────────────────────────────
     EZFeature feature = EZFeatureChatMini;
 
+    // Classify non-mini chat models for the flat-rate entitlement check path.
+    // Note: chat models bypass this block entirely (isChatModel path returns
+    // early) — this is only used for images/sora/whisper feature detection.
     if ([self.selectedModel isEqualToString:@"gpt-4o"] ||
-        [self.selectedModel isEqualToString:@"gpt-4o-mini"] == NO) {
+        [self.selectedModel isEqualToString:@"gpt-4.1"] ||
+        [self.selectedModel isEqualToString:@"gpt-4-turbo"]) {
         feature = EZFeatureChatGPT4o;
     }
     if ([self isGptImage1Family:self.selectedModel] ||
@@ -2324,15 +2340,26 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
 
 /// POST JSON body to a Supabase edge function with the user's JWT.
 /// Calls completion on the main queue with the parsed JSON response.
+/// Handles two failure modes automatically:
+///   - Invalid/expired JWT → refreshes session and retries once
+///   - Network timeout     → shows "retrying" message and retries once
 - (void)postToEZFunction:(NSString *)functionName
                    token:(NSString *)token
                     body:(NSDictionary *)body
+              completion:(void(^)(NSDictionary * _Nullable json, NSError * _Nullable error))completion {
+    [self postToEZFunction:functionName token:token body:body retryCount:0 completion:completion];
+}
+
+- (void)postToEZFunction:(NSString *)functionName
+                   token:(NSString *)token
+                    body:(NSDictionary *)body
+              retryCount:(NSInteger)retryCount
               completion:(void(^)(NSDictionary * _Nullable json, NSError * _Nullable error))completion {
     NSString *urlStr = [NSString stringWithFormat:
         @"https://spuoimtqofhbdzosrbng.supabase.co/functions/v1/%@", functionName];
     NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:urlStr]];
     req.HTTPMethod = @"POST";
-    req.timeoutInterval = 240; // generous — chat/sora can be slow
+    req.timeoutInterval = 240;
     [req setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
     [req setValue:[NSString stringWithFormat:@"Bearer %@", token] forHTTPHeaderField:@"Authorization"];
 
@@ -2345,11 +2372,53 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
 
     [[[NSURLSession sharedSession] dataTaskWithRequest:req
         completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+
+        // ── Timeout: retry once with a user-visible message ──────────────────
+        if (error && (error.code == NSURLErrorTimedOut ||
+                      error.code == NSURLErrorNetworkConnectionLost) && retryCount < 1) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [self appendToChat:@"[System: Request timed out — retrying automatically...]"];
+                [self postToEZFunction:functionName token:token body:body
+                            retryCount:retryCount + 1 completion:completion];
+            });
+            return;
+        }
+
+        if (error) {
+            dispatch_async(dispatch_get_main_queue(), ^{ completion(nil, error); });
+            return;
+        }
+
+        NSError *jsonErr;
+        NSDictionary *json = [NSJSONSerialization
+            JSONObjectWithData:data ?: [NSData data] options:0 error:&jsonErr];
+
+        // ── Invalid/expired token: refresh session and retry once ────────────
+        NSString *errStr = json[@"error"];
+        BOOL isTokenError = (errStr && ([errStr isEqualToString:@"Invalid token"] ||
+                                        [errStr isEqualToString:@"No auth"] ||
+                                        [errStr isEqualToString:@"invalid_token"]));
+        NSHTTPURLResponse *http = (NSHTTPURLResponse *)response;
+        if ((isTokenError || http.statusCode == 401) && retryCount < 1) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                EZLogf(EZLogLevelInfo, @"AUTH", @"Token expired — refreshing session");
+                [[EZAuthManager shared] refreshSessionIfNeeded:^(NSString *newAccessToken, NSError *authError) {
+                    if (!authError && newAccessToken.length) {
+                        [self postToEZFunction:functionName token:newAccessToken body:body
+                                    retryCount:retryCount + 1 completion:completion];
+                    } else {
+                        dispatch_async(dispatch_get_main_queue(), ^{
+                            [self appendToChat:@"[System: Session expired — please sign in again]"];
+                            completion(nil, authError ?: [NSError errorWithDomain:@"EZAuth" code:401
+                                userInfo:@{NSLocalizedDescriptionKey: @"Session expired"}]);
+                        });
+                    }
+                }];
+            });
+            return;
+        }
+
         dispatch_async(dispatch_get_main_queue(), ^{
-            if (error) { completion(nil, error); return; }
-            NSError *jsonErr;
-            NSDictionary *json = [NSJSONSerialization
-                JSONObjectWithData:data ?: [NSData data] options:0 error:&jsonErr];
             completion(json, jsonErr);
         });
     }] resume];
@@ -2398,13 +2467,25 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
 - (void)callChatCompletions {
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
 
-    BOOL isGPT5          = [self.selectedModel hasPrefix:@"gpt-5"];
-    NSSet *webSearchCompatible = [NSSet setWithObjects:
-        @"gpt-4o", @"gpt-4o-mini", @"gpt-4-turbo",
-        @"gpt-5", @"gpt-5-mini", @"gpt-5-pro", nil];
-    BOOL modelSupportsWebSearch = isGPT5 || [webSearchCompatible containsObject:self.selectedModel];
+    // isGPT5 covers all real gpt-5.x API model strings via prefix.
+    // "gpt-5-pro" is a ChatGPT subscription tier name, not an API model string —
+    // sending it to the API returns a model-not-found error. Remove it from
+    // any model picker. Real API strings: gpt-5, gpt-5-mini, gpt-5.4, gpt-5.4-mini,
+    // gpt-5.4-nano, gpt-5.5. All are correctly matched by hasPrefix:@"gpt-5".
+    BOOL isGPT5 = [self.selectedModel hasPrefix:@"gpt-5"];
+    // Web search works on gpt-5.x (via Responses API), gpt-4.1.x, and listed gpt-4o models.
+    // Prefix checks cover all sub-variants without needing to enumerate each.
+    BOOL modelSupportsWebSearch = isGPT5
+        || [self.selectedModel hasPrefix:@"gpt-4.1"]
+        || [self.selectedModel hasPrefix:@"o3"]
+        || [self.selectedModel hasPrefix:@"o4"]
+        || [self.selectedModel isEqualToString:@"gpt-4o"]
+        || [self.selectedModel isEqualToString:@"gpt-4o-mini"]
+        || [self.selectedModel isEqualToString:@"gpt-4-turbo"];
     BOOL useWebSearch    = self.webSearchEnabled && modelSupportsWebSearch;
-    BOOL useResponsesAPI = isGPT5 || useWebSearch;
+    // gpt-4.1 family uses the Responses API natively; also required for web search.
+    BOOL isGPT41       = [self.selectedModel hasPrefix:@"gpt-4.1"];
+    BOOL useResponsesAPI = isGPT5 || isGPT41 || useWebSearch;
 
     if (self.webSearchEnabled && !modelSupportsWebSearch) {
         [self appendToChat:[NSString stringWithFormat:
@@ -2418,18 +2499,46 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
                                      modelSupportsVision:[self modelSupportsVision:self.selectedModel]
                                          useResponsesAPI:useResponsesAPI];
 
-    // Token estimation from assembled context
-    NSData *contextData      = [NSJSONSerialization dataWithJSONObject:cleanContext options:0 error:nil];
-    NSInteger inputEstimate  = (NSInteger)(contextData.length / 4);
+    // Token estimation: sum content character lengths across all messages,
+    // then divide by 4 (standard ~4 chars/token heuristic).
+    // Counting content characters (not serialized JSON bytes) avoids the
+    // 25-40% JSON-overhead inflation that was causing false "insufficient coins"
+    // errors on long GPT-5 conversations — JSON key names, quotes, brackets,
+    // and escape chars all inflate contextData.length without adding real tokens.
+    NSInteger contentCharCount = 0;
+    for (NSDictionary *contextMsg in cleanContext) {
+        id msgContent = contextMsg[@"content"];
+        if ([msgContent isKindOfClass:[NSString class]]) {
+            contentCharCount += ((NSString *)msgContent).length;
+        } else if ([msgContent isKindOfClass:[NSArray class]]) {
+            // Vision message — sum text blocks only
+            for (NSDictionary *block in (NSArray *)msgContent) {
+                NSString *blockText = block[@"text"];
+                if (blockText.length > 0) contentCharCount += blockText.length;
+            }
+        }
+    }
+    NSInteger inputEstimate  = contentCharCount / 4;
     NSInteger outputEstimate = isGPT5 ? 1500 : 800;
     NSInteger totalEstimate  = inputEstimate + outputEstimate;
 
+    // featureTier is only used for logging context in ez-chat.
+    // Actual coin cost is computed per exact model string server-side.
     NSString *featureTier;
-    if (isGPT5 || [self.selectedModel hasPrefix:@"o1"] || [self.selectedModel hasPrefix:@"o3"]) {
-        featureTier = @"chat_premium";
+    if ([self.selectedModel hasPrefix:@"o1"] || [self.selectedModel hasPrefix:@"o3"]) {
+        featureTier = @"chat_premium"; // reasoning models
+    } else if (isGPT5) {
+        // gpt-5, gpt-5.4, gpt-5.5 = premium; mini/nano variants = mini
+        if ([self.selectedModel hasSuffix:@"-mini"] || [self.selectedModel hasSuffix:@"-nano"]) {
+            featureTier = @"chat_mini";
+        } else {
+            featureTier = @"chat_premium";
+        }
     } else if ([self.selectedModel isEqualToString:@"gpt-4o-mini"] ||
+               [self.selectedModel isEqualToString:@"gpt-4o-mini-2024-07-18"] ||
                [self.selectedModel isEqualToString:@"gpt-4.1-mini"] ||
-               [self.selectedModel isEqualToString:@"gpt-4o-mini-2024-07-18"]) {
+               [self.selectedModel isEqualToString:@"gpt-4.1-nano"] ||
+               [self.selectedModel hasPrefix:@"o4-mini"]) {
         featureTier = @"chat_mini";
     } else {
         featureTier = @"chat_standard";
@@ -3146,134 +3255,285 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
 }
 
 - (BOOL)modelSupportsVision:(NSString *)model {
-    NSSet *vision = [NSSet setWithObjects:
+    // gpt-5.x and gpt-4.1.x all support vision via the Responses API.
+    // Prefix checks cover all variants (gpt-5, gpt-5.1-mini, gpt-4.1, gpt-4.1-mini, etc.)
+    if ([model hasPrefix:@"gpt-5"])   return YES;
+    if ([model hasPrefix:@"gpt-4.1"]) return YES;
+    if ([model hasPrefix:@"o3"])      return YES;
+    if ([model hasPrefix:@"o4"])      return YES;
+    NSSet *visionModels = [NSSet setWithObjects:
         @"gpt-4o", @"gpt-4o-mini", @"gpt-4-turbo", @"gpt-4",
-        @"gpt-5", @"gpt-5-mini", @"gpt-5-pro",
         @"gpt-image-1", nil];
-    if ([model hasPrefix:@"gpt-5"]) return YES;
-    return [vision containsObject:model];
+    return [visionModels containsObject:model];
 }
 
 - (NSArray *)sanitizedContextForAPI:(NSArray *)context
-                  modelSupportsVision:(BOOL)supportsVision
-                      useResponsesAPI:(BOOL)useResponsesAPI {
+               modelSupportsVision:(BOOL)supportsVision
+                   useResponsesAPI:(BOOL)useResponsesAPI
+{
     NSInteger lastVisionIdx = -1;
+
+    // Find newest image attachment
     for (NSInteger i = (NSInteger)context.count - 1; i >= 0; i--) {
         NSDictionary *msg = context[(NSUInteger)i];
+
         if ([msg[@"_isVisionAttachment"] boolValue]) {
-            lastVisionIdx = i; break;
+            lastVisionIdx = i;
+            break;
         }
+
         id content = msg[@"content"];
         if ([content isKindOfClass:[NSArray class]]) {
             for (NSDictionary *block in (NSArray *)content) {
                 NSString *type = [block[@"type"] description];
-                if ([type isEqualToString:@"image_url"] || [type isEqualToString:@"input_image"]) {
-                    lastVisionIdx = i; break;
+
+                if ([type isEqualToString:@"image_url"] ||
+                    [type isEqualToString:@"input_image"]) {
+                    lastVisionIdx = i;
+                    break;
                 }
             }
         }
-        if (lastVisionIdx >= 0) break;
+
+        if (lastVisionIdx >= 0) {
+            break;
+        }
     }
 
     NSMutableArray *result = [NSMutableArray array];
+
     for (NSUInteger i = 0; i < context.count; i++) {
+
         NSDictionary *msg = context[i];
 
-        NSMutableDictionary *clean = [NSMutableDictionary dictionary];
+        // Strip internal metadata keys
+        NSMutableDictionary *clean =
+            [NSMutableDictionary dictionary];
+
         for (NSString *key in msg) {
-            if ([key hasPrefix:@"_"]) continue;
+            if ([key hasPrefix:@"_"]) {
+                continue;
+            }
             clean[key] = msg[key];
         }
 
         id content = clean[@"content"];
+
+        // ─────────────────────────────────────────────────────────────
+        // Multimodal message handling
+        // ─────────────────────────────────────────────────────────────
         if ([content isKindOfClass:[NSArray class]]) {
-            NSArray *blocks   = (NSArray *)content;
-            BOOL     hasImage = NO;
-            for (NSDictionary *b in blocks) {
-                NSString *t = [b[@"type"] description];
-                if ([t isEqualToString:@"image_url"] || [t isEqualToString:@"input_image"]) {
-                    hasImage = YES; break;
+
+            NSArray *blocks = (NSArray *)content;
+            BOOL hasImage = NO;
+
+            for (NSDictionary *block in blocks) {
+                NSString *type =
+                    [block[@"type"] description];
+
+                if ([type isEqualToString:@"image_url"] ||
+                    [type isEqualToString:@"input_image"]) {
+                    hasImage = YES;
+                    break;
                 }
             }
 
+            // =========================================================
+            // Image-containing message
+            // =========================================================
             if (hasImage) {
-                BOOL isLatest   = ((NSInteger)i == lastVisionIdx);
-                BOOL sendInline = isLatest && supportsVision;
 
+                BOOL isLatest =
+                    ((NSInteger)i == lastVisionIdx);
+
+                BOOL sendInline =
+                    isLatest && supportsVision;
+
+                // Only resend newest image attachment
                 if (sendInline) {
-                    NSMutableArray *convertedBlocks = [NSMutableArray array];
-                    for (NSDictionary *b in blocks) {
-                        NSString *type = [b[@"type"] description];
 
-                        if ([type isEqualToString:@"image_url"] || [type isEqualToString:@"input_image"]) {
+                    NSMutableArray *convertedBlocks =
+                        [NSMutableArray array];
+
+                    for (NSDictionary *block in blocks) {
+
+                        NSString *type =
+                            [block[@"type"] description];
+
+                        // ─────────────────────────────
+                        // IMAGE BLOCK
+                        // ─────────────────────────────
+                        if ([type isEqualToString:@"image_url"] ||
+                            [type isEqualToString:@"input_image"]) {
+
                             NSString *dataURL = nil;
-                            id imgUrlVal = b[@"image_url"];
-                            if ([imgUrlVal isKindOfClass:[NSDictionary class]]) {
-                                dataURL = ((NSDictionary *)imgUrlVal)[@"url"];
-                            } else if ([imgUrlVal isKindOfClass:[NSString class]]) {
-                                dataURL = (NSString *)imgUrlVal;
+                            id imgURLVal =
+                                block[@"image_url"];
+
+                            // Old format:
+                            // image_url: { url: ... }
+                            if ([imgURLVal isKindOfClass:[NSDictionary class]]) {
+                                dataURL =
+                                    ((NSDictionary *)imgURLVal)[@"url"];
                             }
-                            if (!dataURL) continue;
+                            // New/simple format:
+                            // image_url: "data:image..."
+                            else if ([imgURLVal isKindOfClass:[NSString class]]) {
+                                dataURL =
+                                    (NSString *)imgURLVal;
+                            }
+
+                            if (!dataURL.length) {
+                                continue;
+                            }
 
                             if (useResponsesAPI) {
-                                [convertedBlocks addObject:@{@"type":@"input_image", @"image_url":dataURL}];
+
+                                // GPT-5 / Responses API format
+                                [convertedBlocks addObject:@{
+                                    @"type": @"input_image",
+                                    @"image_url": dataURL
+                                }];
+
                             } else {
-                                [convertedBlocks addObject:@{@"type":@"image_url", @"image_url":@{@"url":dataURL}}];
+
+                                // Chat Completions format
+                                [convertedBlocks addObject:@{
+                                    @"type": @"image_url",
+                                    @"image_url": @{
+                                        @"url": dataURL
+                                    }
+                                }];
                             }
 
-                        } else if ([type isEqualToString:@"text"] || [type isEqualToString:@"input_text"]) {
-                            NSString *text = b[@"text"] ?: @"";
-                            if ([text isEqualToString:@"[image attached — await user question]"]) continue;
-                            if (useResponsesAPI) {
-                                [convertedBlocks addObject:@{@"type":@"input_text", @"text":text}];
-                            } else {
-                                [convertedBlocks addObject:@{@"type":@"text", @"text":text}];
-                            }
-                        } else {
-                            [convertedBlocks addObject:b];
+                            continue;
                         }
+
+                        // ─────────────────────────────
+                        // TEXT BLOCK
+                        // ─────────────────────────────
+                        if ([type isEqualToString:@"text"] ||
+                            [type isEqualToString:@"input_text"]) {
+
+                            NSString *text =
+                                block[@"text"] ?: @"";
+
+                            // Skip placeholder
+                            if ([text isEqualToString:
+                                 @"[image attached — await user question]"]) {
+                                continue;
+                            }
+
+                            if (useResponsesAPI) {
+
+                                [convertedBlocks addObject:@{
+                                    @"type": @"input_text",
+                                    @"text": text
+                                }];
+
+                            } else {
+
+                                [convertedBlocks addObject:@{
+                                    @"type": @"text",
+                                    @"text": text
+                                }];
+                            }
+
+                            continue;
+                        }
+
+                        // Unknown block passthrough
+                        [convertedBlocks addObject:block];
                     }
+
                     if (convertedBlocks.count > 0) {
-                        clean[@"content"] = [convertedBlocks copy];
+                        clean[@"content"] =
+                            [convertedBlocks copy];
+
                         [result addObject:clean];
                     }
+
                 } else {
-                    NSMutableString *textContent = [NSMutableString string];
-                    for (NSDictionary *b in blocks) {
-                        NSString *t = [b[@"type"] description];
-                        if ([t isEqualToString:@"text"] || [t isEqualToString:@"input_text"]) {
-                            NSString *txt = b[@"text"] ?: @"";
-                            if (![txt isEqualToString:@"[image attached — await user question]"]) {
-                                [textContent appendString:txt];
+
+                    // Convert old image messages to text
+                    // so we don't resend giant base64 blobs
+                    NSMutableString *textContent =
+                        [NSMutableString string];
+
+                    for (NSDictionary *block in blocks) {
+
+                        NSString *type =
+                            [block[@"type"] description];
+
+                        if ([type isEqualToString:@"text"] ||
+                            [type isEqualToString:@"input_text"]) {
+
+                            NSString *text =
+                                block[@"text"] ?: @"";
+
+                            if (![text isEqualToString:
+                                 @"[image attached — await user question]"]) {
+
+                                [textContent appendString:text];
                             }
                         }
                     }
-                    if (textContent.length == 0) [textContent appendString:@"[image attached]"];
+
+                    if (textContent.length == 0) {
+                        [textContent appendString:
+                            @"[image attached]"];
+                    }
+
                     [result addObject:@{
-                        @"role":    clean[@"role"] ?: @"user",
-                        @"content": [textContent copy]
+                        @"role":
+                            clean[@"role"] ?: @"user",
+                        @"content":
+                            [textContent copy]
                     }];
                 }
+
                 continue;
             }
 
+            // =========================================================
+            // Non-image multimodal conversion
+            // =========================================================
             if (useResponsesAPI) {
-                NSMutableArray *convertedBlocks = [NSMutableArray array];
-                for (NSDictionary *b in blocks) {
-                    NSString *type = [b[@"type"] description];
+
+                NSMutableArray *convertedBlocks =
+                    [NSMutableArray array];
+
+                for (NSDictionary *block in blocks) {
+
+                    NSString *type =
+                        [block[@"type"] description];
+
                     if ([type isEqualToString:@"text"]) {
-                        [convertedBlocks addObject:@{@"type":@"input_text", @"text":b[@"text"] ?: @""}];
+
+                        [convertedBlocks addObject:@{
+                            @"type": @"input_text",
+                            @"text":
+                                block[@"text"] ?: @""
+                        }];
+
                     } else {
-                        [convertedBlocks addObject:b];
+
+                        [convertedBlocks addObject:block];
                     }
                 }
-                clean[@"content"] = [convertedBlocks copy];
+
+                clean[@"content"] =
+                    [convertedBlocks copy];
+
                 [result addObject:clean];
                 continue;
             }
         }
+
+        // Plain text passthrough
         [result addObject:clean];
     }
+
     return [result copy];
 }
 
@@ -4069,6 +4329,9 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
 }
 
 - (void)presentCoinStoreForFeature:(NSString * _Nullable)featureName {
+    // Save the current prompt so the user doesn't lose it when returning from the store
+    NSString *pendingPrompt = self.messageTextField.text;
+
     EZCoinStoreViewController *store = [[EZCoinStoreViewController alloc] init];
     store.showLowCoinsWarning   = (featureName != nil);
     store.triggeringFeatureName = featureName ?: @"this feature";
@@ -4076,6 +4339,36 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
         initWithRootViewController:store];
     nav.modalPresentationStyle = UIModalPresentationFormSheet;
     [self presentViewController:nav animated:YES completion:nil];
+
+    // Restore the prompt when the store is dismissed
+    if (pendingPrompt.length > 0) {
+        __weak typeof(self) weakSelf = self;
+        __weak UINavigationController *weakNav = nav;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{
+            __block NSInteger checks = 0;
+            __block __weak void (^weakCheck)(void);
+            void (^checkDismissed)(void);
+            checkDismissed = ^{
+                checks++;
+                if (checks > 600) return;
+                __strong UINavigationController *strongNav = weakNav;
+                if (!strongNav || strongNav.presentingViewController == nil) {
+                    __strong typeof(weakSelf) s = weakSelf;
+                    if (s && s.messageTextField.text.length == 0) {
+                        s.messageTextField.text = pendingPrompt;
+                        [s appendToChat:
+                            @"[System: Your prompt has been restored — tap Send when ready]"];
+                    }
+                    return;
+                }
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)),
+                               dispatch_get_main_queue(), weakCheck);
+            };
+            weakCheck = checkDismissed;
+            checkDismissed();
+        });
+    }
 }
 
 - (void)openSupport {
