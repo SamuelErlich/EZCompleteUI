@@ -15,32 +15,21 @@
     #import "LoginViewController.h"
     #import "EZCoinStoreViewController.h"
     #import "EZPoliciesViewController.h"
-    #import "EZKeyVault.h"
     #import "EZAuthManager.h"
     #import "EZEntitlementManager.h"
     #import "helpers.h"
-    #import <objc/runtime.h>
-    #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
     #import <SafariServices/SafariServices.h>
 
-    static const void * kEZCloneNameKey     = &kEZCloneNameKey;
-    static const void * kEZPickerPurposeKey = &kEZPickerPurposeKey;
     static NSString * const kHelperTemperatureDefaultsKey = @"helperTemperature";
-
-    // Placeholder shown in a key field once a key has been saved
-    static NSString * const kAPIKeyMaskedPlaceholder    = @"API key saved — tap to replace";
-    static NSString * const kELKeyMaskedPlaceholder     = @"API key saved — tap to replace";
 
     // PayPal sandbox plan ID — replace with live Plan ID before release
     static NSString * const kPayPalPlanID = @"P-1HW38522AL709604TNHUUASA";
-static NSString *const kSupabaseAnonKey = @"sb_publishable_AzEVhLuIj1nSMwZvIgKw7A__Y3Ghdtl";
 
     // ─────────────────────────────────────────────────────────────────────────────
     // MARK: - Private interface
     // ─────────────────────────────────────────────────────────────────────────────
 
     @interface SettingsViewController () <UITextFieldDelegate, UITextViewDelegate,
-                                          UIDocumentPickerDelegate,
                                           SFSafariViewControllerDelegate>
 
     // ── Scroll container ──────────────────────────────────────────────────────────
@@ -49,10 +38,6 @@ static NSString *const kSupabaseAnonKey = @"sb_publishable_AzEVhLuIj1nSMwZvIgKw7
     // ── Subscription ──────────────────────────────────────────────────────────────
     @property (nonatomic, strong) UILabel  *subscriptionStatusLabel;
     @property (nonatomic, strong) UILabel  *coinBalanceLabel;
-
-    // ── OpenAI fields ─────────────────────────────────────────────────────────────
-    @property (nonatomic, strong) UITextField  *apiKeyField;
-    @property (nonatomic, assign) BOOL          apiKeyMasked;
 
     // ── System prompt ─────────────────────────────────────────────────────────────
     @property (nonatomic, strong) UITextView   *systemMsgView;
@@ -71,13 +56,9 @@ static NSString *const kSupabaseAnonKey = @"sb_publishable_AzEVhLuIj1nSMwZvIgKw7
     @property (nonatomic, strong) UISwitch     *webSearchSwitch;
 
     // ── ElevenLabs TTS ────────────────────────────────────────────────────────────
-    @property (nonatomic, strong) UITextField  *elKeyField;
-    @property (nonatomic, assign) BOOL          elKeyMasked;
     @property (nonatomic, strong) UITextField  *elVoiceField;
 
     // ── ElevenLabs Voice Cloning ──────────────────────────────────────────────────
-    @property (nonatomic, strong) NSMutableArray<NSDictionary *> *clonedVoices;
-    @property (nonatomic, strong) UILabel      *cloneStatusLabel;
 
     // ── Sora video ────────────────────────────────────────────────────────────────
     @property (nonatomic, strong) UITextField  *soraModelField;
@@ -102,8 +83,6 @@ static NSString *const kSupabaseAnonKey = @"sb_publishable_AzEVhLuIj1nSMwZvIgKw7
             initWithBarButtonSystemItem:UIBarButtonSystemItemDone
                                  target:self
                                  action:@selector(saveAndClose)];
-
-        self.clonedVoices = [NSMutableArray array];
 
         [self setupUI];
         [self loadSettings];
@@ -166,31 +145,6 @@ static NSString *const kSupabaseAnonKey = @"sb_publishable_AzEVhLuIj1nSMwZvIgKw7
     // MARK: - API Key field masking
     // ─────────────────────────────────────────────────────────────────────────────
 
-    - (void)apiKeyFieldTapped:(UITapGestureRecognizer *)tap {
-        UITextField *field = (UITextField *)tap.view;
-        if (field == self.apiKeyField && self.apiKeyMasked) {
-            [self unmaskKeyField:field maskedFlag:&_apiKeyMasked];
-        } else if (field == self.elKeyField && self.elKeyMasked) {
-            [self unmaskKeyField:field maskedFlag:&_elKeyMasked];
-        }
-    }
-
-    - (void)unmaskKeyField:(UITextField *)field maskedFlag:(BOOL *)flag {
-        *flag = NO;
-        field.text                  = @"";
-        field.placeholder           = @"Enter new key";
-        field.textColor             = [UIColor labelColor];
-        field.backgroundColor       = [UIColor systemBackgroundColor];
-        field.layer.borderWidth     = 0;
-        [field becomeFirstResponder];
-    }
-
-    - (void)maskKeyField:(UITextField *)field placeholder:(NSString *)placeholder {
-        field.text            = @"";
-        field.placeholder     = placeholder;
-        field.textColor       = [UIColor secondaryLabelColor];
-    }
-
 
     // ─────────────────────────────────────────────────────────────────────────────
     // MARK: - UI Setup
@@ -250,22 +204,6 @@ static NSString *const kSupabaseAnonKey = @"sb_publishable_AzEVhLuIj1nSMwZvIgKw7
                       y:&y w:w];
 
         // ── OpenAI ───────────────────────────────────────────────────────────────
-        [self addSection:@"🤖 OpenAI" y:&y];
-        [self addLabel:@"API Key:" y:&y];
-
-        self.apiKeyField = [[UITextField alloc] initWithFrame:CGRectMake(20, y, w, 40)];
-        self.apiKeyField.borderStyle   = UITextBorderStyleRoundedRect;
-        self.apiKeyField.placeholder   = @"sk-...";
-        self.apiKeyField.delegate      = self;
-        self.apiKeyField.returnKeyType = UIReturnKeyDone;
-        self.apiKeyField.font          = [UIFont systemFontOfSize:14];
-        self.apiKeyField.secureTextEntry = YES;
-        UITapGestureRecognizer *apiTap = [[UITapGestureRecognizer alloc]
-            initWithTarget:self action:@selector(apiKeyFieldTapped:)];
-        [self.apiKeyField addGestureRecognizer:apiTap];
-        [self.scrollView addSubview:self.apiKeyField];
-        y += 50;
-
         // ── System Prompt ─────────────────────────────────────────────────────────
         [self addLabel:@"System Message:" y:&y];
 
@@ -301,33 +239,8 @@ static NSString *const kSupabaseAnonKey = @"sb_publishable_AzEVhLuIj1nSMwZvIgKw7
 
         // ── ElevenLabs TTS ────────────────────────────────────────────────────────
         [self addSection:@"🎙 ElevenLabs TTS" y:&y];
-        [self addLabel:@"API Key:" y:&y];
-
-        self.elKeyField = [[UITextField alloc] initWithFrame:CGRectMake(20, y, w, 40)];
-        self.elKeyField.borderStyle   = UITextBorderStyleRoundedRect;
-        self.elKeyField.placeholder   = @"ElevenLabs API key";
-        self.elKeyField.delegate      = self;
-        self.elKeyField.returnKeyType = UIReturnKeyDone;
-        self.elKeyField.font          = [UIFont systemFontOfSize:14];
-        self.elKeyField.secureTextEntry = YES;
-        UITapGestureRecognizer *elTap = [[UITapGestureRecognizer alloc]
-            initWithTarget:self action:@selector(apiKeyFieldTapped:)];
-        [self.elKeyField addGestureRecognizer:elTap];
-        [self.scrollView addSubview:self.elKeyField];
-        y += 50;
-
         [self addLabel:@"Voice ID (preset or cloned):" y:&y];
-        self.elVoiceField = [self addField:w - 95 y:&y placeholder:@"Voice ID"];
-
-        UIButton *getVoicesBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-        getVoicesBtn.frame = CGRectMake(w - 84, y - 50, 84, 40);
-        [getVoicesBtn setTitle:@"Get Voices" forState:UIControlStateNormal];
-        getVoicesBtn.backgroundColor    = [UIColor systemTealColor];
-        getVoicesBtn.layer.cornerRadius = 8;
-        [getVoicesBtn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
-        [getVoicesBtn addTarget:self action:@selector(fetchVoices)
-              forControlEvents:UIControlEventTouchUpInside];
-        [self.scrollView addSubview:getVoicesBtn];
+        self.elVoiceField = [self addField:w y:&y placeholder:@"Voice ID"];
 
         [self addButton:@"🔊 Open Text to Speech"
                   color:[UIColor systemCyanColor]
@@ -342,11 +255,6 @@ static NSString *const kSupabaseAnonKey = @"sb_publishable_AzEVhLuIj1nSMwZvIgKw7
                  action:@selector(openElevenLabsCloneVC)
                       y:&y w:w];
 
-        self.cloneStatusLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, y, w, 30)];
-        self.cloneStatusLabel.font      = [UIFont systemFontOfSize:13];
-        self.cloneStatusLabel.textColor = [UIColor secondaryLabelColor];
-        self.cloneStatusLabel.text      = @"";
-        [self.scrollView addSubview:self.cloneStatusLabel];
         y += 35;
 
         // ── Sora Text-to-Video ────────────────────────────────────────────────────
@@ -688,325 +596,6 @@ static NSString *const kSupabaseAnonKey = @"sb_publishable_AzEVhLuIj1nSMwZvIgKw7
     // MARK: - ElevenLabs Voice Fetching
     // ─────────────────────────────────────────────────────────────────────────────
 
-    - (NSString *)resolvedElevenLabsKey {
-        if (self.elKeyMasked) {
-            return [EZKeyVault loadKeyForIdentifier:EZVaultKeyElevenLabs] ?: @"";
-        }
-        return self.elKeyField.text ?: @"";
-    }
-
-    - (void)fetchVoices {
-        NSString *key = [self resolvedElevenLabsKey];
-        if (key.length == 0) return;
-
-        NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:
-            [NSURL URLWithString:@"https://api.elevenlabs.io/v1/voices"]];
-        [request setValue:key forHTTPHeaderField:@"xi-api-key"];
-
-        [[[NSURLSession sharedSession] dataTaskWithRequest:request
-            completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
-            if (!data || error) return;
-            NSDictionary *json   = [NSJSONSerialization JSONObjectWithData:data
-                                                                   options:0 error:nil];
-            NSArray      *voices = json[@"voices"];
-
-            dispatch_async(dispatch_get_main_queue(), ^{
-                UIAlertController *sheet = [UIAlertController
-                    alertControllerWithTitle:@"Select Voice"
-                                     message:nil
-                              preferredStyle:UIAlertControllerStyleActionSheet];
-                for (NSDictionary *voice in voices) {
-                    [sheet addAction:[UIAlertAction actionWithTitle:voice[@"name"]
-                                                              style:UIAlertActionStyleDefault
-                                                            handler:^(UIAlertAction *a) {
-                        self.elVoiceField.text = voice[@"voice_id"];
-                    }]];
-                }
-                [sheet addAction:[UIAlertAction actionWithTitle:@"Cancel"
-                                                          style:UIAlertActionStyleCancel
-                                                        handler:nil]];
-                [self presentViewController:sheet animated:YES completion:nil];
-            });
-        }] resume];
-    }
-
-
-    // ─────────────────────────────────────────────────────────────────────────────
-    // MARK: - ElevenLabs Voice Cloning
-    // ─────────────────────────────────────────────────────────────────────────────
-
-    - (void)createInstantClone {
-        NSString *key = [self resolvedElevenLabsKey];
-        if (key.length == 0) {
-            [self showAlert:@"ElevenLabs Key Required"
-                    message:@"Enter your ElevenLabs API key before creating a voice clone."];
-            return;
-        }
-
-        UIAlertController *namePrompt = [UIAlertController
-            alertControllerWithTitle:@"Name Your Clone"
-                             message:@"Enter a display name for this voice."
-                      preferredStyle:UIAlertControllerStyleAlert];
-        [namePrompt addTextFieldWithConfigurationHandler:^(UITextField *tf) {
-            tf.placeholder = @"e.g. My Voice";
-        }];
-        [namePrompt addAction:[UIAlertAction actionWithTitle:@"Next"
-                                                       style:UIAlertActionStyleDefault
-                                                     handler:^(UIAlertAction *a) {
-            NSString *name = namePrompt.textFields.firstObject.text;
-            if (!name.length) name = @"My Clone";
-            [self presentAudioPickerForCloneName:name];
-        }]];
-        [namePrompt addAction:[UIAlertAction actionWithTitle:@"Cancel"
-                                                       style:UIAlertActionStyleCancel handler:nil]];
-        [self presentViewController:namePrompt animated:YES completion:nil];
-    }
-
-    - (void)presentAudioPickerForCloneName:(NSString *)cloneName {
-        objc_setAssociatedObject(self, kEZCloneNameKey, cloneName, OBJC_ASSOCIATION_COPY_NONATOMIC);
-
-        NSArray *audioTypes = @[
-            UTTypeAudio, UTTypeMP3, UTTypeMPEG4Audio,
-            [UTType typeWithIdentifier:@"public.ogg-audio"],
-            [UTType typeWithIdentifier:@"com.microsoft.waveform-audio"]
-        ];
-        UIDocumentPickerViewController *picker = [[UIDocumentPickerViewController alloc]
-            initForOpeningContentTypes:audioTypes asCopy:YES];
-        picker.delegate = self;
-        objc_setAssociatedObject(picker, kEZPickerPurposeKey,
-                                 @"voiceClone", OBJC_ASSOCIATION_COPY_NONATOMIC);
-        [self presentViewController:picker animated:YES completion:nil];
-    }
-
-    - (void)documentPicker:(UIDocumentPickerViewController *)controller
-    didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
-        NSString *purpose = objc_getAssociatedObject(controller, kEZPickerPurposeKey);
-        if (![purpose isEqualToString:@"voiceClone"]) return;
-
-        NSURL *audioFile = urls.firstObject;
-        if (!audioFile) return;
-
-        NSString *cloneName = objc_getAssociatedObject(self, kEZCloneNameKey) ?: @"My Clone";
-        [self updateCloneStatus:@"Uploading audio sample..."];
-        [self uploadAudioForClone:cloneName fileURL:audioFile];
-    }
-
-    - (void)documentPickerWasCancelled:(UIDocumentPickerViewController *)controller {
-        [self updateCloneStatus:@""];
-    }
-
-    - (void)uploadAudioForClone:(NSString *)cloneName fileURL:(NSURL *)fileURL {
-        NSData *audioData = [NSData dataWithContentsOfURL:fileURL];
-        if (!audioData) {
-            [self updateCloneStatus:@"Error: could not read audio file."];
-            return;
-        }
-
-        NSString *elKey    = [self resolvedElevenLabsKey];
-        NSString *boundary = [NSString stringWithFormat:@"Boundary-%@",
-                              [[NSUUID UUID] UUIDString]];
-
-        NSURL *cloneURL = [NSURL URLWithString:@"https://api.elevenlabs.io/v1/voices/add"];
-        NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:cloneURL];
-        request.HTTPMethod      = @"POST";
-        request.timeoutInterval = 120;
-        [request setValue:[NSString stringWithFormat:@"multipart/form-data; boundary=%@", boundary]
-       forHTTPHeaderField:@"Content-Type"];
-        [request setValue:elKey forHTTPHeaderField:@"xi-api-key"];
-
-        NSMutableData *body = [NSMutableData data];
-        [body appendData:[[NSString stringWithFormat:@"--%@\r\n", boundary]
-                          dataUsingEncoding:NSUTF8StringEncoding]];
-        [body appendData:[@"Content-Disposition: form-data; name=\"name\"\r\n\r\n"
-                          dataUsingEncoding:NSUTF8StringEncoding]];
-        [body appendData:[cloneName dataUsingEncoding:NSUTF8StringEncoding]];
-        [body appendData:[@"\r\n" dataUsingEncoding:NSUTF8StringEncoding]];
-        [body appendData:[[NSString stringWithFormat:@"--%@\r\n", boundary]
-                          dataUsingEncoding:NSUTF8StringEncoding]];
-        [body appendData:[@"Content-Disposition: form-data; name=\"description\"\r\n\r\n"
-                          dataUsingEncoding:NSUTF8StringEncoding]];
-        [body appendData:[@"Created via EZCompleteUI" dataUsingEncoding:NSUTF8StringEncoding]];
-        [body appendData:[@"\r\n" dataUsingEncoding:NSUTF8StringEncoding]];
-        [body appendData:[[NSString stringWithFormat:@"--%@\r\n", boundary]
-                          dataUsingEncoding:NSUTF8StringEncoding]];
-        [body appendData:[[NSString stringWithFormat:
-                           @"Content-Disposition: form-data; name=\"files\"; filename=\"%@\"\r\n",
-                           fileURL.lastPathComponent] dataUsingEncoding:NSUTF8StringEncoding]];
-        [body appendData:[@"Content-Type: audio/mpeg\r\n\r\n" dataUsingEncoding:NSUTF8StringEncoding]];
-        [body appendData:audioData];
-        [body appendData:[@"\r\n" dataUsingEncoding:NSUTF8StringEncoding]];
-        [body appendData:[[NSString stringWithFormat:@"--%@--\r\n", boundary]
-                          dataUsingEncoding:NSUTF8StringEncoding]];
-        request.HTTPBody = body;
-
-        [[[NSURLSession sharedSession] dataTaskWithRequest:request
-            completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
-            if (error) {
-                [self updateCloneStatus:@"Upload failed — check your connection."];
-                return;
-            }
-            NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data
-                                                                 options:0 error:nil];
-            NSString *voiceID  = json[@"voice_id"];
-
-            id detailObj       = json[@"detail"];
-            NSString *errorMsg = @"";
-            if ([detailObj isKindOfClass:[NSString class]]) {
-                errorMsg = detailObj;
-            } else if ([detailObj isKindOfClass:[NSArray class]]) {
-                NSDictionary *first = [detailObj firstObject];
-                if ([first isKindOfClass:[NSDictionary class]] && first[@"msg"]) {
-                    errorMsg = first[@"msg"];
-                } else {
-                    errorMsg = @"Invalid file or parameters.";
-                }
-            } else if (json[@"message"]) {
-                errorMsg = json[@"message"];
-            }
-
-            if ([voiceID isKindOfClass:[NSString class]] && voiceID.length > 0) {
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    self.elVoiceField.text = voiceID;
-                    [self updateCloneStatus:[NSString stringWithFormat:
-                        @"✅ Clone '%@' created!", cloneName]];
-                });
-            } else {
-                NSString *finalStatus = (errorMsg.length > 0)
-                    ? [NSString stringWithFormat:@"Failed: %@", errorMsg]
-                    : @"Clone creation failed.";
-                [self updateCloneStatus:finalStatus];
-            }
-        }] resume];
-    }
-
-    - (void)updateCloneStatus:(NSString *)statusMessage {
-        dispatch_async(dispatch_get_main_queue(), ^{
-            self.cloneStatusLabel.text = statusMessage;
-        });
-    }
-
-    - (void)showClonedVoices {
-        NSString *key = [self resolvedElevenLabsKey];
-        if (key.length == 0) {
-            [self showAlert:@"ElevenLabs Key Required"
-                    message:@"Enter your ElevenLabs API key first."];
-            return;
-        }
-
-        [self updateCloneStatus:@"Loading cloned voices..."];
-        NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:
-            [NSURL URLWithString:@"https://api.elevenlabs.io/v1/voices"]];
-        [request setValue:key forHTTPHeaderField:@"xi-api-key"];
-
-        [[[NSURLSession sharedSession] dataTaskWithRequest:request
-            completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
-            if (!data || error) {
-                [self updateCloneStatus:@"Failed to load voices."];
-                return;
-            }
-            NSDictionary *json   = [NSJSONSerialization JSONObjectWithData:data
-                                                                   options:0 error:nil];
-            NSArray      *voices = json[@"voices"];
-
-            NSMutableArray<NSDictionary *> *cloned = [NSMutableArray array];
-            for (NSDictionary *voice in voices) {
-                if ([[voice[@"category"] description] isEqualToString:@"cloned"]) {
-                    [cloned addObject:voice];
-                }
-            }
-
-            dispatch_async(dispatch_get_main_queue(), ^{
-                [self updateCloneStatus:@""];
-                if (cloned.count == 0) {
-                    [self showAlert:@"No Cloned Voices"
-                            message:@"You haven't created any voice clones yet."];
-                    return;
-                }
-                UIAlertController *sheet = [UIAlertController
-                    alertControllerWithTitle:@"My Cloned Voices"
-                                     message:@"Tap a voice to select it, or swipe to delete."
-                              preferredStyle:UIAlertControllerStyleActionSheet];
-                for (NSDictionary *v in cloned) {
-                    [sheet addAction:[UIAlertAction actionWithTitle:v[@"name"]
-                                                              style:UIAlertActionStyleDefault
-                                                            handler:^(UIAlertAction *a) {
-                        self.elVoiceField.text = v[@"voice_id"];
-                    }]];
-                }
-                [sheet addAction:[UIAlertAction actionWithTitle:@"🗑 Delete a Clone..."
-                                                          style:UIAlertActionStyleDestructive
-                                                        handler:^(UIAlertAction *a) {
-                    [self showDeleteCloneSheet:cloned];
-                }]];
-                [sheet addAction:[UIAlertAction actionWithTitle:@"Cancel"
-                                                          style:UIAlertActionStyleCancel handler:nil]];
-                [self presentViewController:sheet animated:YES completion:nil];
-            });
-        }] resume];
-    }
-
-    - (void)showDeleteCloneSheet:(NSArray<NSDictionary *> *)voices {
-        UIAlertController *sheet = [UIAlertController
-            alertControllerWithTitle:@"Delete Voice Clone"
-                             message:@"This permanently deletes the voice from ElevenLabs."
-                      preferredStyle:UIAlertControllerStyleActionSheet];
-        for (NSDictionary *voice in voices) {
-            NSString *name    = voice[@"name"] ?: @"Unnamed";
-            NSString *voiceID = voice[@"voice_id"];
-            [sheet addAction:[UIAlertAction actionWithTitle:name
-                                                      style:UIAlertActionStyleDestructive
-                                                    handler:^(UIAlertAction *a) {
-                [self confirmDeleteVoice:voiceID name:name];
-            }]];
-        }
-        [sheet addAction:[UIAlertAction actionWithTitle:@"Cancel"
-                                                  style:UIAlertActionStyleCancel handler:nil]];
-        [self presentViewController:sheet animated:YES completion:nil];
-    }
-
-    - (void)confirmDeleteVoice:(NSString *)voiceID name:(NSString *)voiceName {
-        UIAlertController *confirm = [UIAlertController
-            alertControllerWithTitle:[NSString stringWithFormat:@"Delete \"%@\"?", voiceName]
-                             message:@"This cannot be undone."
-                      preferredStyle:UIAlertControllerStyleAlert];
-        [confirm addAction:[UIAlertAction actionWithTitle:@"Delete"
-                                                   style:UIAlertActionStyleDestructive
-                                                 handler:^(UIAlertAction *a) {
-            [self deleteVoiceFromAPI:voiceID name:voiceName];
-        }]];
-        [confirm addAction:[UIAlertAction actionWithTitle:@"Cancel"
-                                                   style:UIAlertActionStyleCancel handler:nil]];
-        [self presentViewController:confirm animated:YES completion:nil];
-    }
-
-    - (void)deleteVoiceFromAPI:(NSString *)voiceID name:(NSString *)voiceName {
-        NSString *urlString = [NSString stringWithFormat:
-            @"https://api.elevenlabs.io/v1/voices/%@", voiceID];
-        NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:
-            [NSURL URLWithString:urlString]];
-        request.HTTPMethod = @"DELETE";
-        [request setValue:[self resolvedElevenLabsKey] forHTTPHeaderField:@"xi-api-key"];
-
-        EZLogf(EZLogLevelInfo, @"SETTINGS", @"Deleting voice: %@ (%@)", voiceName, voiceID);
-        [self updateCloneStatus:[NSString stringWithFormat:@"Deleting %@...", voiceName]];
-
-        [[[NSURLSession sharedSession] dataTaskWithRequest:request
-            completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
-            NSHTTPURLResponse *http = (NSHTTPURLResponse *)response;
-            if (http.statusCode == 200 || http.statusCode == 204) {
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    if ([self.elVoiceField.text isEqualToString:voiceID]) {
-                        self.elVoiceField.text = @"";
-                    }
-                    [self updateCloneStatus:[NSString stringWithFormat:
-                        @"Deleted: %@", voiceName]];
-                });
-            } else {
-                [self updateCloneStatus:@"Delete failed — check your API key."];
-            }
-        }] resume];
-    }
-
 
     // ─────────────────────────────────────────────────────────────────────────────
     // MARK: - Memory & Stats Actions
@@ -1098,36 +687,6 @@ static NSString *const kSupabaseAnonKey = @"sb_publishable_AzEVhLuIj1nSMwZvIgKw7
     - (void)loadSettings {
         NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
 
-        // ── OpenAI key ────────────────────────────────────────────────────────────
-        if ([EZKeyVault hasKeyForIdentifier:EZVaultKeyOpenAI]) {
-            self.apiKeyMasked = YES;
-            [self maskKeyField:self.apiKeyField placeholder:kAPIKeyMaskedPlaceholder];
-        } else {
-            NSString *legacyKey = [defaults stringForKey:@"apiKey"];
-            if (legacyKey.length > 0) {
-                [EZKeyVault saveKey:legacyKey forIdentifier:EZVaultKeyOpenAI];
-                [defaults removeObjectForKey:@"apiKey"];
-                [defaults synchronize];
-                self.apiKeyMasked = YES;
-                [self maskKeyField:self.apiKeyField placeholder:kAPIKeyMaskedPlaceholder];
-            }
-        }
-
-        // ── ElevenLabs key ────────────────────────────────────────────────────────
-        if ([EZKeyVault hasKeyForIdentifier:EZVaultKeyElevenLabs]) {
-            self.elKeyMasked = YES;
-            [self maskKeyField:self.elKeyField placeholder:kELKeyMaskedPlaceholder];
-        } else {
-            NSString *legacyElKey = [defaults stringForKey:@"elevenKey"];
-            if (legacyElKey.length > 0) {
-                [EZKeyVault saveKey:legacyElKey forIdentifier:EZVaultKeyElevenLabs];
-                [defaults removeObjectForKey:@"elevenKey"];
-                [defaults synchronize];
-                self.elKeyMasked = YES;
-                [self maskKeyField:self.elKeyField placeholder:kELKeyMaskedPlaceholder];
-            }
-        }
-
         // ── Non-sensitive settings ────────────────────────────────────────────────
         self.systemMsgView.text       = [defaults stringForKey:@"systemMessage"] ?: @"";
         self.tempSlider.value         = [defaults floatForKey:@"temperature"] ?: 0.7f;
@@ -1153,13 +712,6 @@ static NSString *const kSupabaseAnonKey = @"sb_publishable_AzEVhLuIj1nSMwZvIgKw7
 
     - (void)saveAndClose {
         NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-
-        if (!self.apiKeyMasked && self.apiKeyField.text.length > 0) {
-            [EZKeyVault saveKey:self.apiKeyField.text forIdentifier:EZVaultKeyOpenAI];
-        }
-        if (!self.elKeyMasked && self.elKeyField.text.length > 0) {
-            [EZKeyVault saveKey:self.elKeyField.text forIdentifier:EZVaultKeyElevenLabs];
-        }
 
         [defaults setObject:self.systemMsgView.text     forKey:@"systemMessage"];
         [defaults setFloat:self.tempSlider.value        forKey:@"temperature"];
