@@ -5,7 +5,7 @@
 #
 #  Created by Brian A Nooning on 4/18/26.
 #  
-curl -X POST https://api-m.sandbox.paypal.com/v1/billing/plans \
+curl -X POST https://api-m.paypal.com/v1/billing/plans \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer A21AAI5WvQ-tTTp7pu_Fimd7psAliCtYXZdj1h2M8DPS1t3osTGkkhck_LZ26j3lOuxbPQlOpJwZBo4--DcjkC16ZBIQ34YrQ" \
   -d '{
