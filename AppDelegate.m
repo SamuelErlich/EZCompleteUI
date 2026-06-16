@@ -1,15 +1,36 @@
 // AppDelegate.m
 // EZCompleteUI
- 
+//
+// Purpose:
+//   Application entry point. Initializes the main window, kicks off session
+//   restoration at launch (showing LoginViewController while the check runs),
+//   and handles incoming deep links for the password reset flow.
+//
+// Changes:
+//   - Added application:openURL:options: to handle ezcomplete:// deep links
+//     for the password reset flow. Tokens are applied via EZAuthManager which
+//     posts EZPasswordResetReadyNotification — LoginViewController observes
+//     this and switches to its password-reset UI state.
+//   - Fixed race condition: restoreSessionWithCompletion: now checks
+//     isInPasswordRecoveryMode before transitioning to ViewController. Without
+//     this guard, a previously-logged-in user tapping the reset link would see
+//     the recovery URL handled, then have ViewController transition on top of
+//     it 300-500ms later when the async session restore completed.
+//   - Added fallback URL parsing for direct Supabase redirects (no edge function):
+//     when the edge function is unreachable or not yet deployed, Supabase puts
+//     tokens in the URL fragment (ezcomplete://#access_token=...&type=recovery)
+//     rather than as query params on the password-reset host. Both formats are
+//     handled so the reset flow works with or without the edge function deployed.
+
 #import "AppDelegate.h"
 #import "ViewController.h"
 #import "EZKeyVault.h"
 #import "LoginViewController.h"
 #import "EZAuthManager.h"
 
- 
+
 @implementation AppDelegate
- 
+
 - (BOOL)application:(UIApplication *)application
     didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
 
@@ -21,9 +42,13 @@
     self.window.rootViewController = loginVC;
     [self.window makeKeyAndVisible];
 
-    // Try to restore existing session
+    // Try to restore existing session. Guard against the race condition where
+    // application:openURL:options: fires between didFinishLaunching returning
+    // and this async completion running: if a password reset deep link was
+    // received, isInPasswordRecoveryMode will already be YES and we must NOT
+    // transition away from the reset UI that LoginViewController just set up.
     [[EZAuthManager shared] restoreSessionWithCompletion:^(BOOL loggedIn) {
-        if (loggedIn) {
+        if (loggedIn && ![[EZAuthManager shared] isInPasswordRecoveryMode]) {
             ViewController *vc = [[ViewController alloc] init];
             [UIView transitionWithView:self.window
                               duration:0.3
@@ -31,13 +56,104 @@
                             animations:^{ self.window.rootViewController = vc; }
                             completion:nil];
         }
-        // If not logged in, LoginViewController is already showing
+        // Not logged in, or in recovery mode — LoginViewController stays
     }];
 
     return YES;
 }
 
- 
+// ── Deep link handler ─────────────────────────────────────────────────────────
+// Called by iOS when any ezcomplete:// URL is opened — from Mail, Safari, or
+// LiveContainer's open-url forwarding. Handles the password reset flow only.
+//
+// Two URL formats are supported:
+//
+//   Via edge function (preferred — provides branded page + LiveContainer fallbacks):
+//     ezcomplete://password-reset?access_token=...&refresh_token=...
+//     Tokens arrive as query parameters on the "password-reset" host.
+//
+//   Direct Supabase redirect (fallback — works without edge function deployed):
+//     ezcomplete://#access_token=...&refresh_token=...&type=recovery
+//     Tokens arrive in the URL fragment with no host. Only the "recovery" type
+//     is handled; other Supabase auth callbacks (magic links etc.) are ignored.
+//
+// Routing after tokens are extracted:
+//   - LoginViewController already root: EZPasswordResetReadyNotification fires
+//     and LoginVC shows the reset overlay immediately.
+//   - ViewController is root (user was logged in): transition to a fresh
+//     LoginViewController which detects isInPasswordRecoveryMode in viewDidLoad.
+
+- (BOOL)application:(UIApplication *)application
+            openURL:(NSURL *)url
+            options:(NSDictionary<UIApplicationOpenURLOptionsKey, id> *)options {
+
+    if (![url.scheme isEqualToString:@"ezcomplete"]) return NO;
+
+    NSString *accessToken  = nil;
+    NSString *refreshToken = nil;
+
+    if ([url.host isEqualToString:@"password-reset"]) {
+        // ── Edge function format ───────────────────────────────────────────────
+        // ezcomplete://password-reset?access_token=...&refresh_token=...
+        NSURLComponents *components = [NSURLComponents componentsWithURL:url
+                                                resolvingAgainstBaseURL:NO];
+        for (NSURLQueryItem *item in components.queryItems) {
+            if ([item.name isEqualToString:@"access_token"])  accessToken  = item.value;
+            if ([item.name isEqualToString:@"refresh_token"]) refreshToken = item.value;
+        }
+
+    } else if (url.fragment.length) {
+        // ── Direct Supabase fallback format ───────────────────────────────────
+        // ezcomplete://#access_token=...&refresh_token=...&type=recovery
+        //
+        // The URL fragment is not sent to any server — iOS passes the full URL
+        // including fragment to this method. We reuse NSURLComponents query
+        // parsing by temporarily treating the fragment as a query string.
+        NSURLComponents *fragmentComponents = [[NSURLComponents alloc] init];
+        fragmentComponents.query = url.fragment;
+
+        NSMutableDictionary<NSString *, NSString *> *fragmentParams =
+            [NSMutableDictionary dictionaryWithCapacity:fragmentComponents.queryItems.count];
+        for (NSURLQueryItem *item in fragmentComponents.queryItems) {
+            if (item.value) fragmentParams[item.name] = item.value;
+        }
+
+        // Ignore non-recovery callbacks (e.g. email confirmation magic links)
+        if (![fragmentParams[@"type"] isEqualToString:@"recovery"]) {
+            NSLog(@"[AppDelegate] ezcomplete:// fragment type '%@' — not a recovery link, ignoring.",
+                  fragmentParams[@"type"]);
+            return NO;
+        }
+
+        accessToken  = fragmentParams[@"access_token"];
+        refreshToken = fragmentParams[@"refresh_token"];
+    }
+
+    if (!accessToken.length || !refreshToken.length) {
+        NSLog(@"[AppDelegate] Password reset URL missing tokens — ignoring. URL: %@", url);
+        return NO;
+    }
+
+    // Store recovery tokens and post EZPasswordResetReadyNotification.
+    // LoginViewController observes this notification and shows the reset overlay.
+    [[EZAuthManager shared] applyPasswordResetTokens:accessToken
+                                        refreshToken:refreshToken];
+
+    if (![self.window.rootViewController isKindOfClass:[LoginViewController class]]) {
+        // ViewController is showing (user was previously logged in). Transition
+        // to a fresh LoginViewController — its viewDidLoad detects
+        // isInPasswordRecoveryMode and calls showPasswordResetEntryState directly.
+        LoginViewController *resetLoginVC = [[LoginViewController alloc] init];
+        [UIView transitionWithView:self.window
+                          duration:0.3
+                           options:UIViewAnimationOptionTransitionCrossDissolve
+                        animations:^{ self.window.rootViewController = resetLoginVC; }
+                        completion:nil];
+    }
+
+    return YES;
+}
+
 - (void)applicationDidBecomeActive:(UIApplication *)application {
     // Short delay so ViewController.viewDidLoad is guaranteed to have run
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)),
@@ -46,7 +162,7 @@
             postNotificationName:@"EZAppDidBecomeActive" object:nil];
     });
 }
- 
+
 - (void)applicationDidEnterBackground:(UIApplication *)application {
     __block UIBackgroundTaskIdentifier bgTask = UIBackgroundTaskInvalid;
     bgTask = [application beginBackgroundTaskWithExpirationHandler:^{
@@ -59,5 +175,5 @@
         bgTask = UIBackgroundTaskInvalid;
     });
 }
- 
+
 @end

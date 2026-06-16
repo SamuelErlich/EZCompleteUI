@@ -2,7 +2,20 @@
 // EZCompleteUI
 //
 // Displays, edits, and deletes saved AI memory entries from ezui_memory.json.
-// Features: inline editing, QLThumbnail previews, QuickLook, card cells.
+// Features: inline editing, QLThumbnail previews, QuickLook, card cells,
+// live auto-refresh via VNODE file watcher, manual refresh button.
+//
+// Changes from previous version:
+//   - Live refresh: dispatch_source VNODE watcher on ezui_memory.json fires a
+//     debounced reload whenever any code (or process) writes to the file.
+//     Works without any changes to other classes.
+//   - viewWillAppear now calls loadMemories so the list is always current on
+//     (re-)presentation, even if the file watcher missed an event.
+//   - loadMemories removed from viewDidLoad to avoid a redundant double-load
+//     on first open (viewWillAppear fires immediately after on first present).
+//   - Refresh button (arrow.clockwise) added to left nav bar alongside search.
+//   - thumbCache is now cleared in loadMemories, fixing an index-shift bug
+//     that caused wrong thumbnails after any reload that changed sort order.
 
 #import "MemoriesViewController.h"
 #import "helpers.h"
@@ -290,14 +303,19 @@
 
 @property (nonatomic, strong) NSArray<NSMutableDictionary *> *displayedMemories;
 
-
 @property (nonatomic, strong) UITableView  *tableView;
 @property (nonatomic, strong) NSMutableArray<NSMutableDictionary *> *memories;
-@property (nonatomic, copy) NSString *searchTerm;
-@property (nonatomic, strong) UISearchBar *searchBar;
+@property (nonatomic, copy)   NSString     *searchTerm;
+@property (nonatomic, strong) UISearchBar  *searchBar;
 @property (nonatomic, strong) UILabel      *emptyLabel;
 @property (nonatomic, strong) NSURL        *previewURL;
 @property (nonatomic, strong) NSMutableDictionary<NSNumber *, UIImage *> *thumbCache;
+
+// VNODE file watcher — observes ezui_memory.json for writes/renames so the
+// list auto-refreshes in real time without any changes to other classes.
+// Active only while this VC is on screen (started in viewWillAppear, stopped
+// in viewDidDisappear) to avoid leaking file handles in the background.
+@property (nonatomic, strong) dispatch_source_t memoryFileWatchSource;
 
 @end
 
@@ -310,28 +328,56 @@ static NSString * const kEmptyCellID = @"EZMemoryEmptyCell";
     [super viewDidLoad];
     self.title = @"Memories";
     self.view.backgroundColor = [UIColor systemGroupedBackgroundColor];
-    self.thumbCache = [NSMutableDictionary dictionary];
+
+    // ── Left nav bar: search (refresh handled automatically via file watch) ───
     UIBarButtonItem *searchItem = nil;
+
     if (@available(iOS 13.0, *)) {
-        searchItem = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"magnifyingglass"]
-                                                      style:UIBarButtonItemStylePlain
-                                                     target:self
-                                                     action:@selector(focusSearch)];
+        searchItem = [[UIBarButtonItem alloc]
+            initWithImage:[UIImage systemImageNamed:@"magnifyingglass"]
+                    style:UIBarButtonItemStylePlain
+                   target:self
+                   action:@selector(focusSearch)];
     } else {
-        searchItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemSearch
-                                                                   target:self
-                                                                   action:@selector(focusSearch)];
+        searchItem = [[UIBarButtonItem alloc]
+            initWithBarButtonSystemItem:UIBarButtonSystemItemSearch
+                                 target:self
+                                 action:@selector(focusSearch)];
     }
-    self.navigationItem.leftBarButtonItem = searchItem;
+    self.navigationItem.leftBarButtonItems = @[searchItem];
+
+    // ── Right nav bar: close + edit ───────────────────────────────────────────
     UIBarButtonItem *closeItem = [[UIBarButtonItem alloc]
         initWithBarButtonSystemItem:UIBarButtonSystemItemClose
                              target:self
                              action:@selector(dismissSelf)];
     self.navigationItem.rightBarButtonItems = @[closeItem, self.editButtonItem];
+
     [self setupTableView];
     [self setupSearchBar];
     [self setupEmptyLabel];
+
+    // NOTE: loadMemories is intentionally NOT called here. viewWillAppear handles
+    // the initial load (and every subsequent re-appearance), preventing a
+    // redundant double-load since viewWillAppear fires immediately after
+    // viewDidLoad on the first presentation.
+}
+
+- (void)viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+    // Always refresh from disk on every appearance — covers both the initial
+    // present and any re-appear after the user dismisses a sub-modal (e.g.,
+    // QuickLook) or navigates away and back.
     [self loadMemories];
+    [self startWatchingMemoriesFile];
+}
+
+- (void)viewDidDisappear:(BOOL)animated {
+    [super viewDidDisappear:animated];
+    // Cancel the file watcher when we're off screen.  Leaving a VNODE watcher
+    // running in the background would hold open a file descriptor unnecessarily
+    // and fire reloads the user can't see.
+    [self stopWatchingMemoriesFile];
 }
 
 - (void)setupTableView {
@@ -381,6 +427,14 @@ static NSString * const kEmptyCellID = @"EZMemoryEmptyCell";
 }
 
 - (void)loadMemories {
+    // Clear the thumbnail cache before rebuilding the memories array.
+    // The cache uses array indices as keys, so if the sort order changes
+    // (e.g., a new memory is added and sorts to a different position),
+    // stale cache entries would map to the wrong cells.  Clearing here
+    // ensures correctness; thumbnails regenerate asynchronously and are
+    // re-cached within the same session.
+    self.thumbCache = [NSMutableDictionary dictionary];
+
     self.memories = [NSMutableArray array];
     NSData *data = [NSData dataWithContentsOfFile:[self memoriesFilePath]];
     if (data) {
@@ -501,6 +555,94 @@ static NSString * const kEmptyCellID = @"EZMemoryEmptyCell";
         });
         }];
     }
+}
+
+// ── File watcher ──────────────────────────────────────────────────────────────
+//
+// Uses a POSIX VNODE dispatch source to watch ezui_memory.json for any change
+// (write, delete, or rename).  The rename case matters because
+// -[NSData writeToFile:atomically:YES] writes to a temp file and then calls
+// rename(2) to replace the original — so atomic saves arrive as a RENAME event
+// on the inode we're watching, which invalidates the file descriptor.
+//
+// Pattern: event fires → cancel current source (closes fd) → debounce 0.4 s
+//          → reload from disk → re-open fresh source on the new inode.
+
+- (void)startWatchingMemoriesFile {
+    // Tear down any existing watcher before creating a new one.
+    [self stopWatchingMemoriesFile];
+
+    NSString *filePath = [self memoriesFilePath];
+    if (![[NSFileManager defaultManager] fileExistsAtPath:filePath]) {
+        // No file yet (no memories saved).  viewWillAppear will call us again
+        // on the next appearance; nothing to watch in the meantime.
+        return;
+    }
+
+    // O_EVTONLY opens the file for event monitoring only, without preventing
+    // the OS from unmounting the volume or the file from being renamed away.
+    int fileDescriptor = open(filePath.UTF8String, O_EVTONLY);
+    if (fileDescriptor < 0) {
+        EZLog(EZLogLevelWarning, @"MEMORIES",
+              @"startWatchingMemoriesFile: open() failed — auto-refresh unavailable until next appear");
+        return;
+    }
+
+    dispatch_source_t source = dispatch_source_create(
+        DISPATCH_SOURCE_TYPE_VNODE,
+        (uintptr_t)fileDescriptor,
+        DISPATCH_VNODE_WRITE | DISPATCH_VNODE_DELETE | DISPATCH_VNODE_RENAME,
+        dispatch_get_main_queue()
+    );
+
+    __weak typeof(self) weakSelf = self;
+
+    dispatch_source_set_event_handler(source, ^{
+        // File changed.  Stop the current watcher first (the fd may be stale
+        // after a rename) then schedule a debounced reload.
+        [weakSelf handleMemoryFileChanged];
+    });
+
+    // Cancel handler is responsible for closing the file descriptor.
+    // It fires when the source is cancelled — either by stopWatchingMemoriesFile
+    // or automatically when the source is deallocated.
+    dispatch_source_set_cancel_handler(source, ^{
+        close(fileDescriptor);
+    });
+
+    self.memoryFileWatchSource = source;
+    dispatch_resume(source);
+}
+
+- (void)stopWatchingMemoriesFile {
+    if (!self.memoryFileWatchSource) return;
+    dispatch_source_cancel(self.memoryFileWatchSource);
+    // Nil out immediately so repeated calls are safe.  The cancel handler
+    // fires asynchronously and closes the underlying file descriptor.
+    self.memoryFileWatchSource = nil;
+}
+
+- (void)handleMemoryFileChanged {
+    // Cancel the watcher first — after an atomic write the inode we opened is
+    // gone (renamed away), so the fd is no longer useful.  reloadFromDisk will
+    // restart the watcher on the new inode.
+    [self stopWatchingMemoriesFile];
+
+    // Debounce: cancel any pending reload and push it 0.4 s forward.
+    // This collapses rapid multi-event bursts (e.g., write + metadata update)
+    // into a single UI refresh.
+    [NSObject cancelPreviousPerformRequestsWithTarget:self
+                                             selector:@selector(reloadFromDisk)
+                                               object:nil];
+    [self performSelector:@selector(reloadFromDisk)
+               withObject:nil
+               afterDelay:0.4];
+}
+
+- (void)reloadFromDisk {
+    [self loadMemories];
+    // Re-attach the watcher to whatever inode now lives at the memories path.
+    [self startWatchingMemoriesFile];
 }
 
 // ── Editing mode ──────────────────────────────────────────────────────────────

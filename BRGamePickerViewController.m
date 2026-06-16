@@ -1,6 +1,44 @@
 // BRGamePickerViewController.m
 // BrainRotGame
-// EZCompleteUI v1.0
+// EZCompleteUI v2.2 — onClosedWithoutSelection Added
+//
+// Changes from v2.1:
+//   - Added onClosedWithoutSelection callback (also declared in
+//     BRGamePickerViewController.h). Fires from handleCloseTapped after the
+//     picker has dismissed itself, so BrainRotViewController can dismiss
+//     *itself* in response — leaving BRGameView's chrome behind the picker
+//     (empty gameView/d-pad/HUD) visible after the picker dismisses was not
+//     a useful state to land in. See BrainRotViewController v2.7 for the
+//     receiving end (dismissSelfBackToCaller).
+//
+// Changes from v2.0:
+//   - Added a "✕" close button (top-trailing, below the safe area) that
+//     dismisses the picker with no selection. Previously, presenting this
+//     full-screen modal left no way back except onSelection firing — if the
+//     player opened the picker and changed their mind, the only way out was
+//     force-quitting the app.
+//   - FIXED the Workshop hand-off. workshopVC.onGameCreated previously called
+//     dismissWithRecord:, which both dismisses *and* fires onSelection — but
+//     onGameCreated now fires the moment BRGameLibrary finishes its disk
+//     write (in parallel with BRGameResultViewController's premise reveal),
+//     not when the player has made a choice. The result: the result screen
+//     flashed for an instant, then got torn down by this dismiss, while
+//     onSelection fired underneath a picker that was still on screen — the
+//     picker would then reload (via viewWillAppear) and show the new game as
+//     a card, while loadGameRecord: ran invisibly behind it.
+//     Now:
+//       - onGameCreated only inserts the new record into savedGames and
+//         reloads the collection view — no dismiss, no onSelection. The
+//         result screen is left to do its job uninterrupted.
+//       - onPlayRequested (fired only after the Workshop + result screen
+//         have already dismissed themselves) is what now calls
+//         dismissWithRecord:, taking the player straight into gameplay —
+//         "Maybe Later" simply leaves the picker showing the new game as a
+//         card, already reflecting the onGameCreated update.
+//   - dismissWithRecord: gained an `animated:` parameter. onPlayRequested
+//     uses NO, since the Workshop's own dismiss (picker -> Workshop) already
+//     provided the visual transition back to the picker; animating this
+//     second dismissal too would add a visible double-flash.
 //
 // Layout: full-screen dark background, scrollable 2-column UICollectionView.
 // Row 0: "✚ NEW GAME" card (always present, spanning full width via a separate
@@ -13,12 +51,10 @@
 //   - Theme title in bold white overlaid at the bottom.
 //   - Creation date in small gray text below the title.
 //   - Long-press triggers a delete confirmation UIAlertController.
-//
-// The title is also drawn directly into a thumbnail image (renderCardThumbnail:)
-// for use as a UIContextMenuConfiguration preview if desired in future.
 
 #import "BRGamePickerViewController.h"
 #import "BRGameLibrary.h"
+#import "BRCustomGameCreatorViewController.h" // Linked Workshop Interface
 
 static NSString *const kBRNewGameCellIdentifier    = @"BRNewGameCell";
 static NSString *const kBRSavedGameCellIdentifier  = @"BRSavedGameCell";
@@ -101,7 +137,9 @@ static NSString *const kBRNewGameSectionIdentifier = @"newGame";
     self.backgroundImageView.image = record.backgroundImage; // lazy load from disk
 
     // Relative date string
-    NSTimeInterval age = -[record.createdDate timeIntervalSinceNow];
+    NSDate *created = record.createdDate;
+    if (!created) created = [NSDate date];
+    NSTimeInterval age = -[created timeIntervalSinceNow];
     NSString *dateString;
     if (age < 60)              dateString = @"Just now";
     else if (age < 3600)       dateString = [NSString stringWithFormat:@"%d min ago",  (int)(age / 60)];
@@ -111,7 +149,7 @@ static NSString *const kBRNewGameSectionIdentifier = @"newGame";
         NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
         formatter.dateStyle = NSDateFormatterShortStyle;
         formatter.timeStyle = NSDateFormatterNoStyle;
-        dateString = [formatter stringFromDate:record.createdDate];
+        dateString = [formatter stringFromDate:created];
     }
     self.dateLabel.text = dateString;
 }
@@ -160,7 +198,7 @@ static NSString *const kBRNewGameSectionIdentifier = @"newGame";
     [self.contentView addSubview:textLabel];
 
     UILabel *subLabel      = [[UILabel alloc] init];
-    subLabel.text          = @"AI-generated";
+    subLabel.text          = @"Workshop Builder";
     subLabel.font          = [UIFont monospacedSystemFontOfSize:10 weight:UIFontWeightRegular];
     subLabel.textColor     = [UIColor colorWithWhite:0.55 alpha:1.0];
     subLabel.textAlignment = NSTextAlignmentCenter;
@@ -185,6 +223,11 @@ static NSString *const kBRNewGameSectionIdentifier = @"newGame";
 @interface BRGamePickerViewController () <UICollectionViewDataSource, UICollectionViewDelegate>
 @property (nonatomic, strong) UICollectionView *collectionView;
 @property (nonatomic, strong) NSArray<BRGameRecord *> *savedGames;
+// onSelection and onClosedWithoutSelection are declared in BRGamePickerViewController.h;
+// they are re-declared here only to suppress "property not found" warnings from
+// the implementation file accessing them directly.
+@property (nonatomic, copy) void (^onSelection)(BRGameRecord *_Nullable record);
+@property (nonatomic, copy, nullable) void (^onClosedWithoutSelection)(void);
 @end
 
 @implementation BRGamePickerViewController
@@ -210,6 +253,17 @@ static NSString *const kBRNewGameSectionIdentifier = @"newGame";
     subHeader.translatesAutoresizingMaskIntoConstraints = NO;
     [self.view addSubview:subHeader];
 
+    // Close button: this picker is presented full-screen with no other way
+    // back. Dismisses with no selection — onSelection is NOT called, so the
+    // presenter (BrainRotViewController) is left exactly as it was.
+    UIButton *closeButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    [closeButton setTitle:@"✕" forState:UIControlStateNormal];
+    closeButton.titleLabel.font = [UIFont systemFontOfSize:22 weight:UIFontWeightBold];
+    closeButton.tintColor = [UIColor colorWithWhite:0.7 alpha:1.0];
+    [closeButton addTarget:self action:@selector(handleCloseTapped) forControlEvents:UIControlEventTouchUpInside];
+    closeButton.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:closeButton];
+
     // ── Collection view ───────────────────────────────────────────────────────
     UICollectionViewFlowLayout *layout = [[UICollectionViewFlowLayout alloc] init];
     layout.minimumInteritemSpacing = 12;
@@ -234,6 +288,10 @@ static NSString *const kBRNewGameSectionIdentifier = @"newGame";
         [headerLabel.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
         [subHeader.topAnchor constraintEqualToAnchor:headerLabel.bottomAnchor constant:4],
         [subHeader.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
+        [closeButton.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor constant:12],
+        [closeButton.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-16],
+        [closeButton.widthAnchor constraintGreaterThanOrEqualToConstant:44],
+        [closeButton.heightAnchor constraintGreaterThanOrEqualToConstant:44],
         [self.collectionView.topAnchor constraintEqualToAnchor:subHeader.bottomAnchor constant:12],
         [self.collectionView.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
         [self.collectionView.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],
@@ -249,7 +307,6 @@ static NSString *const kBRNewGameSectionIdentifier = @"newGame";
 }
 
 - (void)reloadSavedGames {
-    // Load from disk on a background queue, then reload on main
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         NSArray<BRGameRecord *> *records = [BRGameLibrary.shared allRecords];
         dispatch_async(dispatch_get_main_queue(), ^{
@@ -268,7 +325,7 @@ static NSString *const kBRNewGameSectionIdentifier = @"newGame";
     CGFloat sideInsets  = layout.sectionInset.left + layout.sectionInset.right;
     CGFloat spacing     = layout.minimumInteritemSpacing;
     CGFloat cellWidth   = floor((totalWidth - sideInsets - spacing) / 2.0);
-    CGFloat cellHeight  = cellWidth * 1.25; // portrait card aspect ratio
+    CGFloat cellHeight  = cellWidth * 1.25;
     if (!CGSizeEqualToSize(layout.itemSize, CGSizeMake(cellWidth, cellHeight))) {
         layout.itemSize = CGSizeMake(cellWidth, cellHeight);
         [layout invalidateLayout];
@@ -277,8 +334,6 @@ static NSString *const kBRNewGameSectionIdentifier = @"newGame";
 
 #pragma mark - UICollectionViewDataSource
 
-// Section 0 = New Game (always 1 item)
-// Section 1 = Saved games
 - (NSInteger)numberOfSectionsInCollectionView:(UICollectionView *)collectionView {
     return 2;
 }
@@ -307,19 +362,47 @@ static NSString *const kBRNewGameSectionIdentifier = @"newGame";
 - (void)collectionView:(UICollectionView *)collectionView
     didSelectItemAtIndexPath:(NSIndexPath *)indexPath {
     if (indexPath.section == 0) {
-        [self dismissWithRecord:nil]; // New Game
+        BRCustomGameCreatorViewController *workshopVC = [[BRCustomGameCreatorViewController alloc] init];
+
+        __weak typeof(self) weakSelf = self;
+
+        // Fires as soon as BRGameLibrary finishes writing the new record —
+        // while BRGameResultViewController is still showing the premise
+        // reveal / "Finalizing..." state on top of the Workshop. Just fold
+        // the new record into our own list so it's ready to show as a card
+        // if the player backs out via "Maybe Later"; do NOT dismiss or call
+        // onSelection here.
+        workshopVC.onGameCreated = ^(BRGameRecord * _Nonnull record) {
+            __strong typeof(weakSelf) strongSelf = weakSelf;
+            if (!strongSelf) return;
+            NSMutableArray<BRGameRecord *> *updated = [strongSelf.savedGames mutableCopy] ?: [NSMutableArray array];
+            [updated insertObject:record atIndex:0]; // newest first, matches BRGameLibrary ordering
+            strongSelf.savedGames = [updated copy];
+            [strongSelf.collectionView reloadData];
+        };
+
+        // Fires only after the Workshop and its result screen have already
+        // dismissed themselves (back to this picker). This is the moment to
+        // hand off to gameplay, exactly as if the player had tapped an
+        // existing saved-game card.
+        workshopVC.onPlayRequested = ^(BRGameRecord * _Nonnull record) {
+            [weakSelf dismissWithRecord:record animated:NO];
+        };
+
+        UINavigationController *navWrapper = [[UINavigationController alloc] initWithRootViewController:workshopVC];
+        navWrapper.modalPresentationStyle = UIModalPresentationFullScreen;
+        [self presentViewController:navWrapper animated:YES completion:nil];
     } else {
         BRGameRecord *selectedRecord = self.savedGames[indexPath.item];
-        [self dismissWithRecord:selectedRecord];
+        [self dismissWithRecord:selectedRecord animated:YES];
     }
 }
 
-/// Long-press on a saved game cell offers deletion.
 - (UIContextMenuConfiguration *)collectionView:(UICollectionView *)collectionView
     contextMenuConfigurationForItemAtIndexPath:(NSIndexPath *)indexPath
                                          point:(CGPoint)point
     API_AVAILABLE(ios(13.0)) {
-    if (indexPath.section == 0) return nil; // no context menu on New Game
+    if (indexPath.section == 0) return nil;
 
     BRGameRecord *record = self.savedGames[indexPath.item];
     return [UIContextMenuConfiguration configurationWithIdentifier:nil
@@ -358,10 +441,22 @@ static NSString *const kBRNewGameSectionIdentifier = @"newGame";
 
 #pragma mark - Dismiss
 
-- (void)dismissWithRecord:(nullable BRGameRecord *)record {
+- (void)dismissWithRecord:(nullable BRGameRecord *)record animated:(BOOL)animated {
     void (^selectionBlock)(BRGameRecord *) = self.onSelection;
-    [self dismissViewControllerAnimated:YES completion:^{
+    [self dismissViewControllerAnimated:animated completion:^{
         if (selectionBlock) selectionBlock(record);
+    }];
+}
+
+/// Closes the picker with no selection at all — onSelection is NOT called.
+/// The presenter (BrainRotViewController) is left exactly as it was; this is
+/// "I changed my mind", not "load nothing" (which onSelection has no
+/// representation for anyway — its two cases are "load this saved record"
+/// and "start a new run").
+- (void)handleCloseTapped {
+    void (^closedBlock)(void) = self.onClosedWithoutSelection;
+    [self dismissViewControllerAnimated:YES completion:^{
+        if (closedBlock) closedBlock();
     }];
 }
 

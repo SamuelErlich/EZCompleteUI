@@ -1,6 +1,6 @@
 // BrainRotViewController.m
 // BrainRotGame
-// EZCompleteUI v2.5
+// EZCompleteUI v2.7
 //
 // Purpose:
 //   Main game view controller for BrainRot — a top-down AI-generated maze game.
@@ -8,6 +8,31 @@
 //   player movement and combat, HUD, level-end card, high-score submission, and
 //   the marquee banner. Also manages all audio: looping background music and
 //   reactive sound effects for every meaningful player action.
+//
+// Changes from v2.6:
+//   - v2.6's fix for the "bare UI flashes before the picker" issue made
+//     loadingOverlayView visible-by-default with "Creating your game…" +
+//     spinner — which then showed on EVERY launch before the picker
+//     appeared, even though nothing was being generated. Reverted: the
+//     overlay is hidden by default again (back to v2.5), and
+//     resetLoadingOverlayToPhase1WithStatusText: has been removed —
+//     startNewRun's phase-1 reset (the only thing that should show this
+//     overlay) is back to being self-contained.
+//   - The actual fix for "bare UI flashes before the picker": the initial
+//     showGamePicker/startNewRun kickoff moved from viewDidLoad's 0.1s
+//     dispatch_after to a one-shot dispatch_async (no delay) in
+//     viewDidAppear:, guarded by _hasPresentedInitialFlow. The view is
+//     guaranteed to be in the window by viewDidAppear, so this reduces the
+//     gap from ~100ms to ~1 frame.
+//   - NEW: BRGamePickerViewController.onClosedWithoutSelection (see that
+//     file's v2.2 changes) fires when the picker's "✕" is tapped with
+//     nothing selected. showGamePicker now wires this to
+//     dismissSelfBackToCaller, a new method that dismisses (if presented
+//     modally) or pops (if pushed) THIS view controller — because its own
+//     gameView/d-pad/HUD are just leftover chrome from before the picker
+//     appeared, "closing the picker" should mean "leave this screen", not
+//     "reveal that chrome". If neither applies, logs rather than failing
+//     silently or risking a broken navigation state.
 //
 // Changes from v2.4:
 //   - AVFoundation audio system added.
@@ -119,6 +144,7 @@ static const void *kBRObserverAddedKey = &kBRObserverAddedKey;
 
 @interface BrainRotViewController () <UITextFieldDelegate> {
     BOOL _endCardFired; // guards against double-triggering win/loss end card
+    BOOL _hasPresentedInitialFlow; // guards the one-shot picker/startNewRun kickoff in viewDidAppear:
 }
 
 // ── Marquee banner ────────────────────────────────────────────────────────────
@@ -128,7 +154,9 @@ static const void *kBRObserverAddedKey = &kBRObserverAddedKey;
 @property (nonatomic, assign) CGFloat        bannerScrollOffset;
 
 // ── Compact single-line HUD ───────────────────────────────────────────────────
-@property (nonatomic, strong) UILabel *hudLabel;
+@property (nonatomic, strong) UILabel   *hudLabel;
+@property (nonatomic, strong) UIButton  *pauseBtn;
+@property (nonatomic, assign) BOOL       isPaused;
 
 // ── Game views ────────────────────────────────────────────────────────────────
 // backgroundImageView removed in v2.0 — background image is now rendered
@@ -164,6 +192,27 @@ static const void *kBRObserverAddedKey = &kBRObserverAddedKey;
 @property (nonatomic, strong) NSMutableArray<NSString *> *inventory;
 @property (nonatomic, assign) NSInteger                   score;
 @property (nonatomic, strong) NSTimer                    *tickTimer;
+@property (nonatomic, assign) NSInteger                   tickCount;
+@property (nonatomic, strong) NSMutableDictionary<NSString *, NSValue *> *enemyPositions;
+@property (nonatomic, assign) NSInteger                   currentLevel;      ///< 1-based, carries across levels in a run
+@property (nonatomic, assign) NSInteger                   scoreAtLevelStart; ///< score when the current level began (for Retry)
+
+// ── Boss fight ────────────────────────────────────────────────────────────────
+@property (nonatomic, assign) BOOL                         bossFightActive;
+@property (nonatomic, assign) NSInteger                    bossHP;
+@property (nonatomic, assign) NSInteger                    bossMaxHP;
+@property (nonatomic, assign) BOOL                         bossIsBlocking;
+@property (nonatomic, assign) BOOL                         bossStunned;
+@property (nonatomic, assign) BOOL                         playerIsBlocking;
+@property (nonatomic, assign) BOOL                         playerIsDucking;
+@property (nonatomic, assign) BOOL                         playerInvincible;
+@property (nonatomic, strong) NSTimer                     *bossFightTimer;
+@property (nonatomic, weak)   UIView                      *bossFightOverlay;
+@property (nonatomic, weak)   UIImageView                 *bossPlayerSpriteView;
+@property (nonatomic, weak)   UIImageView                 *bossEnemySpriteView;
+@property (nonatomic, weak)   UILabel                     *bossComboLabel;
+@property (nonatomic, strong) NSMutableArray<NSString *>  *bossComboBuffer;
+@property (nonatomic, strong) NSTimer                     *bossComboWindowTimer;
 
 // ── Current game record (set after save, used by Play Again) ────────────────────
 @property (nonatomic, strong, nullable) BRGameRecord *currentGameRecord;
@@ -194,13 +243,14 @@ static const void *kBRObserverAddedKey = &kBRObserverAddedKey;
 @implementation BrainRotViewController
 
 static NSString *const kBRBrainRotAIURL = @"https://spuoimtqofhbdzosrbng.supabase.co/functions/v1/br-ai";
-static NSString *const kBRHighScoreURL  = @"https://spuoimtqofhbdzosrbng.supabase.co/functions/v1/br-highscores";
+NSString *const kBRHighScoreURL  = @"https://spuoimtqofhbdzosrbng.supabase.co/functions/v1/br-highscores";
 
 // File-scope keys for associated objects attached to the end-card submit button.
 // Must be file-scope so checkHighScoreQualificationForScore: (setter) and
 // submitScoreFromEndCard: (getter) resolve to the same pointer address.
-static const void *kBREndCardNameFieldKey  = &kBREndCardNameFieldKey;
-static const void *kBREndCardFinalScoreKey = &kBREndCardFinalScoreKey;
+static const void *kBREndCardNameFieldKey              = &kBREndCardNameFieldKey;
+static const void *kBREndCardFinalScoreKey             = &kBREndCardFinalScoreKey;
+static const void *kBREndCardNavigateAfterSubmitKey    = &kBREndCardNavigateAfterSubmitKey;
 
 - (void)viewDidLoad {
     [super viewDidLoad];
@@ -257,6 +307,7 @@ static const void *kBREndCardFinalScoreKey = &kBREndCardFinalScoreKey;
     [self.view addSubview:self.playerImageView];
 
     self.enemyImageViews = [NSMutableDictionary dictionary];
+    self.enemyPositions  = [NSMutableDictionary dictionary];
 
     // ── Loading / story overlay ───────────────────────────────────────────────
     [self buildLoadingOverlay];
@@ -288,6 +339,19 @@ static const void *kBREndCardFinalScoreKey = &kBREndCardFinalScoreKey;
     // This prevents accidental "New Run" taps while tapping movement arrows.
     self.restartBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     [self.restartBtn setTitle:@"↺" forState:UIControlStateNormal];
+
+    self.pauseBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+    [self.pauseBtn setTitle:@"⏸" forState:UIControlStateNormal];
+    [self.pauseBtn setTitle:@"▶︎" forState:UIControlStateSelected];
+    self.pauseBtn.titleLabel.font    = [UIFont systemFontOfSize:16];
+    self.pauseBtn.tintColor          = [UIColor colorWithWhite:0.85 alpha:1.0];
+    self.pauseBtn.backgroundColor    = [UIColor colorWithWhite:0.2 alpha:0.85];
+    self.pauseBtn.layer.cornerRadius = 8;
+    self.pauseBtn.layer.borderColor  = [UIColor colorWithWhite:0.5 alpha:0.5].CGColor;
+    self.pauseBtn.layer.borderWidth  = 0.5;
+    [self.pauseBtn addTarget:self action:@selector(togglePause)
+            forControlEvents:UIControlEventTouchUpInside];
+    [self.view addSubview:self.pauseBtn];
     self.restartBtn.titleLabel.font    = [UIFont boldSystemFontOfSize:18];
     self.restartBtn.tintColor          = [UIColor colorWithWhite:0.5 alpha:1.0];
     self.restartBtn.layer.cornerRadius = 6;
@@ -300,18 +364,13 @@ static const void *kBREndCardFinalScoreKey = &kBREndCardFinalScoreKey;
     [self layoutViews];
 
     self.inventory = [NSMutableArray array];
+
+    // Hidden until startNewRun's phase-1 reset shows it. (v2.6 briefly made
+    // this visible-by-default to cover the gap before the picker appears,
+    // but that meant "Creating your game…" + spinner showed even when
+    // nothing was being created — see viewDidAppear: for the real fix.)
     self.loadingOverlayView.hidden = YES;
     self.loadingOverlayView.alpha  = 0;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)),
-                   dispatch_get_main_queue(), ^{
-        // Members get the full picker (saved library + new game option).
-        // Non-members go straight to a new game — no library, no save.
-        if ([self userHasMembership]) {
-            [self showGamePicker];
-        } else {
-            [self startNewRun];
-        }
-    });
 
     self.tickTimer = [NSTimer scheduledTimerWithTimeInterval:0.25
                                                       target:self
@@ -409,6 +468,7 @@ static const void *kBREndCardFinalScoreKey = &kBREndCardFinalScoreKey;
     ]];
 }
 
+
 #pragma mark - Layout
 
 - (void)viewDidLayoutSubviews {
@@ -438,10 +498,13 @@ static const void *kBREndCardFinalScoreKey = &kBREndCardFinalScoreKey;
     CGFloat hudHeight  = 28;
     CGFloat restartW   = 36;
     CGFloat hudTop     = safeTop + bannerHeight + 4;
+    CGFloat pauseW = 36;
     self.restartBtn.frame = CGRectMake(screenWidth - sideMargin - restartW,
                                        hudTop, restartW, hudHeight);
+    self.pauseBtn.frame   = CGRectMake(screenWidth - sideMargin - restartW - pauseW - 6,
+                                       hudTop, pauseW, hudHeight);
     self.hudLabel.frame   = CGRectMake(sideMargin, hudTop,
-                                       screenWidth - sideMargin * 3 - restartW, hudHeight);
+                                       screenWidth - sideMargin * 2 - restartW - pauseW - 12, hudHeight);
 
     // ── Game grid — use all remaining space above button area ─────────────────
     // Button area: up-row(40) + gap(6) + left/down/right-row(40) + gap(8) + action-row(40) + safeBottom + pad(8)
@@ -489,7 +552,64 @@ static const void *kBREndCardFinalScoreKey = &kBREndCardFinalScoreKey;
 
 #pragma mark - Game Loop
 
+- (void)togglePause {
+    if (self.bossFightActive) {
+        // In boss fight: pause/resume both the boss timer and freeze state
+        if (!self.isPaused) {
+            self.isPaused = YES;
+            [self.bossFightTimer invalidate]; self.bossFightTimer = nil;
+            [self.musicPlayer pause];
+            self.pauseBtn.selected = YES;
+            // Dim the boss overlay to signal pause
+            UIView *dimmer = [[UIView alloc] initWithFrame:self.bossFightOverlay.bounds];
+            dimmer.backgroundColor = [UIColor colorWithWhite:0.0 alpha:0.45];
+            dimmer.tag = 9999;
+            [self.bossFightOverlay addSubview:dimmer];
+            UILabel *pauseLbl = [UILabel new];
+            pauseLbl.text = @"⏸  PAUSED"; pauseLbl.textAlignment = NSTextAlignmentCenter;
+            pauseLbl.font = [UIFont monospacedSystemFontOfSize:26 weight:UIFontWeightBold];
+            pauseLbl.textColor = [UIColor whiteColor];
+            pauseLbl.frame = CGRectMake(0, self.bossFightOverlay.bounds.size.height / 2.0 - 20,
+                                        self.bossFightOverlay.bounds.size.width, 44);
+            pauseLbl.tag = 9998;
+            [self.bossFightOverlay addSubview:pauseLbl];
+        } else {
+            self.isPaused = NO;
+            self.pauseBtn.selected = NO;
+            [[self.bossFightOverlay viewWithTag:9999] removeFromSuperview];
+            [[self.bossFightOverlay viewWithTag:9998] removeFromSuperview];
+            [self.musicPlayer play];
+            self.bossFightTimer = [NSTimer scheduledTimerWithTimeInterval:2.4
+                                                                    target:self
+                                                                  selector:@selector(bossTick)
+                                                                  userInfo:nil repeats:YES];
+        }
+    } else {
+        // Normal gameplay pause
+        if (!self.isPaused) {
+            self.isPaused = YES;
+            [self.tickTimer invalidate]; self.tickTimer = nil;
+            [self.musicPlayer pause];
+            self.pauseBtn.selected = YES;
+            [self setGameInputEnabled:NO];
+        } else {
+            self.isPaused = NO;
+            self.pauseBtn.selected = NO;
+            [self.musicPlayer play];
+            [self setGameInputEnabled:YES];
+            if (!self.tickTimer || !self.tickTimer.isValid) {
+                self.tickTimer = [NSTimer scheduledTimerWithTimeInterval:0.25
+                                                                   target:self
+                                                                 selector:@selector(tick)
+                                                                 userInfo:nil repeats:YES];
+            }
+        }
+    }
+}
+
 - (void)tick {
+    self.tickCount++;
+    if (self.tickCount % 2 == 0) [self moveEnemiesStep];
     [self.gameView setNeedsDisplay];
     [self updateHUD];
     [self refreshEnemyImageViews];
@@ -505,8 +625,8 @@ static const void *kBREndCardFinalScoreKey = &kBREndCardFinalScoreKey;
     for (NSInteger heartIndex = 0; heartIndex < kBRMaxHeartDisplay; heartIndex++) {
         [hearts appendString:(heartIndex < self.model.playerHP) ? @"♥" : @"♡"];
     }
-    self.hudLabel.text = [NSString stringWithFormat:@"%@   Score: %ld   Items: %lu",
-                          hearts, (long)self.score, (unsigned long)self.inventory.count];
+    self.hudLabel.text = [NSString stringWithFormat:@"%@   L%ld   Score: %ld   Items: %lu",
+                          hearts, (long)self.currentLevel, (long)self.score, (unsigned long)self.inventory.count];
 }
 
 - (void)checkForWinOrLoss {
@@ -524,21 +644,9 @@ static const void *kBREndCardFinalScoreKey = &kBREndCardFinalScoreKey;
         _endCardFired = YES;
         [self.tickTimer invalidate];
         self.tickTimer = nil;
-        // Scoring breakdown:
-        //   Base clear:          100 pts
-        //   Per heart remaining: +20 pts each  (encourages survival)
-        //   Per item in bag:     +15 pts each  (rewards item collection)
-        NSInteger heartBonus = self.model.playerHP * 20;
-        NSInteger itemBonus  = (NSInteger)self.inventory.count * 15;
-        NSInteger clearBonus = 100 + heartBonus + itemBonus;
-        self.score += clearBonus;
-        [self updateHUD];
-        NSString *bonusBreakdown = [NSString stringWithFormat:
-            @"+100 clear  +%ld hearts  +%ld items", (long)heartBonus, (long)itemBonus];
-        [self showLevelEndCardWithTitle:@"ESCAPED!"
-                              subtitle:bonusBreakdown
-                                 score:self.score
-                                 isWin:YES];
+        // Reaching the exit triggers the boss fight. Scoring + end card happen
+        // inside _bossFightVictory after the boss is defeated.
+        [self startBossFight];
     }
 }
 
@@ -576,12 +684,13 @@ static const void *kBREndCardFinalScoreKey = &kBREndCardFinalScoreKey;
     titleLabel.font            = [UIFont monospacedSystemFontOfSize:52 weight:UIFontWeightBold];
     titleLabel.textColor       = isWin ? [UIColor systemGreenColor] : [UIColor systemRedColor];
     titleLabel.textAlignment   = NSTextAlignmentCenter;
+    titleLabel.numberOfLines   = 2;
     titleLabel.translatesAutoresizingMaskIntoConstraints = NO;
     [card addSubview:titleLabel];
 
     UILabel *subtitleLabel     = [UILabel new];
     subtitleLabel.text         = cardSubtitle;
-    subtitleLabel.font         = [UIFont systemFontOfSize:18 weight:UIFontWeightMedium];
+    subtitleLabel.font         = [UIFont systemFontOfSize:17 weight:UIFontWeightMedium];
     subtitleLabel.textColor    = [UIColor colorWithWhite:0.85 alpha:1.0];
     subtitleLabel.textAlignment = NSTextAlignmentCenter;
     subtitleLabel.numberOfLines = 2;
@@ -589,44 +698,58 @@ static const void *kBREndCardFinalScoreKey = &kBREndCardFinalScoreKey;
     [card addSubview:subtitleLabel];
 
     UILabel *scoreDisplayLabel  = [UILabel new];
-    scoreDisplayLabel.text      = [NSString stringWithFormat:@"SCORE  %ld", (long)finalScore];
-    scoreDisplayLabel.font      = [UIFont monospacedSystemFontOfSize:34 weight:UIFontWeightBold];
+    scoreDisplayLabel.text      = [NSString stringWithFormat:@"TOTAL  %ld", (long)finalScore];
+    scoreDisplayLabel.font      = [UIFont monospacedSystemFontOfSize:38 weight:UIFontWeightBold];
     scoreDisplayLabel.textColor = [UIColor systemYellowColor];
     scoreDisplayLabel.textAlignment = NSTextAlignmentCenter;
     scoreDisplayLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    scoreDisplayLabel.tag = 9901; // used by checkHighScoreQualification to anchor banner
     [card addSubview:scoreDisplayLabel];
 
-    // Play Again — same seed + saved assets, no API calls
+    // Primary action: "LEVEL N+1 →" on win, "↩ RETRY LEVEL" on loss
     UIButton *playAgainButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    [playAgainButton setTitle:@"↩  PLAY AGAIN" forState:UIControlStateNormal];
+    if (isWin) {
+        NSString *nextTitle = [NSString stringWithFormat:@"LEVEL %ld  →", (long)(self.currentLevel + 1)];
+        [playAgainButton setTitle:nextTitle forState:UIControlStateNormal];
+        [playAgainButton addTarget:self action:@selector(advanceToNextLevel)
+                 forControlEvents:UIControlEventTouchUpInside];
+    } else {
+        [playAgainButton setTitle:@"↩  RETRY LEVEL" forState:UIControlStateNormal];
+        [playAgainButton addTarget:self action:@selector(retryCurrentLevel)
+                 forControlEvents:UIControlEventTouchUpInside];
+    }
     playAgainButton.titleLabel.font    = [UIFont monospacedSystemFontOfSize:18 weight:UIFontWeightBold];
     playAgainButton.tintColor          = [UIColor blackColor];
     playAgainButton.backgroundColor    = [UIColor systemYellowColor];
     playAgainButton.layer.cornerRadius = 12;
     playAgainButton.translatesAutoresizingMaskIntoConstraints = NO;
-    [playAgainButton addTarget:self action:@selector(playAgainRun)
-             forControlEvents:UIControlEventTouchUpInside];
     [card addSubview:playAgainButton];
 
-    // New Run — fresh world, new API calls
+    // Secondary: "▶ NEW RUN" — always goes straight to the game picker
     UIButton *newRunButton = [UIButton buttonWithType:UIButtonTypeSystem];
     [newRunButton setTitle:@"▶  NEW RUN" forState:UIControlStateNormal];
+    [newRunButton addTarget:self action:@selector(showGamePickerFromEndCard)
+          forControlEvents:UIControlEventTouchUpInside];
     newRunButton.titleLabel.font    = [UIFont monospacedSystemFontOfSize:15 weight:UIFontWeightMedium];
     newRunButton.tintColor          = [UIColor colorWithWhite:0.6 alpha:1.0];
     newRunButton.translatesAutoresizingMaskIntoConstraints = NO;
-    [newRunButton addTarget:self action:@selector(showGamePickerFromEndCard) forControlEvents:UIControlEventTouchUpInside];
+    playAgainButton.tag = 9902;
+    newRunButton.tag    = 9903;
     [card addSubview:newRunButton];
 
     [NSLayoutConstraint activateConstraints:@[
+        // Title — starts near the top so there's room for everything below
         [titleLabel.centerXAnchor constraintEqualToAnchor:card.centerXAnchor],
-        [titleLabel.centerYAnchor constraintEqualToAnchor:card.centerYAnchor constant:-100],
+        [titleLabel.topAnchor constraintEqualToAnchor:card.topAnchor constant:120],
+        // Bonus breakdown — tight under the title
         [subtitleLabel.centerXAnchor constraintEqualToAnchor:card.centerXAnchor],
-        [subtitleLabel.topAnchor constraintEqualToAnchor:titleLabel.bottomAnchor constant:8],
+        [subtitleLabel.topAnchor constraintEqualToAnchor:titleLabel.bottomAnchor constant:10],
         [subtitleLabel.leadingAnchor constraintEqualToAnchor:card.leadingAnchor constant:28],
         [subtitleLabel.trailingAnchor constraintEqualToAnchor:card.trailingAnchor constant:-28],
+        // Total score — extra gap so it reads as distinct from the bonus text
         [scoreDisplayLabel.centerXAnchor constraintEqualToAnchor:card.centerXAnchor],
-        [scoreDisplayLabel.topAnchor constraintEqualToAnchor:subtitleLabel.bottomAnchor constant:28],
-        // Play Again is the primary CTA — large, yellow, prominent
+        [scoreDisplayLabel.topAnchor constraintEqualToAnchor:subtitleLabel.bottomAnchor constant:24],
+        // Play Again — anchored to bottom so it's always reachable
         [playAgainButton.centerXAnchor constraintEqualToAnchor:card.centerXAnchor],
         [playAgainButton.bottomAnchor constraintEqualToAnchor:card.bottomAnchor constant:-90],
         [playAgainButton.widthAnchor constraintEqualToConstant:220],
@@ -638,8 +761,11 @@ static const void *kBREndCardFinalScoreKey = &kBREndCardFinalScoreKey;
 
     [UIView animateWithDuration:0.5 animations:^{ card.alpha = 1.0; }];
 
-    // Asynchronously check if score qualifies for top 10 and add name field if so
-    [self checkHighScoreQualificationForScore:finalScore onCard:card aboveButton:newRunButton];
+    // Fire high score check immediately on death — no waiting for a button tap.
+    // On win the check never runs (scores are submitted at end of a full run).
+    if (!isWin) {
+        [self checkHighScoreQualificationForScore:finalScore onCard:card aboveButton:newRunButton];
+    }
 }
 
 /// Fetches top 10 scores. If this run qualifies, injects a name-entry field
@@ -658,21 +784,35 @@ static const void *kBREndCardFinalScoreKey = &kBREndCardFinalScoreKey;
         completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
         NSArray *topScores = nil;
         BOOL     qualifies = NO;
+        NSInteger placement = 1; // 1-based rank this score would occupy
         if (data) {
             id parsed = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
             if ([parsed isKindOfClass:[NSArray class]]) topScores = parsed;
         }
+        // Guard: if topScores is nil (network error / bad response) skip the check entirely
+        if (!topScores) return;
         if (topScores.count < 10) {
             qualifies = YES;
+            // Count how many existing scores beat us to find true placement
+            placement = 1;
+            for (NSDictionary *entry in topScores) {
+                if ([entry[@"score"] integerValue] >= finalScore) placement++;
+            }
         } else {
             qualifies = finalScore > [topScores.lastObject[@"score"] integerValue];
+            if (qualifies) {
+                placement = 1;
+                for (NSDictionary *entry in topScores) {
+                    if ([entry[@"score"] integerValue] >= finalScore) placement++;
+                }
+            }
         }
         if (!qualifies) return;
 
         dispatch_async(dispatch_get_main_queue(), ^{
             // ── Name field ────────────────────────────────────────────────────
             UITextField *nameField       = [UITextField new];
-            nameField.placeholder        = @"Your name (top 10!)";
+            nameField.placeholder        = @"Enter your name";
             nameField.font               = [UIFont monospacedSystemFontOfSize:17 weight:UIFontWeightRegular];
             nameField.textColor          = [UIColor whiteColor];
             nameField.textAlignment      = NSTextAlignmentCenter;
@@ -688,6 +828,41 @@ static const void *kBREndCardFinalScoreKey = &kBREndCardFinalScoreKey;
             nameField.translatesAutoresizingMaskIntoConstraints = NO;
             [card addSubview:nameField];
 
+            // ── Placement + "New High Score!" banner ──────────────────────────
+            // Ordinal suffix: 1st, 2nd, 3rd, 4th…
+            NSString *suffix;
+            NSInteger mod100 = placement % 100;
+            NSInteger mod10  = placement % 10;
+            if (mod100 >= 11 && mod100 <= 13)      suffix = @"th";
+            else if (mod10 == 1)                    suffix = @"st";
+            else if (mod10 == 2)                    suffix = @"nd";
+            else if (mod10 == 3)                    suffix = @"rd";
+            else                                    suffix = @"th";
+
+            NSString *bannerText = [NSString stringWithFormat:
+                @"🎉 #%ld%@ — New High Score!", (long)placement, suffix];
+
+            UILabel *newHighScoreLabel       = [UILabel new];
+            newHighScoreLabel.text           = bannerText;
+            newHighScoreLabel.font           = [UIFont boldSystemFontOfSize:21];
+            newHighScoreLabel.textColor      = [UIColor systemYellowColor];
+            newHighScoreLabel.textAlignment  = NSTextAlignmentCenter;
+            newHighScoreLabel.adjustsFontSizeToFitWidth = YES;
+            newHighScoreLabel.minimumScaleFactor = 0.7;
+            newHighScoreLabel.translatesAutoresizingMaskIntoConstraints = NO;
+            [card addSubview:newHighScoreLabel];
+
+            // Spring-pop entrance
+            newHighScoreLabel.transform = CGAffineTransformMakeScale(0.7, 0.7);
+            newHighScoreLabel.alpha = 0;
+            [UIView animateWithDuration:0.45 delay:0.05
+                 usingSpringWithDamping:0.55 initialSpringVelocity:0.8
+                               options:0
+                            animations:^{
+                newHighScoreLabel.transform = CGAffineTransformIdentity;
+                newHighScoreLabel.alpha     = 1.0;
+            } completion:nil];
+
             // ── Submit button ─────────────────────────────────────────────────
             UIButton *submitButton = [UIButton buttonWithType:UIButtonTypeSystem];
             [submitButton setTitle:@"🏆  Submit Score" forState:UIControlStateNormal];
@@ -698,19 +873,28 @@ static const void *kBREndCardFinalScoreKey = &kBREndCardFinalScoreKey;
             submitButton.translatesAutoresizingMaskIntoConstraints = NO;
             [card addSubview:submitButton];
 
-            // ── Layout: name field centered, submit above it ──────────────────
-            // Both anchored to center-Y so they stay visible on all screen sizes.
-            // When the keyboard appears we translate the card up — centering here
-            // ensures the field lands above the keyboard after the shift.
+            // ── Layout: anchored below the TOTAL score label (tag 9901) ──────
+            // This guarantees the banner always sits in the gap between the score
+            // and the Play Again button, never overlapping the white bonus text.
+            UIView *scoreLbl = [card viewWithTag:9901];
+            NSLayoutAnchor *topAnchor = scoreLbl
+                ? scoreLbl.bottomAnchor
+                : card.centerYAnchor;
+            CGFloat topOffset = scoreLbl ? 28.0 : 10.0;
+
             [NSLayoutConstraint activateConstraints:@[
+                [newHighScoreLabel.centerXAnchor constraintEqualToAnchor:card.centerXAnchor],
+                [newHighScoreLabel.topAnchor constraintEqualToAnchor:(NSLayoutYAxisAnchor *)topAnchor constant:topOffset],
+                [newHighScoreLabel.widthAnchor constraintEqualToConstant:300],
+                [newHighScoreLabel.heightAnchor constraintEqualToConstant:34],
+                [submitButton.centerXAnchor constraintEqualToAnchor:card.centerXAnchor],
+                [submitButton.topAnchor constraintEqualToAnchor:newHighScoreLabel.bottomAnchor constant:12],
+                [submitButton.widthAnchor constraintEqualToConstant:240],
+                [submitButton.heightAnchor constraintEqualToConstant:50],
                 [nameField.centerXAnchor constraintEqualToAnchor:card.centerXAnchor],
-                [nameField.centerYAnchor constraintEqualToAnchor:card.centerYAnchor constant:60],
+                [nameField.topAnchor constraintEqualToAnchor:submitButton.bottomAnchor constant:14],
                 [nameField.widthAnchor constraintEqualToConstant:280],
                 [nameField.heightAnchor constraintEqualToConstant:50],
-                [submitButton.centerXAnchor constraintEqualToAnchor:card.centerXAnchor],
-                [submitButton.bottomAnchor constraintEqualToAnchor:nameField.topAnchor constant:-14],
-                [submitButton.widthAnchor constraintEqualToConstant:220],
-                [submitButton.heightAnchor constraintEqualToConstant:48],
             ]];
 
             // ── Tap-to-dismiss keyboard on card background ────────────────────
@@ -827,14 +1011,771 @@ static const void *kBREndCardFinalScoreKey = &kBREndCardFinalScoreKey;
     submitButton.hidden = YES;
     nameField.enabled   = NO;
     nameField.text      = [NSString stringWithFormat:@"✓ %@", playerName];
+
+    // Navigate to game picker if this submit was triggered from the end-of-run flow
+    NSNumber *shouldNav = objc_getAssociatedObject(submitButton, kBREndCardNavigateAfterSubmitKey);
+    if (shouldNav.boolValue) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.6 * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{
+            [self showGamePickerFromEndCard];
+        });
+    }
+}
+
+
+
+#pragma mark - Boss Fight
+
+// ── Entry point ───────────────────────────────────────────────────────────────
+
+- (void)startBossFight {
+    if (self.bossFightActive) return;
+    self.bossFightActive  = YES;
+    self.bossMaxHP        = MIN(7, 2 + self.currentLevel);  // L1=3, L2=4 ... L5+=7
+    self.bossHP           = self.bossMaxHP;
+    self.bossComboBuffer  = [NSMutableArray array];
+    self.playerIsBlocking = self.playerIsDucking = NO;
+    self.playerInvincible = self.bossIsBlocking = self.bossStunned = NO;
+
+    [self.tickTimer invalidate]; self.tickTimer = nil;
+    [self _startBossFightMusic];
+
+    [self _buildBossFightUI];
+
+    // Boss AI: attacks every 2.4s initially, speeds up as it weakens
+    self.bossFightTimer = [NSTimer scheduledTimerWithTimeInterval:2.4
+                                                           target:self
+                                                         selector:@selector(bossTick)
+                                                         userInfo:nil
+                                                          repeats:YES];
+}
+
+// ── UI construction ───────────────────────────────────────────────────────────
+
+- (void)_buildBossFightUI {
+    // Cover only the game view area — control buttons live below it and must
+    // remain fully hittable. Using gameView.frame means the overlay never
+    // intercepts touches on the dpad or action button.
+    CGRect   bounds    = self.gameView.frame;
+    CGFloat  W         = self.view.bounds.size.width;
+    CGFloat  halfW     = W / 2.0;
+
+    UIView *overlay = [[UIView alloc] initWithFrame:bounds];
+    overlay.backgroundColor = [UIColor colorWithRed:0.04 green:0.04 blue:0.09 alpha:0.98];
+    overlay.alpha = 0;
+    [self.view addSubview:overlay];
+    self.bossFightOverlay = overlay;
+
+    // Controls must stay on top of the overlay so the player can still fight
+    [self.view bringSubviewToFront:self.upBtn];
+    [self.view bringSubviewToFront:self.downBtn];
+    [self.view bringSubviewToFront:self.leftBtn];
+    [self.view bringSubviewToFront:self.rightBtn];
+    [self.view bringSubviewToFront:self.actionBtn];
+
+    // Title
+    UILabel *title = [UILabel new];
+    title.text          = [NSString stringWithFormat:@"⚔️  LEVEL %ld BOSS FIGHT  ⚔️", (long)self.currentLevel];
+    title.font          = [UIFont monospacedSystemFontOfSize:16 weight:UIFontWeightBold];
+    title.textColor     = [UIColor systemRedColor];
+    title.textAlignment = NSTextAlignmentCenter;
+    title.frame         = CGRectMake(0, 50, W, 28);
+    [overlay addSubview:title];
+
+    // HP hearts — player (left) and boss (right)
+    CGFloat hpY = 86;
+    UILabel *pHP = [UILabel new]; pHP.tag = 8801;
+    pHP.font = [UIFont systemFontOfSize:20]; pHP.textAlignment = NSTextAlignmentLeft;
+    pHP.frame = CGRectMake(14, hpY, halfW - 20, 28);
+    [overlay addSubview:pHP];
+
+    UILabel *bHP = [UILabel new]; bHP.tag = 8802;
+    bHP.font = [UIFont systemFontOfSize:20]; bHP.textAlignment = NSTextAlignmentRight;
+    bHP.frame = CGRectMake(halfW + 6, hpY, halfW - 20, 28);
+    [overlay addSubview:bHP];
+
+    // Sprites
+    CGFloat spriteSize = MIN(130, halfW * 0.72);
+    CGFloat spriteY    = hpY + 36;
+
+    UIImageView *pSpr = [[UIImageView alloc] initWithImage:self.playerImageView.image];
+    pSpr.frame              = CGRectMake(halfW * 0.5 - spriteSize / 2.0, spriteY, spriteSize, spriteSize);
+    pSpr.contentMode        = UIViewContentModeScaleAspectFill;
+    pSpr.clipsToBounds      = YES;
+    pSpr.layer.cornerRadius = spriteSize / 2.0;
+    pSpr.layer.borderColor  = [UIColor colorWithRed:0.2 green:0.5 blue:1.0 alpha:1.0].CGColor;
+    pSpr.layer.borderWidth  = 3.0;
+    pSpr.tag = 8803;
+    [overlay addSubview:pSpr];
+    self.bossPlayerSpriteView = pSpr;
+
+    UIImageView *bSpr = [[UIImageView alloc] initWithImage:self.enemyImage];
+    bSpr.frame              = CGRectMake(halfW * 1.5 - spriteSize / 2.0, spriteY, spriteSize, spriteSize);
+    bSpr.contentMode        = UIViewContentModeScaleAspectFill;
+    bSpr.clipsToBounds      = YES;
+    bSpr.layer.cornerRadius = spriteSize / 2.0;
+    bSpr.layer.borderColor  = [UIColor systemRedColor].CGColor;
+    bSpr.layer.borderWidth  = 3.0;
+    bSpr.transform          = CGAffineTransformMakeScale(-1, 1); // face player
+    bSpr.tag = 8804;
+    [overlay addSubview:bSpr];
+    self.bossEnemySpriteView = bSpr;
+
+    // Name labels
+    UILabel *pName = [UILabel new];
+    pName.text = @"YOU"; pName.textAlignment = NSTextAlignmentCenter;
+    pName.font = [UIFont monospacedSystemFontOfSize:12 weight:UIFontWeightBold];
+    pName.textColor = [UIColor colorWithRed:0.4 green:0.7 blue:1.0 alpha:1.0];
+    pName.frame = CGRectMake(0, spriteY + spriteSize + 4, halfW, 18);
+    [overlay addSubview:pName];
+
+    UILabel *bName = [UILabel new];
+    bName.text = [NSString stringWithFormat:@"BOSS  Lv%ld", (long)self.currentLevel];
+    bName.textAlignment = NSTextAlignmentCenter;
+    bName.font = [UIFont monospacedSystemFontOfSize:12 weight:UIFontWeightBold];
+    bName.textColor = [UIColor systemRedColor];
+    bName.frame = CGRectMake(halfW, spriteY + spriteSize + 4, halfW, 18);
+    [overlay addSubview:bName];
+
+    // VS divider
+    UILabel *vs = [UILabel new];
+    vs.text = @"VS"; vs.textAlignment = NSTextAlignmentCenter;
+    vs.font = [UIFont monospacedSystemFontOfSize:26 weight:UIFontWeightBold];
+    vs.textColor = [UIColor colorWithWhite:0.35 alpha:1.0];
+    vs.frame = CGRectMake(halfW - 28, spriteY + spriteSize / 2.0 - 18, 56, 36);
+    [overlay addSubview:vs];
+
+    // Combo/action text
+    UILabel *combo = [UILabel new]; combo.tag = 8805;
+    combo.text = @"FIGHT!"; combo.textAlignment = NSTextAlignmentCenter;
+    combo.font = [UIFont monospacedSystemFontOfSize:22 weight:UIFontWeightBold];
+    combo.textColor = [UIColor systemYellowColor];
+    combo.adjustsFontSizeToFitWidth = YES;
+    combo.frame = CGRectMake(20, spriteY + spriteSize + 28, W - 40, 32);
+    [overlay addSubview:combo];
+    self.bossComboLabel = combo;
+
+    // Control hint
+    UILabel *hint = [UILabel new];
+    hint.text = @"◀︎ BLOCK   ▼ DUCK   ▶︎ STEP   ▲ JUMP   ⚡ ATTACK";
+    hint.font = [UIFont monospacedSystemFontOfSize:10 weight:UIFontWeightRegular];
+    hint.textColor = [UIColor colorWithWhite:0.45 alpha:1.0];
+    hint.textAlignment = NSTextAlignmentCenter; hint.adjustsFontSizeToFitWidth = YES;
+    hint.frame = CGRectMake(10, spriteY + spriteSize + 66, W - 20, 16);
+    [overlay addSubview:hint];
+
+    // Combo cheat sheet
+    UILabel *sheet = [UILabel new];
+    sheet.text = @"R+L+R+⚡ TORNADO  •  R+R+⚡ RUSH  •  ▼▲+⚡ UPPERCUT  •  L+R+⚡ BLAST";
+    sheet.font = [UIFont monospacedSystemFontOfSize:9 weight:UIFontWeightRegular];
+    sheet.textColor = [UIColor colorWithWhite:0.35 alpha:1.0];
+    sheet.textAlignment = NSTextAlignmentCenter; sheet.adjustsFontSizeToFitWidth = YES;
+    sheet.frame = CGRectMake(10, spriteY + spriteSize + 86, W - 20, 14);
+    [overlay addSubview:sheet];
+
+    [self _updateBossFightHPLabels];
+
+    // Entrance
+    overlay.transform = CGAffineTransformMakeScale(0.9, 0.9);
+    [UIView animateWithDuration:0.4 delay:0
+         usingSpringWithDamping:0.72 initialSpringVelocity:0.6
+                       options:0
+                    animations:^{ overlay.alpha = 1.0; overlay.transform = CGAffineTransformIdentity; }
+                    completion:^(BOOL d) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.35 * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{
+            [self _showBossComboText:@"⚡  FIGHT!" color:[UIColor systemYellowColor]];
+        });
+    }];
+}
+
+- (void)_updateBossFightHPLabels {
+    UIView *ov = self.bossFightOverlay; if (!ov) return;
+    UILabel *pHP = (UILabel *)[ov viewWithTag:8801];
+    UILabel *bHP = (UILabel *)[ov viewWithTag:8802];
+    NSMutableString *ph = [NSMutableString string], *bh = [NSMutableString string];
+    for (NSInteger i = 0; i < self.model.maxHP; i++)
+        [ph appendString:(i < self.model.playerHP) ? @"♥" : @"♡"];
+    for (NSInteger i = 0; i < self.bossMaxHP; i++)
+        [bh appendString:(i < self.bossHP) ? @"♥" : @"♡"];
+    pHP.text = ph;
+    bHP.text = bh;
+    bHP.textColor = (self.bossHP <= 1) ? [UIColor systemRedColor]
+                                       : [UIColor colorWithRed:1.0 green:0.35 blue:0.35 alpha:1.0];
+}
+
+// ── Directional input ─────────────────────────────────────────────────────────
+
+- (void)_bossFightInput:(NSString *)dir {
+    [self.bossComboBuffer addObject:dir];
+    if (self.bossComboBuffer.count > 6) [self.bossComboBuffer removeObjectAtIndex:0];
+
+    // Reset combo expiry window
+    [self.bossComboWindowTimer invalidate];
+    self.bossComboWindowTimer = [NSTimer scheduledTimerWithTimeInterval:1.5 target:self
+                                     selector:@selector(_clearBossComboBuffer) userInfo:nil repeats:NO];
+
+    // Left = blocking stance, Down = ducking
+    if ([dir isEqualToString:@"L"]) [self _setBossPlayerBlocking:YES];
+    if ([dir isEqualToString:@"D"]) [self _setBossPlayerDucking:YES];
+
+    // Nudge sprite to show movement
+    UIImageView *spr = self.bossPlayerSpriteView; if (!spr) return;
+    CGPoint orig = spr.center;
+    // Exaggerated movement so input reads clearly as a physical action
+    CGFloat dx = [dir isEqualToString:@"R"] ? 52 : [dir isEqualToString:@"L"] ? -34 : 0;
+    CGFloat dy = [dir isEqualToString:@"U"] ? -55 : [dir isEqualToString:@"D"] ? 18 : 0;
+    CGFloat bounce = [dir isEqualToString:@"U"] ? 12 : 0; // overshoot on landing
+    [UIView animateWithDuration:0.13
+                             delay:0
+         usingSpringWithDamping:0.55 initialSpringVelocity:0.8
+                   options:UIViewAnimationOptionCurveEaseOut
+                animations:^{ spr.center = CGPointMake(orig.x+dx, orig.y+dy); }
+             completion:^(BOOL d) {
+        [UIView animateWithDuration:0.18
+                                 delay:0
+             usingSpringWithDamping:0.5 initialSpringVelocity:0.4
+                       options:0
+                    animations:^{ spr.center = CGPointMake(orig.x, orig.y+bounce); }
+                 completion:^(BOOL d2) {
+            [UIView animateWithDuration:0.1 animations:^{ spr.center = orig; }];
+        }];
+    }];
+}
+
+- (void)_clearBossComboBuffer { [self.bossComboBuffer removeAllObjects]; }
+
+- (void)_setBossPlayerBlocking:(BOOL)on {
+    self.playerIsBlocking = on;
+    UIImageView *s = self.bossPlayerSpriteView;
+    s.layer.borderColor = on ? [UIColor colorWithRed:0.0 green:0.85 blue:1.0 alpha:1.0].CGColor
+                             : [UIColor colorWithRed:0.2 green:0.5 blue:1.0 alpha:1.0].CGColor;
+    s.layer.borderWidth = on ? 5.0 : 3.0;
+    if (on) dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.55 * NSEC_PER_SEC)),
+                           dispatch_get_main_queue(), ^{ [self _setBossPlayerBlocking:NO]; });
+}
+
+- (void)_setBossPlayerDucking:(BOOL)on {
+    self.playerIsDucking = on;
+    [UIView animateWithDuration:0.15 animations:^{
+        self.bossPlayerSpriteView.transform = on
+            ? CGAffineTransformMakeScale(0.82, 0.82) : CGAffineTransformIdentity;
+    }];
+    if (on) dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.55 * NSEC_PER_SEC)),
+                           dispatch_get_main_queue(), ^{ [self _setBossPlayerDucking:NO]; });
+}
+
+// ── Player attack & combo detection ──────────────────────────────────────────
+
+- (void)_bossFightAttack {
+    [self.bossComboWindowTimer invalidate];
+    NSArray<NSString *> *buf = [self.bossComboBuffer copy];
+    [self.bossComboBuffer removeAllObjects];
+
+    // Resolve combo — check most powerful first
+    NSString *name     = @"👊  JAB!";
+    NSInteger damage   = 1;
+    BOOL      piercing = NO;
+    BOOL      stun     = NO;
+    UIColor  *col      = [UIColor systemYellowColor];
+
+    NSUInteger n = buf.count;
+    if (n >= 3 && [buf[n-3] isEqual:@"R"] && [buf[n-2] isEqual:@"L"] && [buf[n-1] isEqual:@"R"]) {
+        name = @"🌪  TORNADO SPIN!"; damage = 2; piercing = YES;
+        col = [UIColor colorWithRed:0.4 green:0.9 blue:1.0 alpha:1.0];
+        CABasicAnimation *spin = [CABasicAnimation animationWithKeyPath:@"transform.rotation.z"];
+        spin.fromValue = @0; spin.toValue = @(M_PI * 2); spin.duration = 0.5;
+        [self.bossPlayerSpriteView.layer addAnimation:spin forKey:@"spin"];
+    } else if (n >= 2 && [buf[n-2] isEqual:@"D"] && [buf[n-1] isEqual:@"U"]) {
+        name = @"👊  UPPERCUT!"; damage = 2; stun = YES;
+        col = [UIColor colorWithRed:1.0 green:0.75 blue:0.0 alpha:1.0];
+    } else if (n >= 2 && [buf[n-2] isEqual:@"R"] && [buf[n-1] isEqual:@"R"]) {
+        name = @"⚡  RUSH PUNCH!"; damage = 2;
+        col = [UIColor colorWithRed:1.0 green:0.9 blue:0.1 alpha:1.0];
+    } else if (n >= 2 && [buf[n-2] isEqual:@"L"] && [buf[n-1] isEqual:@"R"]) {
+        name = @"💥  CROSS BLAST!"; damage = 1; piercing = YES;
+        col = [UIColor colorWithRed:1.0 green:0.4 blue:0.0 alpha:1.0];
+    } else if (n >= 1 && [buf[n-1] isEqual:@"D"]) {
+        name = @"🦵  LOW SWEEP!"; damage = 1; piercing = YES;
+        col = [UIColor colorWithRed:0.75 green:0.4 blue:1.0 alpha:1.0];
+    } else if (n >= 1 && [buf[n-1] isEqual:@"U"]) {
+        name = @"🙌  OVERHEAD!"; damage = 1;
+        col = [UIColor colorWithRed:0.4 green:1.0 blue:0.5 alpha:1.0];
+    }
+
+    [self _showBossComboText:name color:col];
+    [self playSoundNamed:@"use-item"];
+
+    // Apply vs boss block
+    NSInteger actual = damage;
+    if (self.bossIsBlocking && !piercing) {
+        actual = MAX(0, damage - 1);
+        if (actual == 0) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.15 * NSEC_PER_SEC)),
+                           dispatch_get_main_queue(), ^{
+                [self _showBossComboText:@"🛡  BLOCKED!" color:[UIColor colorWithWhite:0.6 alpha:1.0]];
+            });
+            [self _shakeView:self.bossEnemySpriteView horiz:YES];
+            return;
+        }
+    }
+
+    if (actual > 0) {
+        self.bossHP = MAX(0, self.bossHP - actual);
+        [self _updateBossFightHPLabels];
+        [self _flashView:self.bossEnemySpriteView color:[UIColor systemRedColor]];
+        [self _shakeView:self.bossEnemySpriteView horiz:YES];
+        [self playSoundNamed:@"enemy-died"];
+
+        if (stun && !self.bossStunned) {
+            self.bossStunned = YES;
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)),
+                           dispatch_get_main_queue(), ^{
+                [self _showBossComboText:@"⭐️  STUNNED!" color:[UIColor systemYellowColor]];
+            });
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)),
+                           dispatch_get_main_queue(), ^{ self.bossStunned = NO; });
+        }
+        [self _checkBossFightResult];
+    }
+}
+
+// ── Boss AI tick ──────────────────────────────────────────────────────────────
+
+- (void)bossTick {
+    if (!self.bossFightActive || self.bossStunned) return;
+
+    // Speed up when half HP lost
+    NSInteger lost = self.bossMaxHP - self.bossHP;
+    if (lost >= (self.bossMaxHP / 2) && self.bossFightTimer.timeInterval > 1.7) {
+        [self.bossFightTimer invalidate];
+        self.bossFightTimer = [NSTimer scheduledTimerWithTimeInterval:1.6 target:self
+                                   selector:@selector(bossTick) userInfo:nil repeats:YES];
+    }
+
+    NSInteger roll = (NSInteger)arc4random_uniform(100);
+    if (roll < 25) {
+        // Block
+        self.bossIsBlocking = YES;
+        [self _flashView:self.bossEnemySpriteView color:[UIColor colorWithWhite:0.7 alpha:0.4]];
+        [self _showBossComboText:@"🛡  BOSS GUARDS" color:[UIColor colorWithWhite:0.55 alpha:1.0]];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.1 * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{ self.bossIsBlocking = NO; });
+    } else {
+        NSInteger aRoll = (NSInteger)arc4random_uniform(100);
+        if (lost >= 2 && aRoll < 30) {
+            [self _bossAttack:@"💪  HAYMAKER!" damage:2 blockDir:@"L" tele:0.9];
+        } else if (aRoll < 58) {
+            [self _bossAttack:@"👊  FAST JABS!" damage:1 blockDir:@"L" tele:0.45];
+        } else {
+            [self _bossAttack:@"🦵  SWEEP KICK!" damage:1 blockDir:@"D" tele:0.65];
+        }
+    }
+}
+
+/// Telegraph, then land attack. blockDir: "L"=standing block, "D"=duck.
+- (void)_bossAttack:(NSString *)name damage:(NSInteger)dmg
+           blockDir:(NSString *)bdir tele:(NSTimeInterval)secs {
+    if (!self.bossFightActive) return;
+    [self _showBossComboText:[NSString stringWithFormat:@"⚠️  %@", name]
+                      color:[UIColor colorWithRed:1.0 green:0.35 blue:0.0 alpha:1.0]];
+    [self _shakeView:self.bossEnemySpriteView horiz:NO];
+
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(secs * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+        if (!self.bossFightActive) return;
+        BOOL defended = ([bdir isEqualToString:@"L"] && self.playerIsBlocking) ||
+                        ([bdir isEqualToString:@"D"] && self.playerIsDucking);
+        if (defended) {
+            [self _showBossComboText:@"🛡  BLOCKED!" color:[UIColor colorWithRed:0.2 green:0.85 blue:1.0 alpha:1.0]];
+            [self _shakeView:self.bossPlayerSpriteView horiz:YES];
+            [self playSoundNamed:@"use-item"];
+        } else if (!self.playerInvincible) {
+            self.model.playerHP = MAX(0, self.model.playerHP - dmg);
+            [self _updateBossFightHPLabels];
+            [self updateHUD];
+            [self _showBossComboText:[NSString stringWithFormat:@"💥  HIT! -%ld HP", (long)dmg]
+                              color:[UIColor systemRedColor]];
+            [self _flashView:self.bossPlayerSpriteView color:[UIColor systemRedColor]];
+            [self _shakeView:self.bossPlayerSpriteView horiz:YES];
+            [self playSoundNamed:@"hurt-player"];
+            self.playerInvincible = YES;
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.75 * NSEC_PER_SEC)),
+                           dispatch_get_main_queue(), ^{ self.playerInvincible = NO; });
+            [self _checkBossFightResult];
+        }
+    });
+}
+
+// ── Visual effects ────────────────────────────────────────────────────────────
+
+- (void)_showBossComboText:(NSString *)text color:(UIColor *)color {
+    UILabel *lbl = self.bossComboLabel; if (!lbl) return;
+    lbl.text = text; lbl.textColor = color;
+    lbl.transform = CGAffineTransformMakeScale(0.65, 0.65); lbl.alpha = 0;
+    [UIView animateWithDuration:0.18 animations:^{
+        lbl.transform = CGAffineTransformIdentity; lbl.alpha = 1.0;
+    }];
+}
+
+- (void)_flashView:(UIView *)view color:(UIColor *)color {
+    UIView *f = [[UIView alloc] initWithFrame:view.bounds];
+    f.backgroundColor = color; f.alpha = 0.72;
+    f.layer.cornerRadius = view.layer.cornerRadius;
+    [view addSubview:f];
+    [UIView animateWithDuration:0.28 animations:^{ f.alpha = 0; }
+                     completion:^(BOOL d) { [f removeFromSuperview]; }];
+}
+
+- (void)_shakeView:(UIView *)view horiz:(BOOL)h {
+    if (!view) return;
+    CGPoint c = view.center;
+    CGFloat a = 9;
+    NSValue *v0 = [NSValue valueWithCGPoint:CGPointMake(c.x+(h?a:0), c.y+(h?0:-a))];
+    NSValue *v1 = [NSValue valueWithCGPoint:CGPointMake(c.x-(h?a:0), c.y+(h?0:a))];
+    [UIView animateWithDuration:0.07 animations:^{ view.center = v0.CGPointValue; }
+                     completion:^(BOOL d1) {
+        [UIView animateWithDuration:0.07 animations:^{ view.center = v1.CGPointValue; }
+                         completion:^(BOOL d2) {
+            [UIView animateWithDuration:0.07 animations:^{ view.center = c; }];
+        }];
+    }];
+}
+
+// ── Win / Loss ────────────────────────────────────────────────────────────────
+
+- (void)_checkBossFightResult {
+    if (self.bossHP     <= 0) { [self _bossFightVictory]; }
+    if (self.model.playerHP <= 0) { [self _bossFightDefeated]; }
+}
+
+- (void)_bossFightVictory {
+    [self _tearDownBossFight];
+    [self _showBossComboText:@"🏆  BOSS DEFEATED!" color:[UIColor systemYellowColor]];
+    [self playSoundNamed:@"enemy-died"];
+
+    // ── Boss death animation ───────────────────────────────────────────────────
+    UIImageView *bSpr = self.bossEnemySpriteView;
+    if (bSpr) {
+        // 1. Big flash white
+        [self _flashView:bSpr color:[UIColor whiteColor]];
+
+        // 2. Spin and shrink — fall-over style
+        [UIView animateWithDuration:0.6
+                                 delay:0
+             usingSpringWithDamping:0.4 initialSpringVelocity:1.0
+                           options:0
+                        animations:^{
+            bSpr.transform = CGAffineTransformConcat(
+                CGAffineTransformMakeScale(-0.1, 0.1),   // flip+shrink
+                CGAffineTransformMakeRotation(M_PI * 1.5) // quarter spin
+            );
+            bSpr.alpha = 0.0;
+        } completion:nil];
+
+        // 3. Explosion: 8 fragments fly outward from boss position
+        CGPoint center = bSpr.center;
+        UIView  *parent = bSpr.superview;
+        for (NSInteger i = 0; i < 8; i++) {
+            UIImageView *frag = [[UIImageView alloc] initWithImage:bSpr.image];
+            CGFloat fsize = 28 + arc4random_uniform(22);
+            frag.frame = CGRectMake(center.x - fsize/2.0, center.y - fsize/2.0, fsize, fsize);
+            frag.contentMode = UIViewContentModeScaleAspectFill;
+            frag.clipsToBounds = YES;
+            frag.layer.cornerRadius = fsize / 2.0;
+            frag.alpha = 0.9;
+            [parent addSubview:frag];
+
+            CGFloat angle  = (M_PI * 2.0 / 8.0) * i + ((arc4random_uniform(30) - 15) * M_PI / 180.0);
+            CGFloat dist   = 90.0 + arc4random_uniform(60);
+            CGFloat destX  = center.x + cos(angle) * dist;
+            CGFloat destY  = center.y + sin(angle) * dist;
+            CGFloat rot    = ((NSInteger)arc4random_uniform(4) - 2) * M_PI / 2.0;
+            NSTimeInterval delay = 0.05 + (i * 0.03);
+
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay * NSEC_PER_SEC)),
+                           dispatch_get_main_queue(), ^{
+                [UIView animateWithDuration:0.55
+                                         delay:0
+                     usingSpringWithDamping:0.65 initialSpringVelocity:1.2
+                                   options:0
+                                animations:^{
+                    frag.center    = CGPointMake(destX, destY);
+                    frag.transform = CGAffineTransformMakeRotation(rot);
+                    frag.alpha     = 0.0;
+                } completion:^(BOOL d) { [frag removeFromSuperview]; }];
+            });
+        }
+    }
+
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+        UIView *ov = self.bossFightOverlay;
+        [UIView animateWithDuration:0.35 animations:^{ ov.alpha = 0; }
+                         completion:^(BOOL d) {
+            [ov removeFromSuperview]; self.bossFightOverlay = nil;
+            _endCardFired = YES;
+            NSInteger cb = self.currentLevel * 100;
+            NSInteger hb = self.model.playerHP * 20;
+            NSInteger ib = (NSInteger)self.inventory.count * 15;
+            self.score += cb + hb + ib;
+            [self updateHUD];
+            NSString *t = [NSString stringWithFormat:@"LEVEL %ld\nCOMPLETE!", (long)self.currentLevel];
+            NSString *s = [NSString stringWithFormat:@"+%ld clear  +%ld hearts  +%ld items",
+                           (long)cb, (long)hb, (long)ib];
+            [self showLevelEndCardWithTitle:t subtitle:s score:self.score isWin:YES];
+        }];
+    });
+}
+
+- (void)_bossFightDefeated {
+    [self _tearDownBossFight];
+    [self _showBossComboText:@"💀  K.O.!" color:[UIColor systemRedColor]];
+
+    // Player sprite falls over
+    UIImageView *pSpr = self.bossPlayerSpriteView;
+    if (pSpr) {
+        [UIView animateWithDuration:0.5
+                                 delay:0
+             usingSpringWithDamping:0.5 initialSpringVelocity:0.8
+                           options:0
+                        animations:^{
+            pSpr.transform = CGAffineTransformConcat(
+                CGAffineTransformMakeRotation(M_PI / 2.0),  // tip over
+                CGAffineTransformMakeTranslation(0, 30)
+            );
+            pSpr.alpha = 0.35;
+        } completion:nil];
+        [self _flashView:pSpr color:[UIColor systemRedColor]];
+    }
+
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+        UIView *ov = self.bossFightOverlay;
+        [UIView animateWithDuration:0.35 animations:^{ ov.alpha = 0; }
+                         completion:^(BOOL d) {
+            [ov removeFromSuperview]; self.bossFightOverlay = nil;
+            _endCardFired = YES;
+            [self showLevelEndCardWithTitle:@"BUSTED"
+                                  subtitle:@"The boss took you down."
+                                     score:self.score
+                                     isWin:NO];
+        }];
+    });
+}
+
+- (void)_tearDownBossFight {
+    self.bossFightActive = NO;
+    [self.bossFightTimer invalidate];       self.bossFightTimer      = nil;
+    [self.bossComboWindowTimer invalidate]; self.bossComboWindowTimer = nil;
+    self.bossPlayerSpriteView = nil;
+    self.bossEnemySpriteView  = nil;
+    self.bossComboLabel       = nil;
+}
+
+#pragma mark - End-of-run high score flow
+
+/// Called when the player taps "NEW RUN" after dying.
+/// Hides the action buttons and triggers the one-time high score check.
+/// If the score qualifies, name entry appears on the current card and
+/// submitting the score then navigates to the game picker.
+/// If it doesn't qualify, navigation happens immediately.
+- (void)endRunAfterLoss {
+    // Hide the Retry and New Run buttons so only the score entry UI remains
+    [[self.levelEndCardView viewWithTag:9902] setHidden:YES];
+    [[self.levelEndCardView viewWithTag:9903] setHidden:YES];
+    [self checkHighScoreAndProceedWithScore:self.score onCard:self.levelEndCardView];
+}
+
+/// Async leaderboard check. If score qualifies: injects banner + name field +
+/// submit onto the card; submit navigates to the game picker when tapped.
+/// If score doesn't qualify: navigates to the game picker directly.
+- (void)checkHighScoreAndProceedWithScore:(NSInteger)finalScore onCard:(UIView *)card {
+    NSURL *url = [NSURL URLWithString:@"https://brainrot-backend.vercel.app/api/scores"];
+    if (!url) { [self showGamePickerFromEndCard]; return; }
+    NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:url
+                                                       cachePolicy:NSURLRequestReloadIgnoringLocalCacheData
+                                                   timeoutInterval:8.0];
+    req.HTTPMethod = @"GET";
+    __weak typeof(self) weakSelf = self;
+
+    [[[NSURLSession sharedSession] dataTaskWithRequest:req
+        completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+
+        NSArray   *topScores = nil;
+        BOOL       qualifies = NO;
+        NSInteger  placement = 1;
+        if (data) {
+            id parsed = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+            if ([parsed isKindOfClass:[NSArray class]]) topScores = parsed;
+        }
+        // Guard: if topScores is nil (network error / bad response) skip the
+        // high score check and navigate directly to the game picker.
+        if (!topScores) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [weakSelf showGamePickerFromEndCard];
+            });
+            return;
+        }
+        if (topScores.count < 10) {
+            qualifies = YES;
+            for (NSDictionary *entry in topScores) {
+                if ([entry[@"score"] integerValue] >= finalScore) placement++;
+            }
+        } else {
+            qualifies = finalScore > [topScores.lastObject[@"score"] integerValue];
+            if (qualifies) {
+                for (NSDictionary *entry in topScores) {
+                    if ([entry[@"score"] integerValue] >= finalScore) placement++;
+                }
+            }
+        }
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (!qualifies) {
+                // Score doesn't make the leaderboard — go straight to the picker
+                [weakSelf showGamePickerFromEndCard];
+                return;
+            }
+
+            // ── Ordinal suffix ────────────────────────────────────────────────
+            NSString  *suffix;
+            NSInteger  mod100 = placement % 100, mod10 = placement % 10;
+            if      (mod100 >= 11 && mod100 <= 13) suffix = @"th";
+            else if (mod10 == 1)                   suffix = @"st";
+            else if (mod10 == 2)                   suffix = @"nd";
+            else if (mod10 == 3)                   suffix = @"rd";
+            else                                   suffix = @"th";
+
+            // ── Banner ────────────────────────────────────────────────────────
+            NSString *bannerText = [NSString stringWithFormat:
+                @"🎉 #%ld%@ — New High Score!", (long)placement, suffix];
+            UILabel *bannerLabel       = [UILabel new];
+            bannerLabel.text           = bannerText;
+            bannerLabel.font           = [UIFont boldSystemFontOfSize:21];
+            bannerLabel.textColor      = [UIColor systemYellowColor];
+            bannerLabel.textAlignment  = NSTextAlignmentCenter;
+            bannerLabel.adjustsFontSizeToFitWidth = YES;
+            bannerLabel.minimumScaleFactor        = 0.7;
+            bannerLabel.translatesAutoresizingMaskIntoConstraints = NO;
+            [card addSubview:bannerLabel];
+            bannerLabel.transform = CGAffineTransformMakeScale(0.7, 0.7);
+            bannerLabel.alpha     = 0;
+            [UIView animateWithDuration:0.45 delay:0.05
+                 usingSpringWithDamping:0.55 initialSpringVelocity:0.8
+                               options:0
+                            animations:^{ bannerLabel.transform = CGAffineTransformIdentity;
+                                          bannerLabel.alpha = 1.0; }
+                            completion:nil];
+
+            // ── Name field ────────────────────────────────────────────────────
+            UITextField *nameField       = [UITextField new];
+            nameField.placeholder        = @"Enter your name";
+            nameField.font               = [UIFont monospacedSystemFontOfSize:17 weight:UIFontWeightRegular];
+            nameField.textColor          = [UIColor whiteColor];
+            nameField.textAlignment      = NSTextAlignmentCenter;
+            nameField.backgroundColor    = [UIColor colorWithWhite:0.18 alpha:1.0];
+            nameField.layer.cornerRadius = 10;
+            nameField.layer.borderColor  = [UIColor systemYellowColor].CGColor;
+            nameField.layer.borderWidth  = 1.5;
+            nameField.returnKeyType      = UIReturnKeyDone;
+            nameField.autocorrectionType = UITextAutocorrectionTypeNo;
+            nameField.autocapitalizationType = UITextAutocapitalizationTypeWords;
+            nameField.maxLength          = 20;
+            nameField.delegate           = weakSelf;
+            nameField.translatesAutoresizingMaskIntoConstraints = NO;
+            [card addSubview:nameField];
+
+            // ── Submit button ─────────────────────────────────────────────────
+            UIButton *submitButton = [UIButton buttonWithType:UIButtonTypeSystem];
+            [submitButton setTitle:@"🏆  Submit & Continue" forState:UIControlStateNormal];
+            submitButton.titleLabel.font    = [UIFont boldSystemFontOfSize:16];
+            submitButton.tintColor          = [UIColor blackColor];
+            submitButton.backgroundColor    = [UIColor systemYellowColor];
+            submitButton.layer.cornerRadius = 10;
+            submitButton.translatesAutoresizingMaskIntoConstraints = NO;
+            [card addSubview:submitButton];
+
+            // ── Layout: anchored below the TOTAL score label ──────────────────
+            UIView   *scoreLbl  = [card viewWithTag:9901];
+            NSLayoutYAxisAnchor *topAnchor = scoreLbl ? scoreLbl.bottomAnchor : card.centerYAnchor;
+            CGFloat   topOffset = scoreLbl ? 28.0 : 10.0;
+
+            [NSLayoutConstraint activateConstraints:@[
+                [bannerLabel.centerXAnchor constraintEqualToAnchor:card.centerXAnchor],
+                [bannerLabel.topAnchor constraintEqualToAnchor:topAnchor constant:topOffset],
+                [bannerLabel.widthAnchor constraintEqualToConstant:300],
+                [bannerLabel.heightAnchor constraintEqualToConstant:34],
+                [submitButton.centerXAnchor constraintEqualToAnchor:card.centerXAnchor],
+                [submitButton.topAnchor constraintEqualToAnchor:bannerLabel.bottomAnchor constant:12],
+                [submitButton.widthAnchor constraintEqualToConstant:260],
+                [submitButton.heightAnchor constraintEqualToConstant:50],
+                [nameField.centerXAnchor constraintEqualToAnchor:card.centerXAnchor],
+                [nameField.topAnchor constraintEqualToAnchor:submitButton.bottomAnchor constant:14],
+                [nameField.widthAnchor constraintEqualToConstant:280],
+                [nameField.heightAnchor constraintEqualToConstant:50],
+            ]];
+
+            // ── Keyboard avoidance ────────────────────────────────────────────
+            __weak UIView *weakCard = card;
+            __block id showObs = nil, hideObs = nil;
+            showObs = [[NSNotificationCenter defaultCenter]
+                addObserverForName:UIKeyboardWillShowNotification object:nil
+                             queue:[NSOperationQueue mainQueue]
+                        usingBlock:^(NSNotification *note) {
+                UIView *c = weakCard; if (!c || !c.window) return;
+                CGRect  kbFrame  = [note.userInfo[UIKeyboardFrameEndUserInfoKey] CGRectValue];
+                double  dur      = [note.userInfo[UIKeyboardAnimationDurationUserInfoKey] doubleValue];
+                UIViewAnimationCurve curve = [note.userInfo[UIKeyboardAnimationCurveUserInfoKey] integerValue];
+                CGRect  cardInWin = [c convertRect:c.bounds toView:c.window];
+                CGFloat overlap   = CGRectGetMaxY(cardInWin) - CGRectGetMinY(kbFrame);
+                CGFloat shift     = (overlap > 0) ? -(overlap + 16) : 0;
+                [UIView animateWithDuration:dur delay:0
+                                    options:(UIViewAnimationOptions)(curve << 16)
+                                 animations:^{ c.transform = CGAffineTransformMakeTranslation(0, shift); }
+                                 completion:nil];
+            }];
+            hideObs = [[NSNotificationCenter defaultCenter]
+                addObserverForName:UIKeyboardWillHideNotification object:nil
+                             queue:[NSOperationQueue mainQueue]
+                        usingBlock:^(NSNotification *note) {
+                UIView *c = weakCard; if (!c) return;
+                double dur = [note.userInfo[UIKeyboardAnimationDurationUserInfoKey] doubleValue];
+                UIViewAnimationCurve curve = [note.userInfo[UIKeyboardAnimationCurveUserInfoKey] integerValue];
+                [UIView animateWithDuration:dur delay:0
+                                    options:(UIViewAnimationOptions)(curve << 16)
+                                 animations:^{ c.transform = CGAffineTransformIdentity; }
+                                 completion:nil];
+            }];
+            dispatch_block_t cleanup = ^{
+                [[NSNotificationCenter defaultCenter] removeObserver:showObs];
+                [[NSNotificationCenter defaultCenter] removeObserver:hideObs];
+            };
+            static const void *kKbCleanup = &kKbCleanup;
+            objc_setAssociatedObject(card, kKbCleanup, cleanup, OBJC_ASSOCIATION_COPY_NONATOMIC);
+
+            // ── Wire submit — set navigate flag so it goes to picker after ────
+            [submitButton addTarget:weakSelf action:@selector(submitScoreFromEndCard:)
+                   forControlEvents:UIControlEventTouchUpInside];
+            objc_setAssociatedObject(submitButton, kBREndCardNameFieldKey,
+                nameField, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            objc_setAssociatedObject(submitButton, kBREndCardFinalScoreKey,
+                @(finalScore), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            // This flag tells submitScoreFromEndCard: to navigate after posting
+            objc_setAssociatedObject(submitButton, kBREndCardNavigateAfterSubmitKey,
+                @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+
+            [nameField becomeFirstResponder];
+        });
+    }] resume];
 }
 
 #pragma mark - Controls
 
-- (void)moveUp    { [self attemptMoveByDeltaCol:0  deltaRow:-1]; }
-- (void)moveDown  { [self attemptMoveByDeltaCol:0  deltaRow:1];  }
-- (void)moveLeft  { [self attemptMoveByDeltaCol:-1 deltaRow:0];  }
-- (void)moveRight { [self attemptMoveByDeltaCol:1  deltaRow:0];  }
+- (void)moveUp    { if (self.bossFightActive) { [self _bossFightInput:@"U"]; return; } [self attemptMoveByDeltaCol:0  deltaRow:-1]; }
+- (void)moveDown  { if (self.bossFightActive) { [self _bossFightInput:@"D"]; return; } [self attemptMoveByDeltaCol:0  deltaRow:1];  }
+- (void)moveLeft  { if (self.bossFightActive) { [self _bossFightInput:@"L"]; return; } [self attemptMoveByDeltaCol:-1 deltaRow:0];  }
+- (void)moveRight { if (self.bossFightActive) { [self _bossFightInput:@"R"]; return; } [self attemptMoveByDeltaCol:1  deltaRow:0];  }
 
 - (void)attemptMoveByDeltaCol:(NSInteger)deltaCol deltaRow:(NSInteger)deltaRow {
     if (!self.model) return;
@@ -893,6 +1834,7 @@ static const void *kBREndCardFinalScoreKey = &kBREndCardFinalScoreKey;
 }
 
 - (void)useAction {
+    if (self.bossFightActive) { [self _bossFightAttack]; return; }
     if (!self.model) return;
 
     // ── No inventory: bare-hands wall push ───────────────────────────────
@@ -944,99 +1886,170 @@ static const void *kBREndCardFinalScoreKey = &kBREndCardFinalScoreKey;
     NSArray<NSValue *> *neighborPositions = [self.model neighborsOfCol:self.model.playerCol
                                                                    row:self.model.playerRow];
 
-    // ── Adjacent enemy — use item as weapon ──────────────────────────────────
-    // Always drops a reward on the cleared tile: heart if injured, else item.
+    // ── Item behaviors — work on both enemies AND walls ───────────────────────
+    // Require at least one enemy or wall neighbor; if completely surrounded by
+    // open floor there's nothing to act on.
+    BOOL hasTarget = NO;
     for (NSValue *posValue in neighborPositions) {
-        CGPoint adjacentPoint = posValue.CGPointValue;
-        BRTile *adjacentTile  = [self.model tileAtCol:adjacentPoint.x row:adjacentPoint.y];
-        if (!adjacentTile.enemyName) continue;
-        adjacentTile.enemyName = nil;
-        [self.inventory removeObjectAtIndex:0];
-        self.score += 40;
-        static const NSInteger kBRMaxHPForDrop = 3;
-        if (self.model.playerHP < kBRMaxHPForDrop) {
-            adjacentTile.itemName = @"❤️ heart";
-        } else {
-            NSArray<NSString *> *dropPool = self.model.aiItems;
-            adjacentTile.itemName = (dropPool.count > 0)
-                ? dropPool[arc4random_uniform((uint32_t)dropPool.count)]
-                : @"scrap";
+        BRTile *t = [self.model tileAtCol:posValue.CGPointValue.x row:posValue.CGPointValue.y];
+        if (t.enemyName || t.type == BRTileTypeWall) { hasTarget = YES; break; }
+    }
+    if (!hasTarget) return;
+
+    // ── Unified blast block ────────────────────────────────────────────────────
+    // Handles a tile regardless of whether it's an enemy or a wall.
+    //   Enemy → clear sprite + sound + explosion using enemy image, +40 score, drop reward
+    //   Wall  → breach (always succeeds when an item is used) + sound + explosion
+    //           using wall snapshot, drop scrap, +25 score
+    //   Floor/exit → no effect
+    __weak typeof(self) weakSelf = self;
+    BOOL (^blastTile)(NSInteger, NSInteger) = ^BOOL(NSInteger col, NSInteger row) {
+        BRTile *tile = [weakSelf.model tileAtCol:col row:row];
+        if (!tile) return NO;
+
+        if (tile.enemyName) {
+            tile.enemyName = nil;
+            weakSelf.score += 40;
+            static const NSInteger kBRMaxHPEnemy = 3;
+            if (weakSelf.model.playerHP < kBRMaxHPEnemy) {
+                tile.itemName = @"❤️ heart";
+            } else {
+                NSArray<NSString *> *pool = weakSelf.model.aiItems;
+                tile.itemName = pool.count > 0
+                    ? pool[arc4random_uniform((uint32_t)pool.count)]
+                    : @"scrap";
+            }
+            [weakSelf playSoundNamed:@"enemy-died"];
+            // Remove enemy sprite immediately — don't wait for the 0.25s tick
+            NSString *key = [NSString stringWithFormat:@"%ld,%ld", (long)col, (long)row];
+            UIImageView *enemyView = weakSelf.enemyImageViews[key];
+            [enemyView removeFromSuperview];
+            [weakSelf.enemyImageViews removeObjectForKey:key];
+            // Fragments use the enemy art so pieces look like the defeated character
+            [weakSelf playExplosionAtTileCol:col row:row sourceImage:weakSelf.enemyImage];
+            return YES;
         }
-        [self playSoundNamed:@"enemy-died"];
-        // Remove the enemy sprite immediately so it doesn't linger while
-        // the explosion fragments are flying (tick would remove it on its
-        // next 0.25s fire, which is too late — it would ghost under pieces).
-        NSString *enemyKey = [NSString stringWithFormat:@"%ld,%ld",
-                              (long)(NSInteger)adjacentPoint.x,
-                              (long)(NSInteger)adjacentPoint.y];
-        UIImageView *defeatedEnemyView = self.enemyImageViews[enemyKey];
-        [defeatedEnemyView removeFromSuperview];
-        [self.enemyImageViews removeObjectForKey:enemyKey];
-        // Use the enemy sprite image for fragments so pieces look like the
-        // defeated enemy rather than a generic burst.
-        [self playExplosionAtTileCol:(NSInteger)adjacentPoint.x
-                                 row:(NSInteger)adjacentPoint.y
-                         sourceImage:self.enemyImage];
-        [self updateHUD];
-        [self.gameView setNeedsDisplay];
-        return;
+
+        if (tile.type == BRTileTypeWall) {
+            // Snapshot BEFORE clearing — fragments must show the wall art
+            UIImage *snap = [weakSelf snapshotOfGameViewTileAtCol:col row:row];
+            tile.type     = BRTileTypeFloor;
+            tile.itemName = @"scrap";
+            weakSelf.score += 25;
+            [weakSelf playSoundNamed:@"wall-blast-success"];
+            [weakSelf playExplosionAtTileCol:col row:row sourceImage:snap];
+            return YES;
+        }
+
+        return NO;
+    };
+
+    // ── Pick one of four behaviors (weighted) ─────────────────────────────────
+    // 60% Normal    — first adjacent target (enemy or wall)
+    // 13% Tornado   — all 4 neighbors, staggered with 360° spin animation
+    // 14% Piercing  — 2 tiles deep in the direction of the first target found
+    // 13% Cross     — both tiles on the first-target axis (front + behind player)
+    NSInteger roll = (NSInteger)(arc4random_uniform(100));
+    typedef NS_ENUM(NSInteger, BRItemBehavior) {
+        BRItemBehaviorNormal   = 0,
+        BRItemBehaviorTornado  = 1,
+        BRItemBehaviorPiercing = 2,
+        BRItemBehaviorCross    = 3,
+    };
+    BRItemBehavior behavior;
+    if      (roll < 60) behavior = BRItemBehaviorNormal;
+    else if (roll < 73) behavior = BRItemBehaviorTornado;
+    else if (roll < 87) behavior = BRItemBehaviorPiercing;
+    else                behavior = BRItemBehaviorCross;
+
+    [self.inventory removeObjectAtIndex:0];
+
+    // ── Direction scan: find first adjacent target and its axis ──────────────
+    // Pass 1 checks enemies (priority); pass 2 falls back to walls.
+    const NSInteger blastDC[] = { 0,  0, -1, 1 };
+    const NSInteger blastDR[] = {-1,  1,  0, 0 };
+    NSInteger firstDC = 0, firstDR = 0;
+    CGPoint firstTargetPos = CGPointZero;
+    for (NSInteger pass = 0; pass < 2; pass++) {
+        for (NSInteger d = 0; d < 4; d++) {
+            NSInteger nc = self.model.playerCol + blastDC[d];
+            NSInteger nr = self.model.playerRow + blastDR[d];
+            BRTile *t = [self.model tileAtCol:nc row:nr];
+            BOOL hit = (pass == 0) ? (t.enemyName != nil) : (t.type == BRTileTypeWall);
+            if (hit && CGPointEqualToPoint(firstTargetPos, CGPointZero)) {
+                firstTargetPos = CGPointMake(nc, nr);
+                firstDC = blastDC[d]; firstDR = blastDR[d];
+            }
+        }
+        if (!CGPointEqualToPoint(firstTargetPos, CGPointZero)) break;
     }
 
-    // ── Adjacent wall — try to breach it ──────────────────────────────────────
-    BRTile  *wallTileToBreach = nil;
-    CGPoint  wallTilePosition = CGPointZero;
-    for (NSValue *posValue in neighborPositions) {
-        CGPoint adjacentPoint = posValue.CGPointValue;
-        BRTile *adjacentTile  = [self.model tileAtCol:adjacentPoint.x row:adjacentPoint.y];
-        if (adjacentTile.type == BRTileTypeWall) {
-            wallTileToBreach = adjacentTile;
-            wallTilePosition = adjacentPoint;
+    switch (behavior) {
+
+        case BRItemBehaviorNormal: {
+            // Blast the first adjacent target only — original behavior.
+            blastTile((NSInteger)firstTargetPos.x, (NSInteger)firstTargetPos.y);
+            [self updateHUD];
+            [self.gameView setNeedsDisplay];
+            break;
+        }
+
+        case BRItemBehaviorTornado: {
+            // 360° spin on the player sprite, then blast all 4 neighbors
+            // in sequence with 120ms stagger between each hit.
+            UIImageView *piv = self.playerImageView;
+            if (!piv.hidden) {
+                CABasicAnimation *spin = [CABasicAnimation animationWithKeyPath:@"transform.rotation.z"];
+                spin.fromValue      = @(0);
+                spin.toValue        = @(M_PI * 2.0);
+                spin.duration       = 0.55;
+                spin.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
+                spin.repeatCount    = 1;
+                [piv.layer addAnimation:spin forKey:@"tornadoSpin"];
+            }
+            NSArray<NSValue *> *tornadoNeighbors = neighborPositions;
+            __weak typeof(self) ws = self;
+            for (NSInteger i = 0; i < (NSInteger)tornadoNeighbors.count; i++) {
+                CGPoint pt = tornadoNeighbors[i].CGPointValue;
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW,
+                                             (int64_t)((0.10 + i * 0.12) * NSEC_PER_SEC)),
+                               dispatch_get_main_queue(), ^{
+                    blastTile((NSInteger)pt.x, (NSInteger)pt.y);
+                    [ws updateHUD];
+                    [ws.gameView setNeedsDisplay];
+                });
+            }
+            break;
+        }
+
+        case BRItemBehaviorPiercing: {
+            // Blast 2 tiles deep in the direction of the first target.
+            // Punches through both tiles regardless of type.
+            NSInteger c1 = self.model.playerCol + firstDC;
+            NSInteger r1 = self.model.playerRow + firstDR;
+            NSInteger c2 = c1 + firstDC;
+            NSInteger r2 = r1 + firstDR;
+            blastTile(c1, r1);
+            blastTile(c2, r2);
+            [self updateHUD];
+            [self.gameView setNeedsDisplay];
+            break;
+        }
+
+        case BRItemBehaviorCross: {
+            // Blast the target tile AND the tile directly behind the player
+            // on the same axis — two hits, opposite directions.
+            NSInteger c1 = self.model.playerCol + firstDC;
+            NSInteger r1 = self.model.playerRow + firstDR;
+            NSInteger c2 = self.model.playerCol - firstDC;
+            NSInteger r2 = self.model.playerRow - firstDR;
+            blastTile(c1, r1);
+            blastTile(c2, r2);
+            [self updateHUD];
+            [self.gameView setNeedsDisplay];
             break;
         }
     }
-    if (!wallTileToBreach) return;
-
-    // Success chance: base 30% + up to 40% for longer item names + 25% bonus
-    // if the item name appears in the vulnerable hint
-    NSInteger breachChance = 30 + (NSInteger)MIN(40, (NSInteger)chosenItem.length * 3);
-    NSString *vulnerableHint = self.model.vulnerableHint;
-    if (vulnerableHint &&
-        [vulnerableHint.lowercaseString containsString:chosenItem.lowercaseString]) {
-        breachChance += 25;
-    }
-    BOOL breachSucceeded = (NSInteger)(arc4random() % 100) < breachChance;
-
-    if (breachSucceeded) {
-        // Snapshot BEFORE clearing the tile — fragments must show the wall graphic.
-        UIImage *wallSnapshot = [self snapshotOfGameViewTileAtCol:(NSInteger)wallTilePosition.x
-                                                              row:(NSInteger)wallTilePosition.y];
-        BRTile *breachedTile = [self.model tileAtCol:wallTilePosition.x row:wallTilePosition.y];
-        breachedTile.type    = BRTileTypeFloor;
-        breachedTile.itemName = @"scrap";
-        [self.inventory removeObjectAtIndex:0];
-        self.score += 25;
-        [self playSoundNamed:@"wall-blast-success"];
-        [self playExplosionAtTileCol:(NSInteger)wallTilePosition.x
-                                 row:(NSInteger)wallTilePosition.y
-                         sourceImage:wallSnapshot];
-    } else {
-        // Failure: spawn a warden on a nearby open floor tile, player loses 1 HP
-        for (NSValue *posValue in neighborPositions) {
-            CGPoint adjacentPoint = posValue.CGPointValue;
-            BRTile *adjacentTile  = [self.model tileAtCol:adjacentPoint.x row:adjacentPoint.y];
-            BOOL    isPlayerTile  = (adjacentPoint.x == self.model.playerCol &&
-                                     adjacentPoint.y == self.model.playerRow);
-            if (adjacentTile.type == BRTileTypeFloor && !adjacentTile.enemyName && !isPlayerTile) {
-                adjacentTile.enemyName = @"Warden";
-                break;
-            }
-        }
-        self.model.playerHP -= 1;
-        [self playSoundNamed:@"wall-blast-fail"];
-        [self playRandomVariantOfSound:@"hurt-player" variantCount:2];
-    }
-    [self updateHUD];
-    [self.gameView setNeedsDisplay];
 }
 
 #pragma mark - Membership
@@ -1057,8 +2070,12 @@ static const void *kBREndCardFinalScoreKey = &kBREndCardFinalScoreKey;
 
 #pragma mark - Game Picker
 
-/// Presents the library picker modally. The completion callback either loads
-/// a saved record (no API calls) or kicks off startNewRun.
+/// Presents the library picker modally. onSelection either loads a saved
+/// record (no API calls) or kicks off startNewRun. onClosedWithoutSelection
+/// fires if the player taps the picker's "✕" with no selection — since this
+/// view controller's own content (gameView/d-pad/HUD) is just inherited
+/// chrome from before the picker appeared, "closing the picker" should mean
+/// "leave this screen entirely", not "reveal that chrome".
 - (void)showGamePicker {
     BRGamePickerViewController *picker = [[BRGamePickerViewController alloc] init];
     __weak typeof(self) weakSelf = self;
@@ -1071,8 +2088,35 @@ static const void *kBREndCardFinalScoreKey = &kBREndCardFinalScoreKey;
             [strongSelf startNewRun];
         }
     };
+    picker.onClosedWithoutSelection = ^{
+        __strong typeof(weakSelf) strongSelf = weakSelf;
+        if (!strongSelf) return;
+        [strongSelf dismissSelfBackToCaller];
+    };
     picker.modalPresentationStyle = UIModalPresentationFullScreen;
     [self presentViewController:picker animated:YES completion:nil];
+}
+
+/// "Go back" for this view controller itself, used when the picker is closed
+/// with no selection. Handles both ways BrainRotViewController might have
+/// been shown:
+///   - presented modally from a "main menu" view controller -> dismiss.
+///   - pushed onto a navigation stack -> pop.
+/// If neither applies (this VC has no presenter and is the root of its own
+/// nav stack, or has none), there's nowhere to go back to — log it and leave
+/// the picker dismissed but this screen as-is, rather than doing nothing
+/// silently or risking a broken navigation state.
+- (void)dismissSelfBackToCaller {
+    if (self.presentingViewController) {
+        // animated:NO — the picker's own dismiss animation (triggered by its
+        // "✕" handler just before this fires) already provides the visual
+        // transition; animating this too would add a visible double-flash.
+        [self dismissViewControllerAnimated:NO completion:nil];
+    } else if (self.navigationController && self.navigationController.viewControllers.count > 1) {
+        [self.navigationController popViewControllerAnimated:NO];
+    } else {
+        NSLog(@"[BrainRot] Picker closed with no selection, but BrainRotViewController has no presenter or nav stack to return to.");
+    }
 }
 
 #pragma mark - Load Saved Game
@@ -1088,8 +2132,10 @@ static const void *kBREndCardFinalScoreKey = &kBREndCardFinalScoreKey;
     self.loadingOverlayView.alpha  = 0;
     [self.loadingSpinner stopAnimating];
 
-    _endCardFired = NO;
-    self.score    = 0;
+    _endCardFired          = NO;
+    self.score             = 0;
+    self.currentLevel      = 1;
+    self.scoreAtLevelStart = 0;
     [self.inventory removeAllObjects];
     [self setGameInputEnabled:NO];
 
@@ -1166,8 +2212,10 @@ static const void *kBREndCardFinalScoreKey = &kBREndCardFinalScoreKey;
 #pragma mark - New Run
 
 - (void)startNewRun {
-    _endCardFired = NO;
-    self.score    = 0;
+    _endCardFired          = NO;
+    self.score             = 0;
+    self.currentLevel      = 1;
+    self.scoreAtLevelStart = 0;
     [self.inventory removeAllObjects];
     [self setGameInputEnabled:NO];
 
@@ -1315,8 +2363,10 @@ static const void *kBREndCardFinalScoreKey = &kBREndCardFinalScoreKey;
         return;
     }
 
-    _endCardFired = NO;
-    self.score    = 0;
+    _endCardFired          = NO;
+    self.score             = 0;
+    self.currentLevel      = 1;
+    self.scoreAtLevelStart = 0;
     [self.inventory removeAllObjects];
     [self setGameInputEnabled:NO];
 
@@ -1375,6 +2425,104 @@ static const void *kBREndCardFinalScoreKey = &kBREndCardFinalScoreKey;
     }
 }
 
+
+#pragma mark - Level Progression
+
+/// Called when the player taps "LEVEL N+1 →" on the win card.
+/// Score carries over. Level increments. Same assets, more enemies.
+- (void)advanceToNextLevel {
+    if (!self.savedRunAssets) { [self startNewRun]; return; }
+
+    _endCardFired          = NO;
+    self.currentLevel     += 1;
+    self.scoreAtLevelStart = self.score;
+    [self.inventory removeAllObjects];
+    [self setGameInputEnabled:NO];
+
+    [self.levelEndCardView removeFromSuperview];
+    self.levelEndCardView = nil;
+
+    [self _rebuildLevelWithAssets:self.savedRunAssets];
+}
+
+/// Retry the current level — rolls score back to what it was at the start
+/// of this level so repeated failures don't accumulate phantom points.
+- (void)retryCurrentLevel {
+    if (!self.savedRunAssets) { [self startNewRun]; return; }
+
+    _endCardFired = NO;
+    self.score    = self.scoreAtLevelStart;
+    [self.inventory removeAllObjects];
+    [self setGameInputEnabled:NO];
+
+    [self.levelEndCardView removeFromSuperview];
+    self.levelEndCardView = nil;
+
+    [self _rebuildLevelWithAssets:self.savedRunAssets];
+}
+
+/// Shared rebuild logic for advanceToNextLevel and retryCurrentLevel.
+/// Reinstalls the model, places enemies scaled to currentLevel, restores UI.
+- (void)_rebuildLevelWithAssets:(NSDictionary *)assets {
+    self.bossFightActive = NO;
+    self.isPaused = NO;
+    self.pauseBtn.selected = NO;
+    [self setGameInputEnabled:NO];
+    [self.bossFightTimer invalidate]; self.bossFightTimer = nil;
+    [self.bossFightOverlay removeFromSuperview]; self.bossFightOverlay = nil;
+    [self.bossComboWindowTimer invalidate]; self.bossComboWindowTimer = nil;
+
+    self.model = [[BRGameModel alloc] initWithCols:17 rows:13 seed:self.savedRunSeed];
+    self.gameView.model = self.model;
+
+    NSString *levelDesc = assets[@"levelDesc"] ?: @"";
+    NSString *hint      = assets[@"hint"]      ?: @"";
+    NSArray  *items     = assets[@"items"]     ?: @[];
+    NSArray  *enemies   = assets[@"enemies"]   ?: @[];
+    UIImage  *bgImage   = assets[@"bgImage"];
+    UIImage  *playerImg = assets[@"playerImage"];
+    UIImage  *enemyImg  = assets[@"enemyImage"];
+
+    self.gameView.backgroundImage = bgImage;
+    self.gameView.backgroundColor = bgImage ? [UIColor clearColor]
+                                            : [UIColor colorWithWhite:0.1 alpha:1.0];
+    self.model.levelFlavor    = levelDesc;
+    self.model.aiItems        = items;
+    self.model.aiEnemies      = enemies;
+    self.model.vulnerableHint = hint;
+
+    // Items: constant across levels
+    [self.model placeItems:items count:MIN(6, (NSInteger)items.count * 2)];
+
+    // Enemies: +2 per level, capped at 15
+    // Level 1 = MIN(6, count*2), Level 2 = +2, Level 3 = +4 ...
+    NSInteger baseCount  = MIN(6, (NSInteger)enemies.count * 2);
+    NSInteger enemyCount = MIN(15, baseCount + (self.currentLevel - 1) * 2);
+    [self.model placeEnemies:enemies count:enemyCount];
+
+    [self updateCameraForPlayerCol:self.model.playerCol playerRow:self.model.playerRow];
+    self.gameView.hidePlayerDot = (playerImg != nil);
+    self.playerImageView.image  = playerImg;
+    self.playerImageView.hidden = (playerImg == nil);
+    self.enemyImage             = enemyImg;
+    if (playerImg) [self repositionPlayerImageAnimated:NO];
+
+    [self clearEnemyImageViews];
+    [self refreshEnemyImageViews];
+    [self updateHUD];
+    [self.gameView setNeedsDisplay];
+    [self setGameInputEnabled:YES];
+    [self startBackgroundMusic];
+
+    if (!self.tickTimer || !self.tickTimer.isValid) {
+        self.tickTimer = [NSTimer scheduledTimerWithTimeInterval:0.25
+                                                          target:self
+                                                        selector:@selector(tick)
+                                                        userInfo:nil
+                                                         repeats:YES];
+    }
+}
+
 #pragma mark - Maze Template Image
 
 /// Renders the current model's tile topology to a PNG UIImage using plain
@@ -1389,45 +2537,74 @@ static const void *kBREndCardFinalScoreKey = &kBREndCardFinalScoreKey;
 - (NSData *)renderMazeTemplateImageData {
     if (!self.model) return nil;
 
-    NSInteger gridCols     = self.model.cols;
-    NSInteger gridRows     = self.model.rows;
-    // 32px per tile = 544×416px for a 17×13 grid.
-    // The old 4px/tile (68×52px) was too small for the AI to read the maze topology —
-    // it produced landscape paintings that ignored the path layout in complex sections.
-    // 32px gives enough resolution for the edit model to see individual corridors.
-    // Base64 size: ~544×416 PNG ≈ 35-60KB uncompressed, well within the API limit.
-    NSInteger pixelsPerTile = 32;
-    NSInteger canvasWidth   = gridCols * pixelsPerTile;
-    NSInteger canvasHeight  = gridRows * pixelsPerTile;
+    NSInteger gridCols = self.model.cols;  // 17
+    NSInteger gridRows = self.model.rows;  // 13
 
-    UIGraphicsBeginImageContextWithOptions(CGSizeMake(canvasWidth, canvasHeight), YES, 1.0);
+    // CRITICAL: render at exactly 1024×1024 — the same size the API returns.
+    //
+    // The old approach used 32px/tile → 544×416, which is NOT square. The API
+    // always outputs 1024×1024. When the AI edits a 544×416 reference into a
+    // 1024×1024 output it has to decide how to handle the aspect ratio — it may
+    // stretch, pad, or freely reinterpret, putting corridor centres at wrong
+    // pixel positions. This caused the "maze inside a maze" visual mismatch.
+    //
+    // By sending a 1024×1024 template where each tile is exactly
+    //   tileW = 1024/17 ≈ 60.2 px wide
+    //   tileH = 1024/13 ≈ 78.8 px tall
+    // the AI receives a reference that is 1:1 with its output canvas, so the
+    // edit preserves tile positions exactly. BRGameView.drawRect divides the
+    // same 1024×1024 image by (cols × rows) identically, giving perfect
+    // structural alignment between the image and the tile overlay.
+    //
+    // round((col+1)*tileW) - round(col*tileW) avoids sub-pixel gaps at tile
+    // boundaries that could confuse the model with hairline cracks.
+
+    NSInteger canvasSize = 1024;
+    CGFloat   tileW      = (CGFloat)canvasSize / (CGFloat)gridCols;
+    CGFloat   tileH      = (CGFloat)canvasSize / (CGFloat)gridRows;
+
+    UIGraphicsBeginImageContextWithOptions(CGSizeMake(canvasSize, canvasSize), YES, 1.0);
     CGContextRef ctx = UIGraphicsGetCurrentContext();
+
+    // Fill entire canvas with wall colour first — covers any sub-pixel seams
+    CGContextSetFillColorWithColor(ctx, [UIColor colorWithWhite:0.06 alpha:1.0].CGColor);
+    CGContextFillRect(ctx, CGRectMake(0, 0, canvasSize, canvasSize));
 
     for (NSInteger row = 0; row < gridRows; row++) {
         for (NSInteger col = 0; col < gridCols; col++) {
-            BRTile  *tile     = [self.model tileAtCol:col row:row];
-            CGRect   tileRect = CGRectMake(col * pixelsPerTile, row * pixelsPerTile,
-                                           pixelsPerTile, pixelsPerTile);
-            UIColor *fillColor;
+            BRTile *tile = [self.model tileAtCol:col row:row];
+
+            // Pixel-snapped rect: adjacent tiles share exact integer edges so
+            // there are no gaps or overlaps, regardless of fractional tileW/H.
+            CGFloat x = round(col       * tileW);
+            CGFloat y = round(row       * tileH);
+            CGFloat w = round((col + 1) * tileW) - x;
+            CGFloat h = round((row + 1) * tileH) - y;
+
+            UIColor *fill;
             switch (tile.type) {
-                case BRTileTypeFloor: fillColor = [UIColor whiteColor];                                  break;
-                case BRTileTypeExit:  fillColor = [UIColor colorWithRed:0.3 green:1.0 blue:0.4 alpha:1]; break;
-                case BRTileTypeWall:  fillColor = [UIColor colorWithWhite:0.08 alpha:1.0];               break;
-                default:              fillColor = [UIColor blackColor];                                   break;
+                case BRTileTypeFloor:
+                    fill = [UIColor colorWithWhite:0.94 alpha:1.0]; break;
+                case BRTileTypeExit:
+                    fill = [UIColor colorWithRed:0.2 green:1.0 blue:0.35 alpha:1.0]; break;
+                case BRTileTypeWall:
+                    fill = [UIColor colorWithWhite:0.06 alpha:1.0]; break;
+                default:
+                    fill = [UIColor blackColor]; break;
             }
-            CGContextSetFillColorWithColor(ctx, fillColor.CGColor);
-            CGContextFillRect(ctx, tileRect);
+            CGContextSetFillColorWithColor(ctx, fill.CGColor);
+            CGContextFillRect(ctx, CGRectMake(x, y, w, h));
         }
     }
 
-    // Mark player start (blue) and exit (bright green) so the AI knows which
-    // end of the path is which
-    CGRect startRect = CGRectMake(self.model.playerCol * pixelsPerTile,
-                                  self.model.playerRow * pixelsPerTile,
-                                  pixelsPerTile, pixelsPerTile);
+    // Player start in blue so the AI can orient the scene
+    CGFloat sx = round(self.model.playerCol       * tileW);
+    CGFloat sy = round(self.model.playerRow       * tileH);
+    CGFloat sw = round((self.model.playerCol + 1) * tileW) - sx;
+    CGFloat sh = round((self.model.playerRow + 1) * tileH) - sy;
     CGContextSetFillColorWithColor(ctx,
         [UIColor colorWithRed:0.1 green:0.4 blue:1.0 alpha:1.0].CGColor);
-    CGContextFillRect(ctx, startRect);
+    CGContextFillRect(ctx, CGRectMake(sx, sy, sw, sh));
 
     UIImage *templateImage = UIGraphicsGetImageFromCurrentImageContext();
     UIGraphicsEndImageContext();
@@ -1705,44 +2882,69 @@ static const void *kBREndCardFinalScoreKey = &kBREndCardFinalScoreKey;
 - (void)refreshEnemyImageViews {
     if (!self.enemyImage || !self.model) return;
 
-    // Build set of tile keys that currently have enemies
-    NSMutableSet<NSString *> *liveEnemyKeys = [NSMutableSet set];
+    // ── Build the ground-truth set of live enemy tile keys ────────────────────
+    NSMutableDictionary<NSString *, NSValue *> *liveEnemies = [NSMutableDictionary dictionary];
     for (NSInteger row = 0; row < self.model.rows; row++) {
         for (NSInteger col = 0; col < self.model.cols; col++) {
             if ([self.model tileAtCol:col row:row].enemyName) {
-                [liveEnemyKeys addObject:[NSString stringWithFormat:@"%ld,%ld", (long)col, (long)row]];
+                NSString *key = [NSString stringWithFormat:@"%ld,%ld", (long)col, (long)row];
+                liveEnemies[key] = [NSValue valueWithCGPoint:CGPointMake(col, row)];
             }
         }
     }
 
-    // Remove views for defeated or vacated enemies
+    // ── Remove image views for enemies that no longer exist ───────────────────
     for (NSString *key in self.enemyImageViews.allKeys.copy) {
-        if (![liveEnemyKeys containsObject:key]) {
+        if (!liveEnemies[key]) {
             [self.enemyImageViews[key] removeFromSuperview];
             [self.enemyImageViews removeObjectForKey:key];
         }
     }
 
-    // Add views for newly spawned enemies
-    for (NSString *key in liveEnemyKeys) {
-        if (self.enemyImageViews[key]) continue;
+    // ── Create missing views; reposition ALL views to their correct tile ──────
+    // We reposition every view each tick, not just new ones. This fixes the
+    // "red circle with no image" bug: a view created while a tile was off-screen
+    // gets a zero frame and is never corrected by the old "if exists, skip" path.
+    // Now every live enemy view is guaranteed to match the current camera offset.
+    for (NSString *key in liveEnemies) {
         NSArray<NSString *> *parts = [key componentsSeparatedByString:@","];
         NSInteger col = [parts[0] integerValue];
         NSInteger row = [parts[1] integerValue];
-        CGRect tileFrame = [self tileFrameForCol:col row:row];
-        CGFloat inset    = tileFrame.size.width * 0.12;
-        CGRect  frame    = CGRectInset(tileFrame, inset, inset);
 
-        UIImageView *enemyView       = [[UIImageView alloc] initWithImage:self.enemyImage];
-        enemyView.frame              = frame;
-        enemyView.contentMode        = UIViewContentModeScaleAspectFill;
-        enemyView.clipsToBounds      = YES;
-        enemyView.layer.cornerRadius = frame.size.width / 2.0;
-        enemyView.layer.borderColor  = [UIColor systemRedColor].CGColor;
-        enemyView.layer.borderWidth  = 1.5;
-        [self.view insertSubview:enemyView aboveSubview:self.gameView];
-        self.enemyImageViews[key] = enemyView;
+        CGRect tileFrame = [self tileFrameForCol:col row:row];
+        BOOL   onScreen  = !CGRectIsEmpty(tileFrame);
+
+        UIImageView *enemyView = self.enemyImageViews[key];
+
+        if (!enemyView) {
+            // Create the view regardless of on/off-screen status
+            enemyView                  = [[UIImageView alloc] initWithImage:self.enemyImage];
+            enemyView.contentMode      = UIViewContentModeScaleAspectFill;
+            enemyView.clipsToBounds    = YES;
+            enemyView.layer.borderColor = [UIColor systemRedColor].CGColor;
+            enemyView.layer.borderWidth = 1.5;
+            [self.view insertSubview:enemyView aboveSubview:self.gameView];
+            self.enemyImageViews[key] = enemyView;
+        }
+
+        if (onScreen) {
+            CGFloat inset    = tileFrame.size.width * 0.12;
+            CGRect  frame    = CGRectInset(tileFrame, inset, inset);
+            // Only update frame when not mid-animation (moveEnemiesStep animates
+            // the slide; we don't want refreshEnemyImageViews to snap it back)
+            if (!enemyView.layer.animationKeys.count) {
+                enemyView.frame              = frame;
+                enemyView.layer.cornerRadius = frame.size.width / 2.0;
+            }
+            enemyView.hidden = NO;
+        } else {
+            enemyView.hidden = YES;
+        }
     }
+
+    // ── Keep enemyPositions in sync ───────────────────────────────────────────
+    [self.enemyPositions removeAllObjects];
+    [self.enemyPositions addEntriesFromDictionary:liveEnemies];
 }
 
 - (void)clearEnemyImageViews {
@@ -1750,6 +2952,150 @@ static const void *kBREndCardFinalScoreKey = &kBREndCardFinalScoreKey;
         [enemyView removeFromSuperview];
     }
     [self.enemyImageViews removeAllObjects];
+}
+
+
+#pragma mark - Enemy Movement
+
+/// Called every other tick (~0.5 s). Each enemy either steps toward the player
+/// (if within 8 tiles Manhattan distance) or takes a random walkable step.
+/// On contact with the player the enemy deals 1 HP of damage and stays put.
+- (void)moveEnemiesStep {
+    if (!self.model || self.enemyPositions.count == 0) return;
+
+    NSInteger playerCol = self.model.playerCol;
+    NSInteger playerRow = self.model.playerRow;
+
+    // Snapshot positions so we don't iterate a mutating dictionary
+    NSArray<NSString *> *keys = self.enemyPositions.allKeys.copy;
+
+    // Track which destination tiles are claimed this step so two enemies
+    // can't move onto the same tile simultaneously
+    NSMutableSet<NSString *> *claimedTiles = [NSMutableSet set];
+
+    const NSInteger dc[] = { 0,  0, -1, 1 };
+    const NSInteger dr[] = {-1,  1,  0, 0 };
+
+    for (NSString *key in keys) {
+        NSValue *posValue = self.enemyPositions[key];
+        if (!posValue) continue;
+        CGPoint pos = posValue.CGPointValue;
+        NSInteger eCol = (NSInteger)pos.x;
+        NSInteger eRow = (NSInteger)pos.y;
+
+        // Verify the tile still has this enemy (could have been blasted)
+        BRTile *currentTile = [self.model tileAtCol:eCol row:eRow];
+        if (!currentTile.enemyName) continue;
+
+        NSInteger manhattan = ABS(eCol - playerCol) + ABS(eRow - playerRow);
+
+        // ── Contact: adjacent to player → deal damage, don't move ────────────
+        if (manhattan == 1) {
+            self.model.playerHP -= 1;
+            [self playSoundNamed:@"hurt-player"];
+            // Flash the player image red to signal the hit
+            UIImageView *piv = self.playerImageView;
+            piv.layer.borderColor = [UIColor systemRedColor].CGColor;
+            piv.layer.borderWidth = 3.0;
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)),
+                           dispatch_get_main_queue(), ^{
+                piv.layer.borderColor = [UIColor clearColor].CGColor;
+                piv.layer.borderWidth = 0;
+            });
+            [self updateHUD];
+            [self checkForWinOrLoss];
+            continue;
+        }
+
+        // ── Choose next step ──────────────────────────────────────────────────
+        // Within 8 tiles: pick the direction that reduces Manhattan distance.
+        // Beyond 8 or all chase moves blocked: random walkable step.
+        NSInteger bestCol = eCol, bestRow = eRow;
+        BOOL      moved   = NO;
+
+        if (manhattan <= 8) {
+            // Greedy 1-step toward player — try directions that reduce distance first
+            NSInteger bestDist = manhattan;
+            // Shuffle the 4 directions slightly to avoid deterministic tie-breaking
+            NSInteger order[4] = {0, 1, 2, 3};
+            for (NSInteger i = 3; i > 0; i--) {
+                NSInteger j = arc4random_uniform((uint32_t)(i + 1));
+                NSInteger tmp = order[i]; order[i] = order[j]; order[j] = tmp;
+            }
+            for (NSInteger i = 0; i < 4; i++) {
+                NSInteger d    = order[i];
+                NSInteger nc   = eCol + dc[d];
+                NSInteger nr   = eRow + dr[d];
+                NSInteger dist = ABS(nc - playerCol) + ABS(nr - playerRow);
+                if (dist >= bestDist) continue;
+                BRTile *t = [self.model tileAtCol:nc row:nr];
+                if (!t || t.type == BRTileTypeWall) continue;
+                if (t.enemyName) continue; // occupied by another enemy
+                NSString *destKey = [NSString stringWithFormat:@"%ld,%ld", (long)nc, (long)nr];
+                if ([claimedTiles containsObject:destKey]) continue;
+                bestCol = nc; bestRow = nr; bestDist = dist; moved = YES;
+            }
+        }
+
+        if (!moved) {
+            // Random walkable step (wandering or chase blocked)
+            NSMutableArray<NSNumber *> *options = [NSMutableArray array];
+            for (NSInteger d = 0; d < 4; d++) {
+                NSInteger nc = eCol + dc[d];
+                NSInteger nr = eRow + dr[d];
+                BRTile *t = [self.model tileAtCol:nc row:nr];
+                if (!t || t.type == BRTileTypeWall) continue;
+                if (t.enemyName) continue;
+                NSString *destKey = [NSString stringWithFormat:@"%ld,%ld", (long)nc, (long)nr];
+                if ([claimedTiles containsObject:destKey]) continue;
+                [options addObject:@(d)];
+            }
+            if (options.count > 0) {
+                NSInteger d = options[arc4random_uniform((uint32_t)options.count)].integerValue;
+                bestCol = eCol + dc[d];
+                bestRow = eRow + dr[d];
+                moved = YES;
+            }
+        }
+
+        if (!moved || (bestCol == eCol && bestRow == eRow)) continue;
+
+        // ── Apply move in model ───────────────────────────────────────────────
+        BRTile *destTile = [self.model tileAtCol:bestCol row:bestRow];
+        if (!destTile || destTile.type == BRTileTypeWall || destTile.enemyName) continue;
+
+        NSString *destKey = [NSString stringWithFormat:@"%ld,%ld", (long)bestCol, (long)bestRow];
+        [claimedTiles addObject:destKey];
+
+        // Move enemy name from old tile to new tile
+        destTile.enemyName  = currentTile.enemyName;
+        currentTile.enemyName = nil;
+
+        // Update positions dictionary
+        [self.enemyPositions removeObjectForKey:key];
+        self.enemyPositions[destKey] = [NSValue valueWithCGPoint:CGPointMake(bestCol, bestRow)];
+
+        // ── Animate the image view sliding to the new tile ────────────────────
+        UIImageView *enemyView = self.enemyImageViews[key];
+        if (enemyView) {
+            [self.enemyImageViews removeObjectForKey:key];
+            self.enemyImageViews[destKey] = enemyView;
+
+            CGRect destFrame = [self tileFrameForCol:bestCol row:bestRow];
+            if (!CGRectIsEmpty(destFrame)) {
+                CGFloat inset    = destFrame.size.width * 0.12;
+                CGRect  newFrame = CGRectInset(destFrame, inset, inset);
+                [UIView animateWithDuration:0.18
+                                      delay:0
+                                    options:UIViewAnimationOptionCurveEaseInOut
+                                 animations:^{ enemyView.frame = newFrame; }
+                                 completion:nil];
+            } else {
+                // Scrolled off-screen — hide until refreshEnemyImageViews shows it
+                enemyView.hidden = YES;
+            }
+        }
+    }
 }
 
 #pragma mark - Input Enable/Disable
@@ -2241,6 +3587,23 @@ static const void *kBREndCardFinalScoreKey = &kBREndCardFinalScoreKey;
     [self.musicPlayer play];
 }
 
+/// Starts boss-intro.mp3 on a loop as the boss fight music.
+/// Falls back to the normal background music if the file is missing.
+- (void)_startBossFightMusic {
+    [self stopBackgroundMusic];
+    NSURL *url = [[NSBundle mainBundle] URLForResource:@"boss-intro" withExtension:@"mp3"
+                                           subdirectory:@"sounds"];
+    if (!url) url = [[NSBundle mainBundle] URLForResource:@"boss-intro" withExtension:@"mp3"];
+    if (!url) { [self startBackgroundMusic]; return; }
+    NSError *err = nil;
+    self.musicPlayer = [[AVAudioPlayer alloc] initWithContentsOfURL:url error:&err];
+    if (err || !self.musicPlayer) { [self startBackgroundMusic]; return; }
+    self.musicPlayer.numberOfLoops = -1;
+    self.musicPlayer.volume        = 0.55; // slightly louder than normal — boss energy
+    [self.musicPlayer prepareToPlay];
+    [self.musicPlayer play];
+}
+
 /// Fades out and stops background music.
 /// Uses a recursive dispatch_after approach to decrement volume in small steps —
 /// AVAudioPlayer has no built-in fade, and CADisplayLink would be overkill here.
@@ -2386,6 +3749,30 @@ static const void *kBREndCardFinalScoreKey = &kBREndCardFinalScoreKey;
     // Re-fetch when coming back into view — covers the case where the user
     // played offline, then backgrounded the app, then came back with WiFi.
     [self fetchHighScoresForBanner];
+
+    // One-shot: present the picker (members) or kick off a new run
+    // (non-members) the first time this view appears. Done here rather than
+    // in viewDidLoad so the view is actually in the window before
+    // presentViewController: runs — viewDidLoad previously worked around
+    // this with an arbitrary 0.1s dispatch_after, during which this view
+    // controller's own gameView/d-pad/HUD were briefly visible underneath.
+    // dispatch_async (no delay) defers just long enough for this
+    // viewDidAppear pass to finish, keeping that gap to ~1 frame.
+    if (!_hasPresentedInitialFlow) {
+        _hasPresentedInitialFlow = YES;
+        __weak typeof(self) weakSelf = self;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            __strong typeof(weakSelf) strongSelf = weakSelf;
+            if (!strongSelf) return;
+            // Members get the full picker (saved library + new game option).
+            // Non-members go straight to a new game — no library, no save.
+            if ([strongSelf userHasMembership]) {
+                [strongSelf showGamePicker];
+            } else {
+                [strongSelf startNewRun];
+            }
+        });
+    }
 }
 
 - (void)viewDidDisappear:(BOOL)animated {

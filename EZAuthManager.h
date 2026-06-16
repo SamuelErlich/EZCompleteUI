@@ -2,16 +2,28 @@
 // EZCompleteUI
 
 #import <Foundation/Foundation.h>
+extern NSString *const EZPasswordResetReadyNotification;
 
 NS_ASSUME_NONNULL_BEGIN
 
 @interface EZAuthManager : NSObject
 
+@property (nonatomic, assign, readonly) BOOL isInPasswordRecoveryMode;
 @property (nonatomic, copy, readonly, nullable) NSString *accessToken;
 @property (nonatomic, copy, readonly, nullable) NSString *userId;
 @property (nonatomic, readonly) BOOL isLoggedIn;
 
 + (instancetype)shared;
+
+
+- (void)applyPasswordResetTokens:(NSString *)accessToken refreshToken:(NSString *)refreshToken;
+- (void)setNewPassword:(NSString *)newPassword completion:(void(^)(BOOL success, NSString * _Nullable errorMessage))completion;
+
+- (void)cancelPasswordReset;
+
+- (void)getValidAccessToken:(void(^)(NSString * _Nullable token, NSError * _Nullable error))completion;
+
+- (void)sendPasswordResetEmail:(NSString *)email completion:(void(^)(BOOL success, NSString * _Nullable error))completion;
 
 - (void)signUpWithEmail:(NSString *)email
                password:(NSString *)password

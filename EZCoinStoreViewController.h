@@ -12,12 +12,14 @@ NS_ASSUME_NONNULL_BEGIN
 
 @interface EZCoinStoreViewController : UIViewController
 
-/// If YES, shows a "Not enough coins" banner at the top of the store.
 @property (nonatomic, assign) BOOL showLowCoinsWarning;
+    /// If YES, shows a "Not enough coins" banner at the top of the store.
 
-/// Optional: the feature name that triggered the low-coins state (e.g. "GPT-5 chat")
+@property (nonatomic, strong) NSTimer *countdownTimer;
+    // Fires every second to tick the "Next: Xh Ym Xs" label
+
 @property (nonatomic, copy, nullable) NSString *triggeringFeatureName;
-
+    /// Optional: the feature name that triggered the low-coins state (e.g. "GPT-5 chat")
 @end
 
 NS_ASSUME_NONNULL_END

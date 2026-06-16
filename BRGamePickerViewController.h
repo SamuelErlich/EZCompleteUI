@@ -1,16 +1,20 @@
 // BRGamePickerViewController.h
 // BrainRotGame
-// EZCompleteUI v1.0
+// EZCompleteUI v2.2
 //
 // Full-screen game library picker. Displays saved games as a 2-column card grid
 // with the background image filling each card and the title drawn over a gradient.
-// A "New Game" card sits at index 0 always.
+// A "New Game" card sits at index 0 always. A "✕" close button lets the player
+// exit the picker without making any selection, firing onClosedWithoutSelection.
 //
 // Usage:
 //   BRGamePickerViewController *picker = [BRGamePickerViewController new];
 //   picker.onSelection = ^(BRGameRecord *record) {
 //       // record == nil  →  user tapped New Game
 //       // record != nil  →  user chose a saved game
+//   };
+//   picker.onClosedWithoutSelection = ^{
+//       // user tapped ✕ — dismiss or pop yourself here
 //   };
 //   [self presentViewController:picker animated:YES completion:nil];
 
@@ -25,6 +29,12 @@ NS_ASSUME_NONNULL_BEGIN
 /// nil record means New Game; non-nil means load that record.
 /// The picker has already been dismissed before this block fires.
 @property (nonatomic, copy) void (^onSelection)(BRGameRecord *_Nullable record);
+
+/// Called on the main thread when the player taps "✕" to close the picker
+/// without making any selection. The picker has already been dismissed before
+/// this block fires. The presenter should use this to back out of its own
+/// view rather than revealing whatever it was showing underneath the picker.
+@property (nonatomic, copy, nullable) void (^onClosedWithoutSelection)(void);
 
 @end
 

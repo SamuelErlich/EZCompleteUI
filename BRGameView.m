@@ -27,8 +27,8 @@
 - (instancetype)initWithFrame:(CGRect)frame {
     self = [super initWithFrame:frame];
     if (self) {
-        _viewportCols = 7;
-        _viewportRows = 7;
+        _viewportCols = 5;
+        _viewportRows = 5;
         _cameraCol    = 0;
         _cameraRow    = 0;
     }
@@ -38,8 +38,8 @@
 - (instancetype)initWithCoder:(NSCoder *)coder {
     self = [super initWithCoder:coder];
     if (self) {
-        _viewportCols = 7;
-        _viewportRows = 7;
+        _viewportCols = 5;
+        _viewportRows = 5;
         _cameraCol    = 0;
         _cameraRow    = 0;
     }
@@ -108,18 +108,18 @@
                 // any AI art style without depending on image brightness.
                 switch (tile.type) {
                     case BRTileTypeWall: {
-                        // Semi-transparent dark fill so the image shows through —
-                        // the AI art under walls (hedges, stonework) still reads as
-                        // an obstacle, but 65% solid black was hiding it completely.
-                        // Inner border reinforces the impassable boundary.
+                        // Light vignette so the AI's wall art shows through clearly.
+                        // The template is now 1024×1024 and structurally 1:1 with the
+                        // output, so the generated image's dark wall areas already
+                        // signal impassability — we just add a subtle tint and a faint
+                        // inner border to separate adjacent tiles without boxing them.
                         CGContextSetFillColorWithColor(ctx,
-                            [UIColor colorWithWhite:0.0 alpha:0.38].CGColor);
+                            [UIColor colorWithWhite:0.0 alpha:0.22].CGColor);
                         CGContextFillRect(ctx, tileRect);
-                        // Inset border — visually distinct from floor tiles
-                        CGRect wallBorderRect = CGRectInset(tileRect, 0.75, 0.75);
+                        CGRect wallBorderRect = CGRectInset(tileRect, 1.0, 1.0);
                         CGContextSetStrokeColorWithColor(ctx,
-                            [UIColor colorWithWhite:0.0 alpha:0.55].CGColor);
-                        CGContextSetLineWidth(ctx, 1.5);
+                            [UIColor colorWithWhite:0.0 alpha:0.30].CGColor);
+                        CGContextSetLineWidth(ctx, 0.75);
                         CGContextStrokeRect(ctx, wallBorderRect);
                         break;
                     }
