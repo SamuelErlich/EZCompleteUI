@@ -119,7 +119,7 @@ static NSString *timestampString(void) {
 
     // Play & Download buttons
     self.playButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    [self.playButton setTitle:@"Synthesize & Play" forState:UIControlStateNormal];
+    [self.playButton setTitle:@"Play" forState:UIControlStateNormal];
     self.playButton.layer.cornerRadius = 8;
     self.playButton.backgroundColor = [UIColor systemGray5Color];
     [self.playButton setTitleColor:[UIColor labelColor] forState:UIControlStateNormal];
@@ -133,7 +133,7 @@ static NSString *timestampString(void) {
     [self.container addSubview:self.playButton];
 
     self.downloadButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    [self.downloadButton setTitle:@"Synthesize & Download" forState:UIControlStateNormal];
+    [self.downloadButton setTitle:@"Download" forState:UIControlStateNormal];
     self.downloadButton.layer.cornerRadius = 8;
     self.downloadButton.backgroundColor = [UIColor systemGray5Color];
     [self.downloadButton setTitleColor:[UIColor labelColor] forState:UIControlStateNormal];
