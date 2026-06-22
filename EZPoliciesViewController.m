@@ -1,4 +1,5 @@
 // EZPoliciesViewController.m
+// EZPoliciesViewController.m
 // EZCompleteUI v1.1
 //
 // Changes from v1.0:
@@ -16,20 +17,20 @@ static NSString *const kPrivacyURL = @"https://yoursite.com/privacy-policy";
 static NSString *const kRefundURL  = @"https://yoursite.com/refund-policy";
 
 // ── Effective date shown in each policy ───────────────────────────────────────
-static NSString *const kPolicyDate = @"May 14, 2025";
+static NSString *const kPolicyDate = @"May 14, 2026";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MARK: - Policy text
 // ─────────────────────────────────────────────────────────────────────────────
-
+/*
 static NSString *EZTermsText(void) {
     return
     @"TERMS OF SERVICE\n"
     @"EZCompleteUI\n"
-    @"Effective: " /* kPolicyDate appended at call site */
+    @"Effective: "  kPolicyDate appended at call site
     ;
 }
-
+*/
 // ── Support email ─────────────────────────────────────────────────────────────
 // Loaded from the keychain at runtime; never hardcoded in source.
 static NSString *EZSupportEmail(void) {

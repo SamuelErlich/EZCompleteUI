@@ -22,11 +22,18 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// A single parsed line from ezui_helper.log.
+///
+/// NOTE: ezui_helper.log is written exclusively by EZHelperLog() in helpers.m,
+/// which formats every line as `[timestamp] [stageTag] body` — TWO bracketed
+/// fields, not three. (The three-field `[ts] [LEVEL] [TAG] body` format is
+/// what EZLog() writes to the *system* log instead.) There is no severity
+/// level in this file; "stageTag" is the pipeline stage that produced the
+/// line, e.g. "Stage1-Verdict", "Stage2-Ranker", "Stage1-ValidatorDecision".
 @interface EZLogEntry : NSObject
 @property (nonatomic, copy)   NSString        *raw;          // full original line
 @property (nonatomic, copy)   NSString        *timestamp;    // e.g. "2026-04-05 14:29:20"
-@property (nonatomic, copy)   NSString        *level;        // "INFO" / "WARN" / "ERROR" / "DEBUG"
-@property (nonatomic, copy)   NSString        *tag;          // e.g. "MEMORIES"
+@property (nonatomic, copy)   NSString        *stageTag;     // e.g. "Stage1-Verdict", "Stage2-Ranker"
+@property (nonatomic, copy, nullable) NSString *decision;    // parsed from a leading "DECISION: <value>" line, if present
 @property (nonatomic, copy)   NSString        *body;         // message text
 @property (nonatomic, copy, nullable) NSString *filePath;    // first valid path found in body, or nil
 @property (nonatomic, copy, nullable) NSString *chatKey;     // first ISO-8601-style key found, or nil
@@ -233,16 +240,12 @@
     self.logDelegate  = delegate;
     self.chatKeyToken = entry.chatKey;
 
-    // Level badge colour
-    self.levelBadge.text = [NSString stringWithFormat:@" %@ ", entry.level ?: @"LOG"];
-    UIColor *badgeColor = [UIColor systemGrayColor];
-    if ([entry.level isEqualToString:@"ERROR"])   badgeColor = [UIColor systemRedColor];
-    else if ([entry.level isEqualToString:@"WARN"])  badgeColor = [UIColor systemOrangeColor];
-    else if ([entry.level isEqualToString:@"INFO"])  badgeColor = [UIColor systemGreenColor];
-    else if ([entry.level isEqualToString:@"DEBUG"]) badgeColor = [UIColor systemBlueColor];
-    self.levelBadge.backgroundColor = badgeColor;
+    // Stage badge — colored by which pipeline stage produced this line.
+    NSString *stage = entry.stageTag.length ? entry.stageTag : @"GENERAL";
+    self.levelBadge.text = [NSString stringWithFormat:@" %@ ", stage.uppercaseString];
+    self.levelBadge.backgroundColor = [self colorForStageTag:stage];
 
-    self.tagLabel.text       = entry.tag.length ? [NSString stringWithFormat:@"[%@]", entry.tag] : @"";
+    self.tagLabel.text       = entry.decision.length ? [NSString stringWithFormat:@"[%@]", entry.decision] : @"";
     self.timestampLabel.text = entry.timestamp ?: @"";
 
     // Body — build attributed string with chatKey highlighted as deep-link
@@ -265,6 +268,19 @@
         self.bodyTopWithThumb.active   = NO;
         self.bodyTopNoThumb.active     = YES;
     }
+}
+
+/// Colors the stage badge by which part of the triage pipeline produced the
+/// line (see helpers.m: analyzePromptForContext). Grouping by numeric stage
+/// makes it easy to scan a run top-to-bottom and see it move through the
+/// pipeline (Stage1 → Stage1a/1b validator → Stage2 search → Stage3 ranker).
+- (UIColor *)colorForStageTag:(NSString *)stageTag {
+    NSString *s = stageTag.lowercaseString;
+    if ([s containsString:@"validator"]) return [UIColor systemTealColor];
+    if ([s hasPrefix:@"stage1"])         return [UIColor systemBlueColor];
+    if ([s hasPrefix:@"stage2"])         return [UIColor systemPurpleColor];
+    if ([s hasPrefix:@"stage3"])         return [UIColor systemIndigoColor];
+    return [UIColor systemGrayColor];
 }
 
 - (NSAttributedString *)attributedBodyForEntry:(EZLogEntry *)entry {
@@ -308,9 +324,14 @@
 
         NSString *chatKey = [body substringWithRange:keyRange];
 
-        // Use query param so NSURL parsing stops being annoying
+        // Use query param so NSURL parsing stops being annoying.
+        // IMPORTANT: encode the chatKey from *this* match, not entry.chatKey —
+        // entry.chatKey is only the first chatKey-like token found anywhere in
+        // the body, so if a body ever contains more than one CHATKEY=
+        // reference, using entry.chatKey here would make every link silently
+        // point at the same (first) thread regardless of which one it displays.
         NSString *encoded =
-            [entry.chatKey stringByAddingPercentEncodingWithAllowedCharacters:
+            [chatKey stringByAddingPercentEncodingWithAllowedCharacters:
                 [NSCharacterSet URLPathAllowedCharacterSet]];
 
         NSString *urlString =
@@ -327,45 +348,6 @@
                                             weight:UIFontWeightSemibold]
         } range:fullRange];
     }
-
-#pragma mark - Stage highlighting
-
-    NSDictionary *tokenColors = @{
-        @"STAGE1-TRIAGE" : [UIColor systemOrangeColor],
-        @"STAGE1-VERDICT" : [UIColor systemPurpleColor],
-        @"STAGE2" : [UIColor systemIndigoColor],
-        @"VALIDATOR" : [UIColor systemTealColor]
-    };
-
-    [tokenColors enumerateKeysAndObjectsUsingBlock:
-     ^(NSString *token, UIColor *color, BOOL *stop) {
-
-        NSRange searchRange = NSMakeRange(0, body.length);
-
-        while (YES) {
-            NSRange found =
-            [body rangeOfString:token
-                         options:NSCaseInsensitiveSearch
-                           range:searchRange];
-
-            if (found.location == NSNotFound) break;
-
-            [attr addAttributes:@{
-                NSForegroundColorAttributeName : color,
-                NSFontAttributeName :
-                    [UIFont monospacedSystemFontOfSize:13
-                                                weight:UIFontWeightBold]
-            } range:found];
-
-            NSUInteger next =
-            found.location + found.length;
-
-            if (next >= body.length) break;
-
-            searchRange =
-            NSMakeRange(next, body.length - next);
-        }
-    }];
 
 #pragma mark - Validator pass/fail coloring
 
@@ -499,6 +481,22 @@ interaction:(UITextItemInteraction)interaction {
 // MARK: - HelperLogViewController
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────────────────────
+// MARK: - Run status (drives section header color)
+//
+// A "run" is one full call to analyzePromptForContext() in helpers.m — i.e.
+// everything logged while routing a single user message through the triage
+// pipeline, including the Stage 2/3 memory search + AI ranker steps if the
+// pipeline gets that far. Every run starts with a "Stage1-Verdict" entry,
+// since that's unconditionally the first thing _logHelperDecision writes for
+// any call that completes Stage 1 (see analyzePromptForContext).
+// ─────────────────────────────────────────────────────────────────────────────
+typedef NS_ENUM(NSInteger, EZRunStatus) {
+    EZRunStatusApproved,   // a Stage1/Stage1b validator approved a direct answer  → green
+    EZRunStatusRejected,   // a Stage1/Stage1b validator rejected a direct answer  → red
+    EZRunStatusNeutral,    // run completed without invoking the validator at all  → gray
+};
+
 @interface HelperLogViewController () <UITableViewDelegate,
                                        UITableViewDataSource,
                                        UISearchBarDelegate,
@@ -510,10 +508,17 @@ interaction:(UITextItemInteraction)interaction {
 @property (nonatomic, strong) UISearchBar   *searchBar;
 @property (nonatomic, strong) UILabel       *emptyLabel;
 
-/// Full parsed entries from log file
+/// All parsed entries, grouped into pipeline runs (newest run first; entries
+/// within a run stay in chronological order so a run reads top-to-bottom the
+/// way it actually executed).
+@property (nonatomic, strong) NSArray<NSArray<EZLogEntry *> *> *allRuns;
+/// Filtered subset of allRuns shown in the table (search keeps a run's
+/// section but only includes the rows that matched).
+@property (nonatomic, strong) NSArray<NSArray<EZLogEntry *> *> *displayedRuns;
+
+/// Flat view of allRuns (same objects, same order) — used for thumbnail
+/// cache indexing and for resolving taps back to a specific entry.
 @property (nonatomic, strong) NSArray<EZLogEntry *> *allEntries;
-/// Filtered subset shown in table
-@property (nonatomic, strong) NSArray<EZLogEntry *> *displayedEntries;
 
 @property (nonatomic, copy)   NSString      *searchTerm;
 
@@ -686,12 +691,41 @@ static NSString * const kLogEmptyCellID = @"EZLogEmptyCell";
             }
         }
 
-        // Show newest first (reverse chronological)
-        NSArray<EZLogEntry *> *reversed = [[entries reverseObjectEnumerator] allObjects];
+        // ── Group into pipeline runs ──────────────────────────────────────────
+        // "Stage1-Verdict" is unconditionally the first thing written to this
+        // log for any call to analyzePromptForContext() that gets past Stage 1
+        // (see helpers.m), so it's a reliable run boundary. Anything logged
+        // before the first Stage1-Verdict (stray/legacy lines) becomes its own
+        // leading run.
+        NSMutableArray<NSArray<EZLogEntry *> *> *runs = [NSMutableArray array];
+        NSMutableArray<EZLogEntry *> *currentRun = nil;
+        for (EZLogEntry *entry in entries) {
+            BOOL startsNewRun = [entry.stageTag isEqualToString:@"Stage1-Verdict"] || !currentRun;
+            if (startsNewRun) {
+                if (currentRun.count) [runs addObject:[currentRun copy]];
+                currentRun = [NSMutableArray array];
+            }
+            [currentRun addObject:entry];
+        }
+        if (currentRun.count) [runs addObject:[currentRun copy]];
+
+        // Newest run first; entries *within* a run stay chronological so a
+        // section reads top-to-bottom the way it actually executed.
+        NSArray<NSArray<EZLogEntry *> *> *reversedRuns = [[runs reverseObjectEnumerator] allObjects];
+
+        NSMutableArray<EZLogEntry *> *flat = [NSMutableArray array];
+        for (NSArray<EZLogEntry *> *run in reversedRuns) {
+            [flat addObjectsFromArray:run];
+        }
 
         dispatch_async(dispatch_get_main_queue(), ^{
-            self.allEntries       = reversed;
-            self.displayedEntries = reversed;
+            self.allRuns       = reversedRuns;
+            self.displayedRuns = reversedRuns;
+            self.allEntries    = [flat copy];
+            self.title = flat.count
+                ? [NSString stringWithFormat:@"Helper Log (%lu runs, %lu entries)",
+                   (unsigned long)reversedRuns.count, (unsigned long)flat.count]
+                : @"Helper Log";
             [self.tableView reloadData];
             [self updateEmptyLabel];
             [self generateThumbnailsIfNeeded];
@@ -700,20 +734,21 @@ static NSString * const kLogEmptyCellID = @"EZLogEmptyCell";
 }
 
 /// Parses a single log line into an EZLogEntry.
-/// Expected format (written by EZLog macro in helpers.h):
-///   [YYYY-MM-DD HH:MM:SS] [LEVEL] [TAG] message body
+/// Expected format (written by EZHelperLog() in helpers.m):
+///   [YYYY-MM-DD HH:MM:SS] [stageTag] message body
+/// (Only TWO bracketed fields — there is no separate severity level in this
+/// log; that's the system log's format, not the helper log's.)
 /// Unknown formats are stored verbatim in body.
 - (EZLogEntry *)parseLogLine:(NSString *)line {
     EZLogEntry *entry = [[EZLogEntry alloc] init];
     entry.raw         = line;
 
-    // ── Try structured parse: [timestamp] [LEVEL] [TAG] body ─────────────────
-    // Pattern: starts with [date time] [LEVEL] [TAG] …
+    // ── Structured parse: [timestamp] [stageTag] body ────────────────────────
     // We use a simple NSScanner-based approach to stay dependency-free.
     NSScanner *sc = [NSScanner scannerWithString:line];
     sc.charactersToBeSkipped = nil;
 
-    NSString *timestamp = nil, *level = nil, *tag = nil, *body = nil;
+    NSString *timestamp = nil, *stageTag = nil, *body = nil;
 
     // Timestamp: "[2026-04-05 14:29:20]"
     if ([sc scanString:@"[" intoString:nil]) {
@@ -722,16 +757,9 @@ static NSString * const kLogEmptyCellID = @"EZLogEmptyCell";
         [sc scanString:@" " intoString:nil];
     }
 
-    // Level: "[INFO]" / "[ERROR]" etc.
+    // Stage tag: "[Stage1-Verdict]" / "[Stage2-Ranker]" / etc.
     if ([sc scanString:@"[" intoString:nil]) {
-        [sc scanUpToString:@"]" intoString:&level];
-        [sc scanString:@"]" intoString:nil];
-        [sc scanString:@" " intoString:nil];
-    }
-
-    // Tag: "[MEMORIES]"
-    if ([sc scanString:@"[" intoString:nil]) {
-        [sc scanUpToString:@"]" intoString:&tag];
+        [sc scanUpToString:@"]" intoString:&stageTag];
         [sc scanString:@"]" intoString:nil];
         [sc scanString:@" " intoString:nil];
     }
@@ -742,9 +770,12 @@ static NSString * const kLogEmptyCellID = @"EZLogEmptyCell";
     }
 
     entry.timestamp = timestamp ?: @"";
-    entry.level     = level.uppercaseString ?: @"LOG";
-    entry.tag       = tag ?: @"";
+    entry.stageTag  = stageTag.length ? stageTag : @"GENERAL";
     entry.body      = body.length ? body : line; // fallback to raw line
+
+    // ── Pull "DECISION: <value>" off the first line of the body, if present
+    // (written by _logHelperDecision in helpers.m) ────────────────────────────
+    entry.decision = [self extractDecisionFromBody:entry.body];
 
     // ── Extract first file path mentioned in the body ─────────────────────────
     entry.filePath = [self extractFilePathFromString:entry.body];
@@ -753,6 +784,19 @@ static NSString * const kLogEmptyCellID = @"EZLogEmptyCell";
     entry.chatKey  = [self extractChatKeyFromString:entry.body];
 
     return entry;
+}
+
+/// Pulls the value out of a leading "DECISION: <value>" line, e.g. the body
+/// of a Stage1-ShortCircuit entry starts with "DECISION: SimpleDirectAnswer".
+/// Returns nil if the body doesn't start with that prefix.
+- (nullable NSString *)extractDecisionFromBody:(NSString *)body {
+    static NSString * const kPrefix = @"DECISION: ";
+    if (![body hasPrefix:kPrefix]) return nil;
+    NSRange newlineRange = [body rangeOfString:@"\n"];
+    NSString *firstLine = newlineRange.location == NSNotFound
+        ? body
+        : [body substringToIndex:newlineRange.location];
+    return [firstLine substringFromIndex:kPrefix.length];
 }
 
 /// Returns the first path-like token in a string that exists on disk.
@@ -816,20 +860,25 @@ static NSString * const kLogEmptyCellID = @"EZLogEmptyCell";
 - (void)applyFilter:(NSString *)term {
     self.searchTerm = term;
     if (!term.length) {
-        self.displayedEntries = self.allEntries;
+        self.displayedRuns = self.allRuns;
     } else {
         NSString *lower = term.lowercaseString;
-        self.displayedEntries = [self.allEntries filteredArrayUsingPredicate:
-            [NSPredicate predicateWithBlock:^BOOL(EZLogEntry *entry, NSDictionary *_) {
-                return [entry.raw.lowercaseString containsString:lower];
-            }]];
+        NSPredicate *matchPredicate = [NSPredicate predicateWithBlock:^BOOL(EZLogEntry *entry, NSDictionary *_) {
+            return [entry.raw.lowercaseString containsString:lower];
+        }];
+        NSMutableArray<NSArray<EZLogEntry *> *> *filtered = [NSMutableArray array];
+        for (NSArray<EZLogEntry *> *run in self.allRuns) {
+            NSArray<EZLogEntry *> *matches = [run filteredArrayUsingPredicate:matchPredicate];
+            if (matches.count) [filtered addObject:matches];
+        }
+        self.displayedRuns = filtered;
     }
     [self.tableView reloadData];
     [self updateEmptyLabel];
 }
 
 - (void)updateEmptyLabel {
-    BOOL noData = self.displayedEntries.count == 0;
+    BOOL noData = self.displayedRuns.count == 0;
     self.emptyLabel.hidden  = !noData;
     self.tableView.hidden   = noData;
     if (noData) {
@@ -837,6 +886,18 @@ static NSString * const kLogEmptyCellID = @"EZLogEmptyCell";
             ? @"No log entries match that filter."
             : @"Log file is empty or could not be read.";
     }
+}
+
+/// Finds where a given entry currently sits in displayedRuns (it may have
+/// shifted sections under filtering), or nil if it isn't shown right now.
+- (nullable NSIndexPath *)indexPathForDisplayedEntry:(EZLogEntry *)entry {
+    for (NSUInteger s = 0; s < self.displayedRuns.count; s++) {
+        NSUInteger r = [self.displayedRuns[s] indexOfObjectIdenticalTo:entry];
+        if (r != NSNotFound) {
+            return [NSIndexPath indexPathForRow:(NSInteger)r inSection:(NSInteger)s];
+        }
+    }
+    return nil;
 }
 
 // ── Thumbnail generation ──────────────────────────────────────────────────────
@@ -869,12 +930,10 @@ static NSString * const kLogEmptyCellID = @"EZLogEmptyCell";
                 if (!strongSelf) return;
                 strongSelf.thumbCache[@(capturedIndex)] = img;
 
-                // Find the row in displayedEntries that matches this allEntries entry
                 EZLogEntry *e = strongSelf.allEntries[capturedIndex];
-                NSUInteger row = [strongSelf.displayedEntries indexOfObjectIdenticalTo:e];
-                if (row == NSNotFound) return;
+                NSIndexPath *ip = [strongSelf indexPathForDisplayedEntry:e];
+                if (!ip) return;
 
-                NSIndexPath *ip = [NSIndexPath indexPathForRow:(NSInteger)row inSection:0];
                 EZLogCell *cell = (EZLogCell *)[strongSelf.tableView cellForRowAtIndexPath:ip];
                 [cell setThumbnailImage:img];
             });
@@ -940,7 +999,8 @@ static NSString * const kLogEmptyCellID = @"EZLogEmptyCell";
     } else {
         self.thumbCache   = [NSMutableDictionary dictionary];
         self.allEntries   = @[];
-        self.displayedEntries = @[];
+        self.allRuns      = @[];
+        self.displayedRuns = @[];
         [self.tableView reloadData];
         [self updateEmptyLabel];
         [self showToast:@"🗑️ Log cleared"];
@@ -960,31 +1020,108 @@ static NSString * const kLogEmptyCellID = @"EZLogEmptyCell";
 
 // ── UITableViewDataSource ─────────────────────────────────────────────────────
 
-- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { return 1; }
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView {
+    if (self.displayedRuns.count == 0) return 1; // empty state
+    return (NSInteger)self.displayedRuns.count;
+}
 
 - (NSInteger)tableView:(UITableView *)tableView
  numberOfRowsInSection:(NSInteger)section {
-    if (self.displayedEntries.count == 0) return 1; // empty state row
-    return (NSInteger)self.displayedEntries.count;
+    if (self.displayedRuns.count == 0) return 1; // empty state row
+    return (NSInteger)self.displayedRuns[(NSUInteger)section].count;
 }
 
-- (NSString *)tableView:(UITableView *)tableView
-titleForHeaderInSection:(NSInteger)section {
-    if (self.allEntries.count == 0) return nil;
-    NSString *suffix = self.searchTerm.length
-        ? [NSString stringWithFormat:@"%lu matching / %lu total",
-           (unsigned long)self.displayedEntries.count,
-           (unsigned long)self.allEntries.count]
-        : [NSString stringWithFormat:@"%lu entries (newest first)",
-           (unsigned long)self.allEntries.count];
-    return suffix;
+// ── Run status → color ────────────────────────────────────────────────────────
+//
+// Every entry in a run shares one header, so this is what makes "all the rows
+// from the same ranked-memory-list run" read as one color: there's exactly
+// one header per run, and its color is the run's outcome. See helpers.m,
+// analyzePromptForContext, for exactly what each stageTag/decision means.
+
+- (EZRunStatus)statusForRun:(NSArray<EZLogEntry *> *)run {
+    for (EZLogEntry *e in run) {
+        BOOL isStage1Family = [e.stageTag isEqualToString:@"Stage1-ShortCircuit"] ||
+                               [e.stageTag isEqualToString:@"Stage1b-ShortCircuit"];
+        if (isStage1Family && [e.decision isEqualToString:@"SimpleDirectAnswer"]) {
+            return EZRunStatusApproved;
+        }
+    }
+    for (EZLogEntry *e in run) {
+        BOOL isValidatorDecision = [e.stageTag isEqualToString:@"Stage1-ValidatorDecision"] ||
+                                    [e.stageTag isEqualToString:@"Stage1b-ValidatorDecision"];
+        if (isValidatorDecision && [e.decision isEqualToString:@"Rejected"]) {
+            return EZRunStatusRejected;
+        }
+    }
+    return EZRunStatusNeutral;
+}
+
+- (UIColor *)colorForRunStatus:(EZRunStatus)status {
+    switch (status) {
+        case EZRunStatusApproved: return [UIColor systemGreenColor];
+        case EZRunStatusRejected: return [UIColor systemRedColor];
+        case EZRunStatusNeutral:  return [UIColor systemGrayColor];
+    }
+}
+
+- (NSString *)labelForRunStatus:(EZRunStatus)status {
+    switch (status) {
+        case EZRunStatusApproved: return @"✓ VALIDATOR APPROVED";
+        case EZRunStatusRejected: return @"✕ VALIDATOR REJECTED";
+        case EZRunStatusNeutral:  return @"NO VALIDATOR VERDICT";
+    }
+}
+
+- (UIView *)tableView:(UITableView *)tableView viewForHeaderInSection:(NSInteger)section {
+    if (self.displayedRuns.count == 0) return nil;
+
+    NSArray<EZLogEntry *> *run = self.displayedRuns[(NSUInteger)section];
+    EZRunStatus status = [self statusForRun:run];
+    UIColor *color = [self colorForRunStatus:status];
+    EZLogEntry *first = run.firstObject;
+
+    UIView *header = [[UIView alloc] init];
+    header.backgroundColor = [color colorWithAlphaComponent:0.14];
+
+    UIView *stripe = [[UIView alloc] init];
+    stripe.backgroundColor = color;
+    stripe.translatesAutoresizingMaskIntoConstraints = NO;
+    [header addSubview:stripe];
+
+    UILabel *label = [[UILabel alloc] init];
+    label.font          = [UIFont systemFontOfSize:12 weight:UIFontWeightBold];
+    label.textColor      = color;
+    label.numberOfLines  = 1;
+    label.text = [NSString stringWithFormat:@"%@   %@   (%lu)",
+                  first.timestamp.length ? first.timestamp : @"—",
+                  [self labelForRunStatus:status],
+                  (unsigned long)run.count];
+    label.translatesAutoresizingMaskIntoConstraints = NO;
+    [header addSubview:label];
+
+    [NSLayoutConstraint activateConstraints:@[
+        [stripe.leadingAnchor constraintEqualToAnchor:header.leadingAnchor],
+        [stripe.topAnchor     constraintEqualToAnchor:header.topAnchor],
+        [stripe.bottomAnchor  constraintEqualToAnchor:header.bottomAnchor],
+        [stripe.widthAnchor   constraintEqualToConstant:5],
+
+        [label.leadingAnchor   constraintEqualToAnchor:stripe.trailingAnchor constant:14],
+        [label.trailingAnchor  constraintLessThanOrEqualToAnchor:header.trailingAnchor constant:-14],
+        [label.centerYAnchor   constraintEqualToAnchor:header.centerYAnchor],
+    ]];
+
+    return header;
+}
+
+- (CGFloat)tableView:(UITableView *)tableView heightForHeaderInSection:(NSInteger)section {
+    return self.displayedRuns.count == 0 ? 0 : 36;
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView
          cellForRowAtIndexPath:(NSIndexPath *)indexPath {
 
     // ── Empty state ───────────────────────────────────────────────────────────
-    if (self.displayedEntries.count == 0) {
+    if (self.displayedRuns.count == 0) {
         UITableViewCell *cell = [tableView
             dequeueReusableCellWithIdentifier:kLogEmptyCellID
                                  forIndexPath:indexPath];
@@ -1001,12 +1138,11 @@ titleForHeaderInSection:(NSInteger)section {
     // ── Log entry cell ────────────────────────────────────────────────────────
     EZLogCell *cell = [tableView dequeueReusableCellWithIdentifier:kLogCellID
                                                       forIndexPath:indexPath];
-    NSUInteger displayRow = (NSUInteger)indexPath.row;
-    EZLogEntry *entry = self.displayedEntries[displayRow];
+    EZLogEntry *entry = self.displayedRuns[(NSUInteger)indexPath.section][(NSUInteger)indexPath.row];
 
-    // Map displayedEntries row back to allEntries index for thumb cache
+    // Map back to the flat allEntries index for thumb cache + tap-to-preview.
     NSUInteger allIdx = [self.allEntries indexOfObjectIdenticalTo:entry];
-    if (allIdx == NSNotFound) allIdx = displayRow;
+    if (allIdx == NSNotFound) allIdx = 0;
 
     [cell configureWithEntry:entry index:allIdx delegate:self];
 

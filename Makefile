@@ -1,6 +1,7 @@
 export TARGET := iphone:clang:latest:15.0
 export ARCHS = arm64 arm64e
-export FINALPACKAGE = 1
+export FINALPACKAGE = 0
+export DEBUG = 1
 export THEOS_PACKAGE_SCHEME = rootless
 export GO_EASY_ON_ME = 1
 
@@ -8,7 +9,7 @@ include $(THEOS)/makefiles/common.mk
 
 APPLICATION_NAME = EZCompleteUI
 
-EZCompleteUI_FILES = main.m AppDelegate.m helpers.m ViewController+EZTopButtons.m ViewController+EZKeepAwake.m ViewController.m EZModelPickerViewController.m EZImageSettingsViewController.m EZAttachMenuViewController.m SidewaysScrollView.m ChatHistoryViewController.m SettingsViewController.m MemoriesViewController.m EZKeyVault.m SupportRequestViewController.m TextToSpeechViewController.m ElevenLabsCloneViewController.m iCarousel.m ViewController+SidewaysTopRow.m ViewController+EZTitleResolver.m UIViewController+EZViewDidLayoutSwizzle.m WaveformView.m EZAuthManager.m EZEntitlementManager.m LoginViewController.m HelperLogViewController.m SystemLogViewController.m EZBubbleCell.m EZSystemCell.m EZCodeBlockCell.m EZCoinStoreViewController.m EZCoinPotView.m EZPhotoGalleryViewController.m EZImageGridCell.m EZCoinLedgerViewController.m EZCoinUsageViewController.m BRGameModel.m BrainRotViewController.m BRGameView.m EZTermsAcceptanceViewController.m EZPoliciesViewController.m BRGameLibrary.m BRGamePickerViewController.m BRCustomGameCreatorViewController.m BRAssetSourceSheetViewController.m BRTextInputSheetViewController.m BRGameResultViewController.m BRAssetGenerationSheetViewController.m
+EZCompleteUI_FILES = main.m AppDelegate.m helpers.m ViewController+EZTopButtons.m ViewController+EZKeepAwake.m ViewController.m EZModelPickerViewController.m EZImageSettingsViewController.m EZAttachMenuViewController.m SidewaysScrollView.m ChatHistoryViewController.m SettingsViewController.m MemoriesViewController.m EZKeyVault.m SupportRequestViewController.m TextToSpeechViewController.m ElevenLabsCloneViewController.m iCarousel.m ViewController+SidewaysTopRow.m ViewController+EZTitleResolver.m UIViewController+EZViewDidLayoutSwizzle.m WaveformView.m EZAuthManager.m EZEntitlementManager.m LoginViewController.m HelperLogViewController.m SystemLogViewController.m EZBubbleCell.m EZSystemCell.m EZCodeBlockCell.m EZCoinStoreViewController.m EZCoinPotView.m EZPhotoGalleryViewController.m EZImageGridCell.m EZCoinLedgerViewController.m EZCoinUsageViewController.m BRGameModel.m BrainRotViewController.m BRGameView.m EZTermsAcceptanceViewController.m EZPoliciesViewController.m BRGameLibrary.m BRGamePickerViewController.m BRCustomGameCreatorViewController.m BRAssetSourceSheetViewController.m BRTextInputSheetViewController.m BRGameResultViewController.m BRAssetGenerationSheetViewController.m BRRemoteImageLoader.m
 
 EZCompleteUI_FRAMEWORKS = UIKit Foundation AVFoundation Speech QuickLook \
 UniformTypeIdentifiers PDFKit QuickLookThumbnailing Security PhotosUI QuartzCore SafariServices

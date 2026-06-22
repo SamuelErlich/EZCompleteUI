@@ -2,9 +2,10 @@
 // EZCompleteUI
 
 #import <Foundation/Foundation.h>
-extern NSString *const EZPasswordResetReadyNotification;
 
 NS_ASSUME_NONNULL_BEGIN
+
+extern NSString *const EZPasswordResetReadyNotification;
 
 @interface EZAuthManager : NSObject
 

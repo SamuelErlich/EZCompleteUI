@@ -13,6 +13,14 @@
 //   running balance, token counts, images, API cost, cost/100 coins, timestamp.
 // Summary header: total calls, coins, cost, efficiency, margin (all users).
 //
+// DEBUG-only: this entire file is excluded from Release builds. The admin
+// secret prompt is real protection on its own, but per-call prompts, costs,
+// and margins across every user have no business being reachable from a
+// shipped binary at all — so the class doesn't exist outside DEBUG, full
+// stop. The call site in EZCoinStoreViewController is gated to match; if
+// anything else ever tries to reference EZCoinLedgerViewController from
+// non-DEBUG code, it will fail to compile rather than silently shipping.
+//
 // Changes from personal-ledger version:
 //   - Endpoint changed from get-usage-log to get-admin-ledger (mode=user)
 //   - Admin secret prompt + NSUserDefaults storage (never hardcoded in binary)
@@ -21,9 +29,18 @@
 //   - Aggregate key names updated to match get-admin-ledger response schema
 //   - implied_margin_pct read from server; client-side margin calc removed
 //   - currentBalance property removed (not meaningful in all-users context)
+//   - Whole file wrapped in #if DEBUG — previously only intended, never done
+//   - Summary header now also shows platform-wide coins in circulation
+//     (global_total_circulating from get-admin-ledger) plus a drift warning
+//     if the ledger total disagrees with the actual sum of live balances
+//   - Added search/filter bar: "@" in query → email filter, else → feature
+//     filter (e.g. "tts", "chat", "image"). Debounced 0.4s. Summary subtitle
+//     and empty-state label both update to reflect the active filter.
 
 #import "EZCoinLedgerViewController.h"
 #import "EZAuthManager.h"
+
+#if DEBUG
 
 static NSString *const kAdminLedgerBase    = @"https://spuoimtqofhbdzosrbng.supabase.co";
 static NSString *const kAdminLedgerPath    = @"/functions/v1/get-admin-ledger";
@@ -60,6 +77,22 @@ static NSDateFormatter *sharedDisplayFormatter(void) {
         formatter.dateFormat = @"MMM d, h:mm a";
     });
     return formatter;
+}
+
+// ── Coin count formatter ──────────────────────────────────────────────────────
+// Circulation totals run into 5+ digits quickly — grouping separators make
+// them readable at a glance instead of a wall of digits.
+
+static NSString *formattedCoinCount(NSInteger count) {
+    static NSNumberFormatter *formatter;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        formatter = [NSNumberFormatter new];
+        formatter.numberStyle          = NSNumberFormatterDecimalStyle;
+        formatter.usesGroupingSeparator = YES;
+        formatter.groupingSeparator      = @",";
+    });
+    return [formatter stringFromNumber:@(count)] ?: [NSString stringWithFormat:@"%ld", (long)count];
 }
 
 // ── Admin ledger row cell ─────────────────────────────────────────────────────
@@ -254,6 +287,16 @@ static NSDateFormatter *sharedDisplayFormatter(void) {
     return featureNames[featureKey] ?: featureKey;
 }
 
+// Updates the subtitle to show which filter is currently active.
+// Pass nil to restore the default "N transactions loaded" text.
+- (void)setFilterDescription:(NSString *)filterDescription {
+    if (filterDescription.length > 0) {
+        _subtitleLabel.text = [NSString stringWithFormat:@"Filter: %@", filterDescription];
+    } else {
+        _subtitleLabel.text = [NSString stringWithFormat:@"%ld transactions loaded", (long)_lastTotalCalls];
+    }
+}
+
 - (void)layoutSubviews {
     [super layoutSubviews];
     CGFloat cellWidth  = self.contentView.bounds.size.width;
@@ -310,18 +353,24 @@ static NSDateFormatter *sharedDisplayFormatter(void) {
 
 @interface EZAdminSummaryView : UIView
 - (void)configureWithAggregate:(NSDictionary *)aggregate;
+// Updates the subtitle line to show an active filter description.
+// Pass nil to restore the default "N transactions loaded" text.
+- (void)setFilterDescription:(nullable NSString *)filterDescription;
 @end
 
 @implementation EZAdminSummaryView {
     UILabel *_headlineLabel;      // "🌐 All Users"
-    UILabel *_subtitleLabel;      // row count
+    UILabel *_subtitleLabel;      // row count, or active filter description
     UILabel *_globalEffLabel;     // cost/100 coins
     UILabel *_marginLabel;        // implied margin %
+    UILabel *_circulationLabel;   // platform-wide coins in circulation (global, unfiltered)
+    UILabel *_driftLabel;         // ledger-vs-balances drift warning; hidden when zero
     UILabel *_totalCoinsLabel;
     UILabel *_totalCostLabel;
     UILabel *_totalCallsLabel;
     UILabel *_totalImagesLabel;
     UILabel *_totalTokensLabel;
+    NSInteger _lastTotalCalls;    // preserved so setFilterDescription:nil can restore the default subtitle
 }
 
 - (instancetype)init {
@@ -346,17 +395,27 @@ static NSDateFormatter *sharedDisplayFormatter(void) {
     _subtitleLabel   = makeLabel(12, UIFontWeightRegular, EZMuted(),                             NSTextAlignmentCenter);
     _globalEffLabel  = makeLabel(20, UIFontWeightBold,    [UIColor systemGreenColor],            NSTextAlignmentCenter);
     _marginLabel     = makeLabel(12, UIFontWeightRegular, [UIColor colorWithWhite:0.6 alpha:1],  NSTextAlignmentCenter);
+    _circulationLabel= makeLabel(17, UIFontWeightSemibold,[UIColor whiteColor],                  NSTextAlignmentCenter);
+    _driftLabel      = makeLabel(11, UIFontWeightRegular, [UIColor systemRedColor],              NSTextAlignmentCenter);
     _totalCoinsLabel = makeLabel(12, UIFontWeightMedium,  [UIColor colorWithWhite:0.75 alpha:1], NSTextAlignmentCenter);
     _totalCostLabel  = makeLabel(12, UIFontWeightMedium,  [UIColor colorWithWhite:0.75 alpha:1], NSTextAlignmentCenter);
     _totalCallsLabel = makeLabel(12, UIFontWeightMedium,  [UIColor colorWithWhite:0.75 alpha:1], NSTextAlignmentCenter);
     _totalImagesLabel= makeLabel(12, UIFontWeightMedium,  [UIColor colorWithWhite:0.75 alpha:1], NSTextAlignmentCenter);
     _totalTokensLabel= makeLabel(12, UIFontWeightMedium,  [UIColor colorWithWhite:0.75 alpha:1], NSTextAlignmentCenter);
 
-    // Gold divider line
+    _driftLabel.hidden = YES;   // shown only when ledger and live balances disagree
+
+    // Gold divider line (above the per-call stats)
     UIView *divider = [UIView new];
     divider.backgroundColor = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:0.25];
     divider.tag = 99;
     [self addSubview:divider];
+
+    // Second divider, between margin and the circulation total
+    UIView *circulationDivider = [UIView new];
+    circulationDivider.backgroundColor = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:0.15];
+    circulationDivider.tag = 100;
+    [self addSubview:circulationDivider];
 
     return self;
 }
@@ -377,6 +436,7 @@ static NSDateFormatter *sharedDisplayFormatter(void) {
     NSInteger totalTokens   = inputTokens + outputTokens;
 
     _subtitleLabel.text = [NSString stringWithFormat:@"%ld transactions loaded", (long)totalCalls];
+    _lastTotalCalls     = totalCalls;
 
     // Efficiency and margin — prefer server-computed values from the response
     id costPer100Value  = aggregate[@"cost_per_100_coins"];
@@ -406,6 +466,30 @@ static NSDateFormatter *sharedDisplayFormatter(void) {
     _totalCallsLabel.text  = [NSString stringWithFormat:@"Calls\n%ld",       (long)totalCalls];
     _totalImagesLabel.text = [NSString stringWithFormat:@"Images\n%ld",      (long)totalImages];
     _totalTokensLabel.text = [NSString stringWithFormat:@"Tokens\n%ld",      (long)totalTokens];
+
+    // Platform-wide circulation — global and unfiltered, unlike everything
+    // above. See get-admin-ledger's comment on the global_* aggregate keys.
+    NSInteger globalCirculating = [aggregate[@"global_total_circulating"] integerValue];
+    NSInteger globalBalances    = [aggregate[@"global_total_balances"]    integerValue];
+    NSInteger drift              = [aggregate[@"global_circulation_drift"] integerValue];
+
+    _circulationLabel.text = [NSString stringWithFormat:@"🪙 %@ coins in circulation",
+                               formattedCoinCount(globalCirculating)];
+
+    if (drift != 0) {
+        // Ledger total (credits − debits) disagrees with the actual sum of
+        // every live balance. Either a coin-mutating path changed a balance
+        // without logging a matching coin_transactions row, or something
+        // outside the edge functions touched a balance directly — exactly
+        // the kind of thing this metric exists to catch.
+        _driftLabel.hidden = NO;
+        _driftLabel.text   = [NSString stringWithFormat:
+            @"⚠️ Drift: %@%@ coins — live balances total %@",
+            drift > 0 ? @"+" : @"−", formattedCoinCount(ABS(drift)), formattedCoinCount(globalBalances)];
+    } else {
+        _driftLabel.hidden = YES;
+        _driftLabel.text   = @"";
+    }
 }
 
 - (void)layoutSubviews {
@@ -422,23 +506,30 @@ static NSDateFormatter *sharedDisplayFormatter(void) {
     _globalEffLabel.frame = CGRectMake(0, 82, viewWidth, 28);
     _marginLabel.frame    = CGRectMake(padding, 112, viewWidth - padding * 2, 30);
 
+    UIView *circulationDivider = [self viewWithTag:100];
+    circulationDivider.frame = CGRectMake(padding * 2, 144, viewWidth - padding * 4, 0.5);
+
+    _circulationLabel.frame = CGRectMake(0, 150, viewWidth, 22);
+    _driftLabel.frame       = CGRectMake(padding, 172, viewWidth - padding * 2, 14);
+
     CGFloat columnWidth = viewWidth / 5;
     NSArray *statLabels = @[_totalCoinsLabel, _totalCostLabel, _totalCallsLabel,
                             _totalImagesLabel, _totalTokensLabel];
     for (NSInteger i = 0; i < (NSInteger)statLabels.count; i++) {
         ((UILabel *)statLabels[(NSUInteger)i]).frame =
-            CGRectMake(columnWidth * i, 148, columnWidth, 36);
+            CGRectMake(columnWidth * i, 190, columnWidth, 36);
     }
 }
 
-+ (CGFloat)height { return 192; }
++ (CGFloat)height { return 234; }
 
 @end
 
 // ── Main VC ───────────────────────────────────────────────────────────────────
 
-@interface EZCoinLedgerViewController () <UITableViewDelegate, UITableViewDataSource>
+@interface EZCoinLedgerViewController () <UITableViewDelegate, UITableViewDataSource, UISearchBarDelegate>
 @property (nonatomic, strong) UITableView            *tableView;
+@property (nonatomic, strong) UISearchBar            *searchBar;
 @property (nonatomic, strong) EZAdminSummaryView     *summaryView;
 @property (nonatomic, strong) NSMutableArray<NSDictionary *> *rows;
 @property (nonatomic, strong) NSDictionary           *aggregate;
@@ -446,7 +537,9 @@ static NSDateFormatter *sharedDisplayFormatter(void) {
 @property (nonatomic, assign) BOOL                    hasMore;
 @property (nonatomic, strong) UIActivityIndicatorView *spinner;
 @property (nonatomic, strong) UILabel                *emptyLabel;
-@property (nonatomic, strong) NSString               *adminSecret;  // from NSUserDefaults
+@property (nonatomic, strong) NSString               *adminSecret;   // from NSUserDefaults
+@property (nonatomic, strong) NSString               *activeSearchQuery;  // nil = no filter
+@property (nonatomic, strong) NSTimer                *searchDebounceTimer;
 @end
 
 @implementation EZCoinLedgerViewController
@@ -494,23 +587,58 @@ static NSInteger const kPageSize = 50;
 }
 
 - (void)setupTable {
+    // ── Search bar ────────────────────────────────────────────────────────────
+    // Floats at the top of the view, above the table. Does not scroll away.
+    // Typing an @-sign triggers an email filter; anything else filters by
+    // feature name (case-insensitive substring, e.g. "tts", "chat", "image").
+    // Fetches are debounced 0.4s after the last keystroke to avoid hammering
+    // the server on every character. Clearing the field instantly resets.
+    self.searchBar                    = [UISearchBar new];
+    self.searchBar.placeholder        = @"email or feature (tts, chat, image…)";
+    self.searchBar.searchBarStyle     = UISearchBarStyleMinimal;
+    self.searchBar.barStyle           = UIBarStyleBlack;
+    self.searchBar.tintColor          = EZGold();
+    self.searchBar.returnKeyType      = UIReturnKeySearch;
+    self.searchBar.autocorrectionType = UITextAutocorrectionTypeNo;
+    self.searchBar.autocapitalizationType = UITextAutocapitalizationTypeNone;
+    self.searchBar.translatesAutoresizingMaskIntoConstraints = NO;
+    self.searchBar.delegate           = self;
+    [self.view addSubview:self.searchBar];
+
+    // ── Summary view (scrolls as tableHeaderView) ─────────────────────────────
     self.summaryView = [EZAdminSummaryView new];
     self.summaryView.frame = CGRectMake(0, 0,
         self.view.bounds.size.width, [EZAdminSummaryView height]);
 
-    self.tableView = [[UITableView alloc] initWithFrame:self.view.bounds
+    // ── Table view ────────────────────────────────────────────────────────────
+    self.tableView = [[UITableView alloc] initWithFrame:CGRectZero
                                                   style:UITableViewStylePlain];
-    self.tableView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    self.tableView.backgroundColor  = EZBg();
-    self.tableView.separatorStyle   = UITableViewCellSeparatorStyleNone;
-    self.tableView.tableHeaderView  = self.summaryView;
-    self.tableView.delegate         = self;
-    self.tableView.dataSource       = self;
-    self.tableView.rowHeight        = [EZAdminLedgerCell rowHeight];
+    self.tableView.translatesAutoresizingMaskIntoConstraints = NO;
+    self.tableView.backgroundColor     = EZBg();
+    self.tableView.separatorStyle      = UITableViewCellSeparatorStyleNone;
+    self.tableView.tableHeaderView     = self.summaryView;
+    self.tableView.keyboardDismissMode = UIScrollViewKeyboardDismissModeOnDrag;
+    self.tableView.delegate            = self;
+    self.tableView.dataSource          = self;
+    self.tableView.rowHeight           = [EZAdminLedgerCell rowHeight];
     [self.tableView registerClass:[EZAdminLedgerCell class]
            forCellReuseIdentifier:kLedgerCellID];
     [self.view addSubview:self.tableView];
 
+    // ── Layout — search bar pinned to safe area top, table fills the rest ─────
+    UILayoutGuide *safeArea = self.view.safeAreaLayoutGuide;
+    [NSLayoutConstraint activateConstraints:@[
+        [self.searchBar.topAnchor      constraintEqualToAnchor:safeArea.topAnchor],
+        [self.searchBar.leadingAnchor  constraintEqualToAnchor:self.view.leadingAnchor],
+        [self.searchBar.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],
+
+        [self.tableView.topAnchor      constraintEqualToAnchor:self.searchBar.bottomAnchor],
+        [self.tableView.leadingAnchor  constraintEqualToAnchor:self.view.leadingAnchor],
+        [self.tableView.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],
+        [self.tableView.bottomAnchor   constraintEqualToAnchor:self.view.bottomAnchor],
+    ]];
+
+    // ── Spinner ───────────────────────────────────────────────────────────────
     self.spinner = [[UIActivityIndicatorView alloc]
         initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
     self.spinner.color            = EZGold();
@@ -518,6 +646,7 @@ static NSInteger const kPageSize = 50;
     self.spinner.center           = self.view.center;
     [self.view addSubview:self.spinner];
 
+    // ── Empty state label ─────────────────────────────────────────────────────
     self.emptyLabel               = [UILabel new];
     self.emptyLabel.text          = @"No transactions found.";
     self.emptyLabel.textColor     = EZMuted();
@@ -593,6 +722,19 @@ static NSInteger const kPageSize = 50;
         @"%@%@?mode=user&limit=%ld&offset=%ld",
         kAdminLedgerBase, kAdminLedgerPath, (long)kPageSize, (long)offset];
 
+    // Append the active filter — auto-detected from the search bar input.
+    // "@" in the query → email substring filter; anything else → feature name.
+    if (self.activeSearchQuery.length > 0) {
+        NSString *encoded = [self.activeSearchQuery
+            stringByAddingPercentEncodingWithAllowedCharacters:
+            [NSCharacterSet URLQueryAllowedCharacterSet]];
+        if ([self.activeSearchQuery containsString:@"@"]) {
+            urlString = [urlString stringByAppendingFormat:@"&email=%@", encoded];
+        } else {
+            urlString = [urlString stringByAppendingFormat:@"&feature=%@", encoded];
+        }
+    }
+
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:
         [NSURL URLWithString:urlString]];
     request.timeoutInterval = 20;
@@ -635,10 +777,18 @@ static NSInteger const kPageSize = 50;
             if ([agg isKindOfClass:[NSDictionary class]]) {
                 self.aggregate = agg;
                 [self.summaryView configureWithAggregate:agg];
+                // Update the subtitle to show the active filter, or clear it
+                [self.summaryView setFilterDescription:self.activeSearchQuery];
             }
 
             [self.tableView reloadData];
             self.emptyLabel.hidden = self.rows.count > 0;
+            if (self.rows.count == 0 && self.activeSearchQuery.length > 0) {
+                self.emptyLabel.text = [NSString stringWithFormat:
+                    @"No results for \"%@\"", self.activeSearchQuery];
+            } else {
+                self.emptyLabel.text = @"No transactions found.";
+            }
         });
     }] resume];
 }
@@ -668,15 +818,62 @@ forRowAtIndexPath:(NSIndexPath *)indexPath {
     }
 }
 
+// ── UISearchBarDelegate ───────────────────────────────────────────────────────
+
+- (void)searchBar:(UISearchBar *)searchBar textDidChange:(NSString *)searchText {
+    [self.searchDebounceTimer invalidate];
+    self.searchDebounceTimer = nil;
+
+    NSString *trimmed = [searchText stringByTrimmingCharactersInSet:
+        [NSCharacterSet whitespaceAndNewlineCharacterSet]];
+
+    if (trimmed.length == 0) {
+        // Clear filter immediately — no debounce needed for an empty field
+        self.activeSearchQuery = nil;
+        self.hasMore = YES;
+        [self fetchPage:0];
+        return;
+    }
+
+    // Store the pending query and wait 0.4s after the last keystroke before
+    // hitting the server — avoids a request for every character typed.
+    self.activeSearchQuery = trimmed;
+    self.searchDebounceTimer = [NSTimer scheduledTimerWithTimeInterval:0.4
+                                                                target:self
+                                                              selector:@selector(searchDebounceTimerFired)
+                                                              userInfo:nil
+                                                               repeats:NO];
+}
+
+- (void)searchDebounceTimerFired {
+    self.searchDebounceTimer = nil;
+    self.hasMore = YES;
+    [self fetchPage:0];
+}
+
+- (void)searchBarSearchButtonClicked:(UISearchBar *)searchBar {
+    // Keyboard Search button — fire immediately without waiting for the timer
+    [searchBar resignFirstResponder];
+    [self.searchDebounceTimer invalidate];
+    self.searchDebounceTimer = nil;
+    self.hasMore = YES;
+    [self fetchPage:0];
+}
+
 // ── Actions ───────────────────────────────────────────────────────────────────
 
 - (void)refreshTapped {
+    // Preserve the active filter — refresh re-runs the current query from page 0
     self.hasMore = YES;
     [self fetchPage:0];
 }
 
 - (void)closeTapped {
+    [self.searchDebounceTimer invalidate];
+    self.searchDebounceTimer = nil;
     [self dismissViewControllerAnimated:YES completion:nil];
 }
 
 @end
+
+#endif // DEBUG
