@@ -1,41 +1,92 @@
 // EZCoinLedgerViewController.m
-// EZCompleteUI
+// EZCompleteUI v1.4
 //
-// Admin ledger — shows coin usage transactions across all users.
-// Fetches from /functions/v1/get-admin-ledger?mode=user (service-role view).
+// Purpose:
+//   Admin-only ledger displaying every coin transaction across all users.
+//   Connects to the get-admin-ledger edge function (mode=user), which requires
+//   both a valid user JWT and an admin secret header. The secret is entered once
+//   via an in-app prompt and stored in NSUserDefaults — it is never hardcoded in
+//   the binary. A 403 response clears the stored secret and re-shows the prompt.
 //
-// Auth: requires a valid JWT AND the ADMIN_SECRET env var value sent as
-//       x-admin-secret header. The secret is never hardcoded — it is entered
-//       once via an in-app prompt and stored in NSUserDefaults. On a 403 the
-//       stored value is cleared and the prompt is shown again.
+//   The summary header shows platform-wide totals (calls, coins spent, API cost,
+//   margin, and coins currently in circulation). Individual rows show per-call
+//   detail: email, feature, model, prompt snippet, coins charged, running balance,
+//   token counts, API cost, and efficiency.
 //
-// Each row shows: user email, feature, model, prompt snippet, coins charged,
-//   running balance, token counts, images, API cost, cost/100 coins, timestamp.
-// Summary header: total calls, coins, cost, efficiency, margin (all users).
+//   A search bar at the top filters by email (type "@") or feature name (anything
+//   else — e.g. "tts", "chat", "image"). Filters are sent to the server so paging
+//   and aggregates always reflect the filtered set, not just the loaded page.
 //
-// DEBUG-only: this entire file is excluded from Release builds. The admin
-// secret prompt is real protection on its own, but per-call prompts, costs,
-// and margins across every user have no business being reachable from a
-// shipped binary at all — so the class doesn't exist outside DEBUG, full
-// stop. The call site in EZCoinStoreViewController is gated to match; if
-// anything else ever tries to reference EZCoinLedgerViewController from
-// non-DEBUG code, it will fail to compile rather than silently shipping.
+//   The Export button fetches all pages of the current filter (up to 2,000 rows)
+//   and produces either a CSV file (for Numbers/Excel) or a formatted PDF report,
+//   delivered via the standard iOS share sheet.
 //
-// Changes from personal-ledger version:
+// DEBUG-only: excluded from Release builds entirely. The admin secret prompt is
+//   real protection on its own, but per-call prompts, costs, and user data have
+//   no business being reachable from a shipped binary. The call site in
+//   EZCoinStoreViewController is gated to match; any non-DEBUG reference to this
+//   class will fail to compile rather than silently shipping.
+//
+// v1.7 — CSV data quality fixes
+//   - Double header row: the appendString call was split across three string
+//     literals during a prior fix pass, producing the first 10 column names
+//     twice. Consolidated back into a single string.
+//   - Floating-point margin % and cost/100 columns (e.g. 78.15000000000001):
+//     new csvRound:decimals: helper formats numeric fields to a fixed decimal
+//     count before writing to CSV, preventing JS float artifacts from the
+//     server appearing in the exported file.
+//   - TTS model column showed raw voice IDs (e.g. nPczCjzI2devNBz1zQrb)
+//     instead of a human-readable name. New csvEscapeModel:feature: helper
+//     detects TTS voice IDs (16+ char alphanumeric, no hyphens, feature=tts)
+//     and replaces them with "TTS Voice" in the export.
+//
+// v1.6 — CSV export crash fix
+//   - csvEscape: parameter changed from NSString * to id. JSON null fields
+//     deserialise to [NSNull null], which is truthy and passes through ?: @""
+//     unchanged. Calling containsString: on NSNull crashes with "unrecognized
+//     selector" (EXC_CRASH / SIGABRT). Method now guards NSNull and non-string
+//     types explicitly and converts them to strings via -description.
+//   - Fixed @"\\n" → @"\n" in the same method (newlines in CSV values were
+//     not being detected and quoted correctly).
+//   - generateCSVFromRows: numeric fields replaced ?: @"0" / ?: @"" with a
+//     jsonNum block helper that guards both nil and NSNull, so null numeric
+//     fields produce "0" or "" rather than "<null>" in the exported file.
+//
+// v1.5 — Credit row display
+//   - EZAdminLedgerCell now handles direction = "credit" rows returned by the
+//     updated ez_all_ledger_rows view: coins show as "+5 coins" in green
+//     rather than "−5 coins" in orange; token/image/cost fields are suppressed
+//     since they are NULL for credit rows and would otherwise show as zeroes.
+//   - friendlyFeature: added daily_reward, topup, subscription_renewal,
+//     adjustment so credit rows show readable names instead of raw keys.
+//
+// v1.4 — Export feature
+//   - Export button (nav bar, left of Refresh) fetches the full filtered dataset
+//     and presents a CSV or PDF via UIActivityViewController
+//   - activeFilterQueryString: helper centralises filter param construction so
+//     fetchPage: and the export fetch always use identical params
+//   - Large-dataset warning (>2,000 rows) with option to cancel before exporting
+//   - CSV: RFC-4180 compliant, all key columns, opens in Numbers/Excel
+//   - PDF: HTML-rendered via UIMarkupTextPrintFormatter, landscape US Letter,
+//     repeating header row across pages, colour-coded debit/credit/error rows
+//
+// v1.3 — Coins in circulation + search/filter
+//   - Search/filter bar: "@" → email filter, else → feature name filter
+//     (e.g. "tts", "chat", "image"). Debounced 0.4s, fires immediately on
+//     Search key. Summary subtitle and empty-state label reflect active filter.
+//   - Summary header now shows platform-wide coins in circulation plus a drift
+//     warning if the coin_transactions ledger total disagrees with the sum of
+//     live subscriptions.coins_balance values
+//
+// v1.2 — All-users admin view
 //   - Endpoint changed from get-usage-log to get-admin-ledger (mode=user)
-//   - Admin secret prompt + NSUserDefaults storage (never hardcoded in binary)
-//   - Added user_email and ip_address display per row
-//   - Summary header now shows all-users aggregate, not personal balance
-//   - Aggregate key names updated to match get-admin-ledger response schema
-//   - implied_margin_pct read from server; client-side margin calc removed
-//   - currentBalance property removed (not meaningful in all-users context)
-//   - Whole file wrapped in #if DEBUG — previously only intended, never done
-//   - Summary header now also shows platform-wide coins in circulation
-//     (global_total_circulating from get-admin-ledger) plus a drift warning
-//     if the ledger total disagrees with the actual sum of live balances
-//   - Added search/filter bar: "@" in query → email filter, else → feature
-//     filter (e.g. "tts", "chat", "image"). Debounced 0.4s. Summary subtitle
-//     and empty-state label both update to reflect the active filter.
+//   - Admin secret prompt added; secret stored in NSUserDefaults, never binary
+//   - Added user_email and ip_address per row
+//   - Summary header shows all-users aggregate instead of personal balance
+//   - implied_margin_pct now read from server; client-side calc removed
+//
+// v1.1 — Initial admin port
+//   - Whole file wrapped in #if DEBUG
 
 #import "EZCoinLedgerViewController.h"
 #import "EZAuthManager.h"
@@ -194,51 +245,74 @@ static NSString *formattedCoinCount(NSInteger count) {
         ? [UIColor colorWithWhite:0.78 alpha:1] : EZMuted();
 
     // Coins + running balance
-    NSInteger coinsCharged  = [row[@"coins_charged"]  integerValue];
-    NSInteger runningBalance = [row[@"running_balance"] integerValue];
-    NSInteger quantity       = [row[@"quantity"]        integerValue];
-    _coinsLabel.text  = quantity > 1
-        ? [NSString stringWithFormat:@"−%ld coins ×%ld", (long)coinsCharged, (long)quantity]
-        : [NSString stringWithFormat:@"−%ld coins", (long)coinsCharged];
+    // direction = "credit" for daily claims, top-ups, subscription renewals,
+    // and adjustments; "debit" for feature usage. Credits show green with a +,
+    // debits show orange with a −. Missing direction defaults to debit so
+    // existing rows display correctly before the new view is deployed.
+    NSString  *direction     = safeString(row[@"direction"]);
+    BOOL       isCredit      = [direction isEqualToString:@"credit"];
+    NSInteger  coinsCharged  = [row[@"coins_charged"]   integerValue];
+    NSInteger  runningBalance = [row[@"running_balance"] integerValue];
+    NSInteger  quantity      = [row[@"quantity"]         integerValue];
+
+    if (isCredit) {
+        _coinsLabel.text      = [NSString stringWithFormat:@"+%ld coins", (long)coinsCharged];
+        _coinsLabel.textColor = [UIColor systemGreenColor];
+    } else {
+        _coinsLabel.text = quantity > 1
+            ? [NSString stringWithFormat:@"−%ld coins ×%ld", (long)coinsCharged, (long)quantity]
+            : [NSString stringWithFormat:@"−%ld coins", (long)coinsCharged];
+        _coinsLabel.textColor = [UIColor systemOrangeColor];
+    }
     _balanceLabel.text = [NSString stringWithFormat:@"Balance after: %ld", (long)runningBalance];
 
-    // Token counts
-    id inputTokens  = row[@"input_tokens"];
-    id outputTokens = row[@"output_tokens"];
-    if (inputTokens && ![inputTokens isKindOfClass:[NSNull class]]) {
-        _tokensLabel.text = [NSString stringWithFormat:@"In: %@ / Out: %@ tokens",
-                             inputTokens, outputTokens ?: @"0"];
+    // Token counts, image counts, API cost, and efficiency are meaningless for
+    // credit rows (no model was called). Suppress them so the card doesn't
+    // show "In: 0 / Out: 0 tokens" and "API cost: $0.0000" for a daily claim.
+    if (isCredit) {
+        _tokensLabel.text  = @"";
+        _imagesLabel.text  = @"";
+        _costLabel.text    = @"";
+        _effLabel.text     = @"";
     } else {
-        _tokensLabel.text = @"";
-    }
+        // Token counts
+        id inputTokens  = row[@"input_tokens"];
+        id outputTokens = row[@"output_tokens"];
+        if (inputTokens && ![inputTokens isKindOfClass:[NSNull class]]) {
+            _tokensLabel.text = [NSString stringWithFormat:@"In: %@ / Out: %@ tokens",
+                                 inputTokens, outputTokens ?: @"0"];
+        } else {
+            _tokensLabel.text = @"";
+        }
 
-    // Image counts
-    id imagesReturned   = row[@"images_returned"];
-    id imagesRequested  = row[@"images_requested"];
-    if (imagesReturned && ![imagesReturned isKindOfClass:[NSNull class]]) {
-        _imagesLabel.text = [NSString stringWithFormat:@"Images: %@ returned / %@ requested",
-                             imagesReturned, imagesRequested ?: @"?"];
-    } else {
-        _imagesLabel.text = @"";
-    }
+        // Image counts
+        id imagesReturned  = row[@"images_returned"];
+        id imagesRequested = row[@"images_requested"];
+        if (imagesReturned && ![imagesReturned isKindOfClass:[NSNull class]]) {
+            _imagesLabel.text = [NSString stringWithFormat:@"Images: %@ returned / %@ requested",
+                                 imagesReturned, imagesRequested ?: @"?"];
+        } else {
+            _imagesLabel.text = @"";
+        }
 
-    // API cost
-    id apiCostValue = row[@"api_cost_usd"];
-    if (apiCostValue && ![apiCostValue isKindOfClass:[NSNull class]]) {
-        _costLabel.text = [NSString stringWithFormat:@"API cost: $%.4f", [apiCostValue doubleValue]];
-    } else {
-        _costLabel.text = @"";
-    }
+        // API cost
+        id apiCostValue = row[@"api_cost_usd"];
+        if (apiCostValue && ![apiCostValue isKindOfClass:[NSNull class]]) {
+            _costLabel.text = [NSString stringWithFormat:@"API cost: $%.4f", [apiCostValue doubleValue]];
+        } else {
+            _costLabel.text = @"";
+        }
 
-    // Cost per 100 coins efficiency
-    id effValue = row[@"cost_per_100_coins"];
-    if (effValue && ![effValue isKindOfClass:[NSNull class]]) {
-        double eff          = [effValue doubleValue];
-        _effLabel.text      = [NSString stringWithFormat:@"$%.4f / 100 coins", eff];
-        _effLabel.textColor = efficiencyColor(eff);
-    } else {
-        _effLabel.text      = @"—";
-        _effLabel.textColor = EZMuted();
+        // Cost per 100 coins efficiency
+        id effValue = row[@"cost_per_100_coins"];
+        if (effValue && ![effValue isKindOfClass:[NSNull class]]) {
+            double eff          = [effValue doubleValue];
+            _effLabel.text      = [NSString stringWithFormat:@"$%.4f / 100 coins", eff];
+            _effLabel.textColor = efficiencyColor(eff);
+        } else {
+            _effLabel.text      = @"—";
+            _effLabel.textColor = EZMuted();
+        }
     }
 
     // Timestamp
@@ -269,6 +343,14 @@ static NSString *formattedCoinCount(NSInteger count) {
 
 - (NSString *)friendlyFeature:(NSString *)featureKey {
     NSDictionary *featureNames = @{
+        // Credit events
+        @"daily_reward":          @"🎁 Daily Reward",
+        @"topup":                 @"💰 Coin Top-up",
+        @"subscription_renewal":  @"⭐️ Subscription",
+        @"manual_grant":          @"🎁 Manual Grant",
+        @"promo":                 @"🎁 Promo",
+        @"adjustment":            @"🔧 Adjustment",
+        // Feature spend
         @"chat_mini":       @"💬 Chat Mini",
         @"chat_standard":   @"💬 Chat Standard",
         @"chat_premium":    @"💬 Chat Premium",
@@ -287,15 +369,6 @@ static NSString *formattedCoinCount(NSInteger count) {
     return featureNames[featureKey] ?: featureKey;
 }
 
-// Updates the subtitle to show which filter is currently active.
-// Pass nil to restore the default "N transactions loaded" text.
-- (void)setFilterDescription:(NSString *)filterDescription {
-    if (filterDescription.length > 0) {
-        _subtitleLabel.text = [NSString stringWithFormat:@"Filter: %@", filterDescription];
-    } else {
-        _subtitleLabel.text = [NSString stringWithFormat:@"%ld transactions loaded", (long)_lastTotalCalls];
-    }
-}
 
 - (void)layoutSubviews {
     [super layoutSubviews];
@@ -492,6 +565,16 @@ static NSString *formattedCoinCount(NSInteger count) {
     }
 }
 
+// Updates the subtitle to show which filter is currently active.
+// Pass nil to restore the default "N transactions loaded" text.
+- (void)setFilterDescription:(NSString *)filterDescription {
+    if (filterDescription.length > 0) {
+        _subtitleLabel.text = [NSString stringWithFormat:@"Filter: %@", filterDescription];
+    } else {
+        _subtitleLabel.text = [NSString stringWithFormat:@"%ld transactions loaded", (long)_lastTotalCalls];
+    }
+}
+
 - (void)layoutSubviews {
     [super layoutSubviews];
     CGFloat viewWidth = self.bounds.size.width;
@@ -540,6 +623,7 @@ static NSString *formattedCoinCount(NSInteger count) {
 @property (nonatomic, strong) NSString               *adminSecret;   // from NSUserDefaults
 @property (nonatomic, strong) NSString               *activeSearchQuery;  // nil = no filter
 @property (nonatomic, strong) NSTimer                *searchDebounceTimer;
+@property (nonatomic, strong) UIBarButtonItem        *exportButton;
 @end
 
 @implementation EZCoinLedgerViewController
@@ -580,10 +664,20 @@ static NSInteger const kPageSize = 50;
                              action:@selector(closeTapped)];
     self.navigationItem.leftBarButtonItem.tintColor = [UIColor colorWithWhite:0.6 alpha:1];
 
-    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc]
+    self.exportButton = [[UIBarButtonItem alloc]
+        initWithTitle:@"Export"
+                style:UIBarButtonItemStylePlain
+               target:self
+               action:@selector(exportButtonTapped)];
+    self.exportButton.tintColor = EZGold();
+
+    UIBarButtonItem *refreshButton = [[UIBarButtonItem alloc]
         initWithBarButtonSystemItem:UIBarButtonSystemItemRefresh
                              target:self
                              action:@selector(refreshTapped)];
+
+    // Export on the far right, refresh beside it
+    self.navigationItem.rightBarButtonItems = @[self.exportButton, refreshButton];
 }
 
 - (void)setupTable {
@@ -721,19 +815,7 @@ static NSInteger const kPageSize = 50;
     NSString *urlString = [NSString stringWithFormat:
         @"%@%@?mode=user&limit=%ld&offset=%ld",
         kAdminLedgerBase, kAdminLedgerPath, (long)kPageSize, (long)offset];
-
-    // Append the active filter — auto-detected from the search bar input.
-    // "@" in the query → email substring filter; anything else → feature name.
-    if (self.activeSearchQuery.length > 0) {
-        NSString *encoded = [self.activeSearchQuery
-            stringByAddingPercentEncodingWithAllowedCharacters:
-            [NSCharacterSet URLQueryAllowedCharacterSet]];
-        if ([self.activeSearchQuery containsString:@"@"]) {
-            urlString = [urlString stringByAppendingFormat:@"&email=%@", encoded];
-        } else {
-            urlString = [urlString stringByAppendingFormat:@"&feature=%@", encoded];
-        }
-    }
+    urlString = [urlString stringByAppendingString:[self activeFilterQueryString]];
 
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:
         [NSURL URLWithString:urlString]];
@@ -816,6 +898,464 @@ forRowAtIndexPath:(NSIndexPath *)indexPath {
         indexPath.row == (NSInteger)self.rows.count - 5) {
         [self fetchPage:(NSInteger)self.rows.count];
     }
+}
+
+// ── Export ────────────────────────────────────────────────────────────────────
+// Export button in the nav bar generates a CSV or PDF of the current filtered
+// dataset. If the user has only scrolled part-way through the results, the
+// export fetches all remaining pages first (up to kExportRowLimit rows) before
+// generating the file. Both formats are delivered via the standard iOS share
+// sheet — Files, Mail, AirDrop, etc.
+
+// Maximum rows the export will fetch. Exceeding this shows a warning and caps.
+static NSInteger const kExportRowLimit  = 2000;
+// Rows per export fetch request — server caps limit at 1000.
+static NSInteger const kExportPageSize  = 1000;
+
+// Builds the active filter query string suffix used by both fetchPage: and the
+// export fetch, so both always send the same filter params to the server.
+// Returns an empty string when no filter is active.
+- (NSString *)activeFilterQueryString {
+    if (self.activeSearchQuery.length == 0) return @"";
+    NSString *encoded = [self.activeSearchQuery
+        stringByAddingPercentEncodingWithAllowedCharacters:
+        [NSCharacterSet URLQueryAllowedCharacterSet]];
+    if ([self.activeSearchQuery containsString:@"@"]) {
+        return [NSString stringWithFormat:@"&email=%@", encoded];
+    }
+    return [NSString stringWithFormat:@"&feature=%@", encoded];
+}
+
+- (void)exportButtonTapped {
+    if (self.loading) return; // Pagination in progress — wait for it to finish
+
+    if (!self.hasMore) {
+        // All rows are already in memory — no extra fetch needed
+        [self presentExportOptionsWithRows:[self.rows copy]];
+        return;
+    }
+
+    // Some pages haven't been loaded yet. Disable the button and show the
+    // spinner while we fetch the complete dataset.
+    self.exportButton.enabled = NO;
+    [self.spinner startAnimating];
+
+    [self fetchAllRowsForExportWithCompletion:^(NSArray *allRows, BOOL wasCapped) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self.spinner stopAnimating];
+            self.exportButton.enabled = YES;
+
+            if (wasCapped) {
+                NSString *msg = [NSString stringWithFormat:
+                    @"The dataset has more than %ld rows. "
+                    @"Only the first %ld will be exported. "
+                    @"Apply a tighter filter to export the full set.",
+                    (long)kExportRowLimit, (long)kExportRowLimit];
+                UIAlertController *alert = [UIAlertController
+                    alertControllerWithTitle:@"Large Dataset"
+                                     message:msg
+                              preferredStyle:UIAlertControllerStyleAlert];
+                [alert addAction:[UIAlertAction actionWithTitle:@"Cancel"
+                                                          style:UIAlertActionStyleCancel
+                                                        handler:nil]];
+                [alert addAction:[UIAlertAction actionWithTitle:[NSString stringWithFormat:@"Export %ld Rows", (long)kExportRowLimit]
+                                                          style:UIAlertActionStyleDefault
+                                                        handler:^(UIAlertAction *a) {
+                    [self presentExportOptionsWithRows:allRows];
+                }]];
+                [self presentViewController:alert animated:YES completion:nil];
+            } else {
+                [self presentExportOptionsWithRows:allRows];
+            }
+        });
+    }];
+}
+
+// Fetches all pages of the current filter into a temporary array without
+// touching self.rows. Does NOT set self.loading — the export button is
+// disabled instead so the two fetches don't interfere.
+- (void)fetchAllRowsForExportWithCompletion:(void(^)(NSArray<NSDictionary *> *rows, BOOL wasCapped))completion {
+    [self _fetchExportPage:0
+              accumulated:[NSMutableArray array]
+               completion:completion];
+}
+
+- (void)_fetchExportPage:(NSInteger)offset
+             accumulated:(NSMutableArray<NSDictionary *> *)accumulated
+              completion:(void(^)(NSArray<NSDictionary *> *rows, BOOL wasCapped))completion {
+
+    NSString *token = [EZAuthManager shared].accessToken;
+    if (!token.length) {
+        completion([accumulated copy], NO);
+        return;
+    }
+
+    NSString *urlString = [NSString stringWithFormat:
+        @"%@%@?mode=user&limit=%ld&offset=%ld",
+        kAdminLedgerBase, kAdminLedgerPath, (long)kExportPageSize, (long)offset];
+    urlString = [urlString stringByAppendingString:[self activeFilterQueryString]];
+
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:urlString]];
+    request.timeoutInterval = 30;
+    [request setValue:[NSString stringWithFormat:@"Bearer %@", token] forHTTPHeaderField:@"Authorization"];
+    [request setValue:self.adminSecret forHTTPHeaderField:@"x-admin-secret"];
+
+    [[[NSURLSession sharedSession] dataTaskWithRequest:request
+        completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+
+        NSHTTPURLResponse *httpResponse = (NSHTTPURLResponse *)response;
+
+        // 403 means the admin secret is wrong. Don't prompt from the export
+        // path — the user can tap Refresh which handles 403 + re-prompt.
+        if (httpResponse.statusCode == 403 || error || !data) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                completion([accumulated copy], NO);
+            });
+            return;
+        }
+
+        NSDictionary *json   = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+        NSArray      *newRows = json[@"rows"];
+
+        if ([newRows isKindOfClass:[NSArray class]]) {
+            [accumulated addObjectsFromArray:newRows];
+        }
+
+        BOOL serverHasMore = ((NSInteger)newRows.count == kExportPageSize);
+        BOOL hitCap        = (NSInteger)accumulated.count >= kExportRowLimit;
+
+        if (serverHasMore && !hitCap) {
+            [self _fetchExportPage:offset + kExportPageSize
+                       accumulated:accumulated
+                        completion:completion];
+        } else {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                completion([accumulated copy], hitCap && serverHasMore);
+            });
+        }
+    }] resume];
+}
+
+- (void)presentExportOptionsWithRows:(NSArray<NSDictionary *> *)rows {
+    if (rows.count == 0) {
+        UIAlertController *empty = [UIAlertController
+            alertControllerWithTitle:@"Nothing to Export"
+                             message:@"No rows match the current filter."
+                      preferredStyle:UIAlertControllerStyleAlert];
+        [empty addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+        [self presentViewController:empty animated:YES completion:nil];
+        return;
+    }
+
+    NSString *filterDesc = self.activeSearchQuery.length > 0
+        ? [NSString stringWithFormat:@"Filter: %@  —  ", self.activeSearchQuery]
+        : @"";
+    NSString *subtitle = [NSString stringWithFormat:@"%@%ld rows", filterDesc, (long)rows.count];
+
+    UIAlertController *formatPicker = [UIAlertController
+        alertControllerWithTitle:@"Export Ledger"
+                         message:subtitle
+                  preferredStyle:UIAlertControllerStyleActionSheet];
+
+    [formatPicker addAction:[UIAlertAction
+        actionWithTitle:@"CSV  —  Spreadsheet / Numbers / Excel"
+                  style:UIAlertActionStyleDefault
+                handler:^(UIAlertAction *action) {
+            NSData   *csvData  = [self generateCSVFromRows:rows];
+            NSString *fileName = [self exportFileNameWithExtension:@"csv"];
+            [self presentShareSheetWithData:csvData fileName:fileName];
+    }]];
+
+    [formatPicker addAction:[UIAlertAction
+        actionWithTitle:@"PDF  —  Formatted Report"
+                  style:UIAlertActionStyleDefault
+                handler:^(UIAlertAction *action) {
+            NSData   *pdfData  = [self generatePDFFromRows:rows];
+            NSString *fileName = [self exportFileNameWithExtension:@"pdf"];
+            [self presentShareSheetWithData:pdfData fileName:fileName];
+    }]];
+
+    [formatPicker addAction:[UIAlertAction actionWithTitle:@"Cancel"
+                                                     style:UIAlertActionStyleCancel
+                                                   handler:nil]];
+
+    // iPad requires an anchor; on iPhone this is ignored
+    formatPicker.popoverPresentationController.barButtonItem = self.exportButton;
+    [self presentViewController:formatPicker animated:YES completion:nil];
+}
+
+// Returns a timestamped filename that includes the active filter if set,
+// with characters that are unsafe for filenames replaced by underscores.
+- (NSString *)exportFileNameWithExtension:(NSString *)ext {
+    NSDateFormatter *df = [NSDateFormatter new];
+    df.dateFormat = @"yyyy-MM-dd_HHmm";
+    NSString *dateStr = [df stringFromDate:[NSDate date]];
+
+    if (self.activeSearchQuery.length > 0) {
+        NSCharacterSet *unsafe = [[NSCharacterSet alphanumericCharacterSet] invertedSet];
+        NSString *safeQuery = [[self.activeSearchQuery
+            componentsSeparatedByCharactersInSet:unsafe]
+            componentsJoinedByString:@"_"];
+        return [NSString stringWithFormat:@"EZLedger_%@_%@.%@", safeQuery, dateStr, ext];
+    }
+    return [NSString stringWithFormat:@"EZLedger_all_%@.%@", dateStr, ext];
+}
+
+// ── CSV generation ────────────────────────────────────────────────────────────
+
+- (NSData *)generateCSVFromRows:(NSArray<NSDictionary *> *)rows {
+    NSMutableString *csv = [NSMutableString string];
+
+    // Header row — matches the column order of the data rows below
+    [csv appendString:
+        @"Date (UTC),User Email,IP Address,Feature,Model,Prompt,Coins Charged,Balance After,Input Tokens,Output Tokens,Total Tokens,API Cost USD,Cost/100 Coins,Margin %,Status,Error\n"];
+
+
+
+
+    // jsonNum: safely stringifies a JSON number field, returning a fallback for
+    // nil and NSNull (which JSON null deserialises to — it's truthy, so ?: misses it).
+    NSString *(^jsonNum)(id, NSString *) = ^NSString *(id val, NSString *fallback) {
+        return (!val || [val isKindOfClass:[NSNull class]]) ? fallback : [NSString stringWithFormat:@"%@", val];
+    };
+
+    for (NSDictionary *row in rows) {
+        NSArray<NSString *> *fields = @[
+            [self csvEscape:row[@"created_at"]],
+            [self csvEscape:row[@"user_email"]],
+            [self csvEscape:row[@"ip_address"]],
+            [self csvEscape:row[@"feature"]],
+            [self csvEscapeModel:row[@"model"] feature:row[@"feature"]],
+            [self csvEscape:row[@"prompt"]],
+            jsonNum(row[@"coins_charged"],      @"0"),
+            jsonNum(row[@"running_balance"],    @"0"),
+            jsonNum(row[@"input_tokens"],       @"0"),
+            jsonNum(row[@"output_tokens"],      @"0"),
+            jsonNum(row[@"total_tokens"],       @"0"),
+            jsonNum(row[@"api_cost_usd"],       @"0"),
+            [self csvRound:row[@"cost_per_100_coins"] decimals:4],
+            [self csvRound:row[@"implied_margin_pct"] decimals:2],
+            [self csvEscape:row[@"status"]],
+            [self csvEscape:row[@"error_text"]],
+        ];
+        [csv appendString:[fields componentsJoinedByString:@","]];
+        [csv appendString:@"\n"];
+    }
+
+    return [csv dataUsingEncoding:NSUTF8StringEncoding];
+}
+
+// RFC-4180 CSV escaping: wraps values containing commas, newlines, or quotes in
+// double-quotes, and escapes any internal double-quotes by doubling them.
+//
+// Accepts any JSON-deserialised type — JSON null becomes [NSNull null] after
+// deserialisation, which is a real object (truthy), not nil. Callers using
+// ?: @"" don't catch it. Handling it here means every call site is safe
+// regardless of what the server returns for a given field.
+- (NSString *)csvEscape:(id)rawValue {
+    if (!rawValue || [rawValue isKindOfClass:[NSNull class]]) return @"";
+    NSString *value = [rawValue isKindOfClass:[NSString class]]
+        ? (NSString *)rawValue
+        : [rawValue description];
+    if (!value.length) return @"";
+    BOOL needsQuoting = [value containsString:@","]
+                     || [value containsString:@"\n"]
+                     || [value containsString:@"\""];
+    if (!needsQuoting) return value;
+    NSString *escapedValue = [value stringByReplacingOccurrencesOfString:@"\""
+                                                            withString:@"\"\""];
+    return [NSString stringWithFormat:@"\"%@\"", escapedValue];
+}
+
+// Returns a human-readable model label for CSV export.
+// TTS voice IDs are opaque alphanumeric strings that mean nothing outside the
+// TTS provider dashboard — they are replaced with "TTS Voice" in exports.
+// All other model names (gpt-5-mini, sora-2, etc.) are kept as-is.
+- (NSString *)csvEscapeModel:(id)modelValue feature:(id)featureValue {
+    NSString *modelString   = [modelValue isKindOfClass:[NSString class]] ? modelValue : @"";
+    NSString *featureString = [featureValue isKindOfClass:[NSString class]] ? featureValue : @"";
+    BOOL looksLikeVoiceId = (modelString.length >= 16)
+        && [featureString isEqualToString:@"tts"]
+        && ([modelString rangeOfCharacterFromSet:
+               [NSCharacterSet characterSetWithCharactersInString:@"-. "]].location == NSNotFound);
+    return looksLikeVoiceId ? @"TTS Voice" : [self csvEscape:modelString];
+}
+
+// Formats a numeric JSON value to a fixed number of decimal places.
+// Prevents floating-point artifacts like 78.15000000000001 from appearing in the CSV.
+- (NSString *)csvRound:(id)value decimals:(NSInteger)decimals {
+    if (!value || [value isKindOfClass:[NSNull class]]) return @"";
+    NSString *formatString = [NSString stringWithFormat:@"%%.%ldf", (long)decimals];
+    return [NSString stringWithFormat:formatString, [value doubleValue]];
+}
+
+// ── PDF generation ────────────────────────────────────────────────────────────
+// Builds an HTML table and renders it to PDF via UIMarkupTextPrintFormatter.
+// Landscape US Letter (792×612pt) gives enough horizontal room for the columns.
+
+- (NSData *)generatePDFFromRows:(NSArray<NSDictionary *> *)rows {
+    NSString *html = [self buildHTMLReportForRows:rows];
+
+    UIMarkupTextPrintFormatter *formatter =
+        [[UIMarkupTextPrintFormatter alloc] initWithMarkupText:html];
+    UIPrintPageRenderer *renderer = [[UIPrintPageRenderer alloc] init];
+    [renderer addPrintFormatter:formatter startingAtPageAtIndex:0];
+
+    CGRect paperRect    = CGRectMake(0, 0, 792, 612);  // US Letter landscape
+    CGRect printableRect = CGRectInset(paperRect, 36, 36);
+    [renderer setValue:[NSValue valueWithCGRect:paperRect]     forKey:@"paperRect"];
+    [renderer setValue:[NSValue valueWithCGRect:printableRect] forKey:@"printableRect"];
+
+    NSMutableData *pdfData = [NSMutableData data];
+    UIGraphicsBeginPDFContextToData(pdfData, CGRectZero, nil);
+    for (NSInteger pageIndex = 0; pageIndex < renderer.numberOfPages; pageIndex++) {
+        UIGraphicsBeginPDFPage();
+        [renderer drawPageAtIndex:pageIndex inRect:UIGraphicsGetPDFContextBounds()];
+    }
+    UIGraphicsEndPDFContext();
+    return pdfData;
+}
+
+- (NSString *)buildHTMLReportForRows:(NSArray<NSDictionary *> *)rows {
+    NSDateFormatter *df = [NSDateFormatter new];
+    df.dateStyle = NSDateFormatterMediumStyle;
+    df.timeStyle = NSDateFormatterShortStyle;
+    NSString *exportDate = [df stringFromDate:[NSDate date]];
+
+    NSString *filterLine = self.activeSearchQuery.length > 0
+        ? [NSString stringWithFormat:@"Filter: %@ &nbsp;|&nbsp; ",
+           [self htmlEscape:self.activeSearchQuery]]
+        : @"";
+
+    NSMutableString *html = [NSMutableString string];
+    [html appendString:@"<!DOCTYPE html><html><head><meta charset='UTF-8'><style>"
+     @"body{font-family:-apple-system,Helvetica;font-size:8.5px;color:#111;margin:0}"
+     @"h1{font-size:13px;margin:0 0 3px}"
+     @".meta{font-size:7.5px;color:#555;margin-bottom:8px}"
+     @"table{width:100%;border-collapse:collapse;page-break-inside:auto}"
+     @"thead{display:table-header-group}"   /* repeat header on each printed page */
+     @"th{background:#0d1117;color:#e6c94a;padding:4px 5px;text-align:left;font-size:7.5px;white-space:nowrap}"
+     @"td{padding:3px 5px;border-bottom:1px solid #e8e8e8;font-size:7.5px;vertical-align:top}"
+     @"tr:nth-child(even)td{background:#f7f7f7}"
+     @".debit{color:#b71c1c;font-weight:600}"
+     @".credit{color:#1b5e20;font-weight:600}"
+     @".err{color:#b71c1c}"
+     @"</style></head><body>"];
+
+    [html appendFormat:@"<h1>EZCompleteUI Admin Ledger</h1>"
+     @"<div class='meta'>%@Exported: %@ &nbsp;|&nbsp; %ld rows</div>",
+     filterLine, exportDate, (long)rows.count];
+
+    [html appendString:
+     @"<table><thead><tr>"
+     @"<th>Date (UTC)</th><th>Email</th><th>Feature</th><th>Model</th><th>Prompt</th>"
+     @"<th>Coins</th><th>Balance</th><th>Tokens</th><th>API Cost</th>"
+     @"<th>¢/100</th><th>Status</th>"
+     @"</tr></thead><tbody>"];
+
+    for (NSDictionary *row in rows) {
+        // Trim ISO timestamp: "2025-06-21T10:59:00.000Z" → "2025-06-21 10:59"
+        NSString *dateStr = row[@"created_at"] ?: @"";
+        if (dateStr.length >= 16) {
+            dateStr = [[dateStr substringToIndex:16]
+                stringByReplacingOccurrencesOfString:@"T" withString:@" "];
+        }
+
+        NSInteger coins     = [row[@"coins_charged"] integerValue];
+        NSString *coinClass = coins > 0 ? @"debit" : @"credit";
+        NSString *coinStr   = [NSString stringWithFormat:@"%@%ld",
+                               coins > 0 ? @"−" : @"+", (long)ABS(coins)];
+
+        NSString *statusStr = row[@"status"] ?: @"";
+        NSString *statusClass = [statusStr isEqualToString:@"error"] ? @" class='err'" : @"";
+
+        [html appendFormat:
+         @"<tr>"
+         @"<td>%@</td>"
+         @"<td>%@</td>"
+         @"<td>%@</td>"
+         @"<td>%@</td>"
+         @"<td class='%@'>%@</td>"
+         @"<td>%@</td>"
+         @"<td>%@</td>"
+         @"<td>$%@</td>"
+         @"<td>%@</td>"
+         @"<td%@>%@</td>"
+         @"</tr>",
+         [self htmlEscape:dateStr],
+         [self htmlEscape:row[@"user_email"] ?: @""],
+         [self htmlEscape:row[@"feature"]    ?: @""],
+         [self htmlEscape:row[@"model"]      ?: @""],
+         coinClass, coinStr,
+         row[@"running_balance"]    ?: @"",
+         row[@"total_tokens"]       ?: @"",
+         row[@"api_cost_usd"]       ?: @"0",
+         row[@"cost_per_100_coins"] ?: @"",
+         statusClass,
+         [self htmlEscape:statusStr]];
+    }
+
+    [html appendString:@"</tbody></table></body></html>"];
+    return html;
+}
+
+// Escapes the five characters that have special meaning in HTML.
+// Accepts any JSON-deserialised type — same NSNull hazard as csvEscape:.
+- (NSString *)htmlEscape:(id)rawValue {
+    if (!rawValue || [rawValue isKindOfClass:[NSNull class]]) return @"";
+    NSString *string = [rawValue isKindOfClass:[NSString class]]
+        ? (NSString *)rawValue
+        : [rawValue description];
+    if (!string.length) return @"";
+    return [[[[[string
+        stringByReplacingOccurrencesOfString:@"&"  withString:@"&amp;"]
+        stringByReplacingOccurrencesOfString:@"<"  withString:@"&lt;"]
+        stringByReplacingOccurrencesOfString:@">"  withString:@"&gt;"]
+        stringByReplacingOccurrencesOfString:@"\""  withString:@"&quot;"]
+        stringByReplacingOccurrencesOfString:@"'"  withString:@"&#39;"];
+}
+
+// ── Share sheet ───────────────────────────────────────────────────────────────
+
+- (void)presentShareSheetWithData:(NSData *)fileData fileName:(NSString *)fileName {
+    if (!fileData.length) {
+        UIAlertController *alert = [UIAlertController
+            alertControllerWithTitle:@"Export Failed"
+                             message:@"The file could not be generated."
+                      preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+        [self presentViewController:alert animated:YES completion:nil];
+        return;
+    }
+
+    NSURL *tempURL = [[NSURL fileURLWithPath:NSTemporaryDirectory()]
+        URLByAppendingPathComponent:fileName];
+
+    NSError *writeError;
+    [fileData writeToURL:tempURL options:NSDataWritingAtomic error:&writeError];
+
+    if (writeError) {
+        UIAlertController *alert = [UIAlertController
+            alertControllerWithTitle:@"Export Failed"
+                             message:writeError.localizedDescription
+                      preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+        [self presentViewController:alert animated:YES completion:nil];
+        return;
+    }
+
+    UIActivityViewController *activityVC = [[UIActivityViewController alloc]
+        initWithActivityItems:@[tempURL]
+        applicationActivities:nil];
+    // These activity types don't make sense for a data file
+    activityVC.excludedActivityTypes = @[
+        UIActivityTypeAssignToContact,
+        UIActivityTypePostToFacebook,
+        UIActivityTypePostToTwitter,
+        UIActivityTypePostToWeibo,
+    ];
+    activityVC.popoverPresentationController.barButtonItem = self.exportButton;
+    [self presentViewController:activityVC animated:YES completion:nil];
 }
 
 // ── UISearchBarDelegate ───────────────────────────────────────────────────────

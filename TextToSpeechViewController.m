@@ -1,45 +1,65 @@
-
-    //
-// TextToSpeechViewController.m//
-// Notes:
-//  
-//  - Adds a proper NSTimer property `stopMeterTimer` and safe invalidation.
-//  - Includes ElevenLabs TTS integration with safe fallback to mp3_44100_128,
-//    voice listing, MP3->M4A conversion, PCM->WAV wrapping, UI styling, and safe-area inset.
-
-//  - Requires helpers.h (EZLog / EZLogf) and EZKeyVault.h in the project.
-//  - Link against AVFoundation and UIKit.
 //
-// Replace your existing TextToSpeechViewController.m with this file.
+// TextToSpeechViewController.m
+// EZCompleteUI v1.1
+//
+// Purpose: standalone "type text, pick a voice, synthesize" screen — distinct
+// from the auto-read-AI-response flow in ViewController.m's speakLastResponse.
+// ElevenLabs TTS integration via the ez-elevenlabs Supabase Edge Function,
+// voice selection via a picker (never displays a raw voice ID — only names),
+// auto-archives every successful generation to EZTTSLibraryManager, and plays
+// it back with one big Play button. Downloading was removed as a separate
+// action since everything is already saved automatically — use History's
+// Share action for exporting a clip.
+//
+// Changes from v1.0:
+//   - kPromptCharacterLimit doubled, 120 → 240. The old value predates a fix
+//     to ez-elevenlabs' base64 encoding (see that file's v6.6 changelog): the
+//     edge function used to crash on any audio beyond a few seconds, and
+//     120 characters (~8-10s of speech, ~130-160KB of mp3) was already past
+//     that threshold — so 120 was almost certainly chosen as a defensive
+//     workaround for the crash, not a real UX or cost ceiling. That crash
+//     is fixed; this cap can now track the model's actual limit instead.
+//   - kDefaultModelID (eleven_multilingual_v2) actually allows up to 10,000
+//     characters per request — same limit ViewController.m's
+//     speakWithElevenLabsEdge and ez-elevenlabs' MAX_TTS_CHARS now enforce.
+//     240 is a conservative first bump rather than jumping straight to
+//     10,000; this is a dedicated "type text to synthesize" screen, so a
+//     much higher cap is a reasonable next step if 240 still feels tight —
+//     say the word and I'll raise it to match the other two files exactly.
+//
+// Requires helpers.h (EZLog / EZLogf) in the project.
+// Link against AVFoundation and UIKit.
 
 #import <UIKit/UIKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <CoreFoundation/CoreFoundation.h>
-#import "EZKeyVault.h"
 #import "helpers.h"
 #import "EZAuthManager.h"
-
+#import "EZTTSLibraryManager.h"
+#import "EZTTSLibraryViewController.h"
+#import "EZVoicePickerViewController.h"
 
 static NSString * const kDefaultVoiceID = @"JBFqnCBsd6RMkjVDRZzb"; // fallback example
 static NSString * const kDefaultModelID = @"eleven_multilingual_v2";
 static NSString * const kFallbackMP3Format = @"mp3_44100_128";
+static NSString * const kVoiceIDDefaultsKey = @"elevenVoiceID";
+static NSString * const kVoiceNameDefaultsKey = @"elevenVoiceName";
 
-@interface TextToSpeechViewController : UIViewController <UITableViewDelegate, UITableViewDataSource, UITextViewDelegate, UITextFieldDelegate>
+static NSUInteger const kPromptCharacterLimit = 500;
+
+@interface TextToSpeechViewController : UIViewController <UITextViewDelegate>
 @end
 
 @interface TextToSpeechViewController ()
 @property (nonatomic, strong) UIView *container;
+@property (nonatomic, strong) UILabel *promptSectionLabel;
 @property (nonatomic, strong) UITextView *textView;
-@property (nonatomic, strong) UITextField *voiceField;
-@property (nonatomic, strong) UISegmentedControl *formatControl; // 0=WAV 1=M4A
+@property (nonatomic, strong) UILabel *charCountLabel;
+@property (nonatomic, strong) UILabel *voiceSectionLabel;
+@property (nonatomic, strong) UIButton *voiceButton;
 @property (nonatomic, strong) UIButton *playButton;
-@property (nonatomic, strong) UIButton *downloadButton;
-@property (nonatomic, strong) UIButton *fetchVoicesButton;
 @property (nonatomic, strong) UIActivityIndicatorView *spinner;
 @property (nonatomic, strong) AVAudioPlayer *player;
-
-@property (nonatomic, strong) UITableView *voicesTable;
-@property (nonatomic, strong) NSArray<NSDictionary *> *voices; // raw voice dicts
 
 // Timer added to address your invalidate error
 @property (nonatomic, strong, nullable) NSTimer *stopMeterTimer;
@@ -47,6 +67,18 @@ static NSString * const kFallbackMP3Format = @"mp3_44100_128";
 // Speed slider (ElevenLabs speed param: 0.7–1.2)
 @property (nonatomic, strong) UISlider *speedSlider;
 @property (nonatomic, strong) UILabel  *speedLabel;
+
+// Never displayed to the user as a raw string — only the resolved display name is
+// ever shown, via -voiceButton. The id itself is what's actually sent to the API.
+@property (nonatomic, copy) NSString *selectedVoiceID;
+@property (nonatomic, copy, nullable) NSString *selectedVoiceName;
+
+// Set via -prefillWithText:voiceID:voiceName: (e.g. from History's Regenerate/Change
+// Voice) before the view has loaded; applied once the view's subviews actually exist.
+@property (nonatomic, copy, nullable) NSString *pendingPrefillText;
+@property (nonatomic, copy, nullable) NSString *pendingPrefillVoiceID;
+@property (nonatomic, copy, nullable) NSString *pendingPrefillVoiceName;
+@property (nonatomic, assign) BOOL hasPendingVoicePrefill;
 @end
 
 @implementation TextToSpeechViewController
@@ -65,10 +97,20 @@ static NSString *timestampString(void) {
     self.title = @"Text to Speech";
     self.view.backgroundColor = [UIColor systemBackgroundColor];
 
+    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc]
+        initWithImage:[UIImage systemImageNamed:@"clock.arrow.circlepath"]
+                 style:UIBarButtonItemStylePlain
+                target:self
+                action:@selector(historyButtonTapped)];
+
+    NSString *savedID = [[NSUserDefaults standardUserDefaults] stringForKey:kVoiceIDDefaultsKey];
+    self.selectedVoiceID = savedID.length > 0 ? savedID : kDefaultVoiceID;
+    self.selectedVoiceName = [[NSUserDefaults standardUserDefaults] stringForKey:kVoiceNameDefaultsKey];
+
     // Container view (styled)
     self.container = [[UIView alloc] initWithFrame:CGRectZero];
     self.container.backgroundColor = [UIColor secondarySystemBackgroundColor];
-    self.container.layer.cornerRadius = 12.0;
+    self.container.layer.cornerRadius = 16.0;
     self.container.layer.borderWidth = 1.0;
     self.container.layer.borderColor = [UIColor systemGray4Color].CGColor;
     self.container.layer.shadowColor = [UIColor colorWithRed:0 green:0.48 blue:1 alpha:0.15].CGColor;
@@ -77,74 +119,48 @@ static NSString *timestampString(void) {
     self.container.layer.shadowRadius = 18;
     [self.view addSubview:self.container];
 
+    self.promptSectionLabel = [self sectionHeaderLabel];
+    self.promptSectionLabel.text = @"WHAT SHOULD IT SAY?";
+    [self.container addSubview:self.promptSectionLabel];
+
     // TextView
     self.textView = [[UITextView alloc] initWithFrame:CGRectZero];
-    self.textView.delegate = self;
-    self.textView.font = [UIFont systemFontOfSize:15];
-    self.textView.layer.cornerRadius = 10;
+    self.textView.font = [UIFont systemFontOfSize:16];
+    self.textView.layer.cornerRadius = 12;
     self.textView.layer.borderWidth = 1.0;
     self.textView.layer.borderColor = [UIColor systemGray4Color].CGColor;
     self.textView.backgroundColor = [UIColor systemBackgroundColor];
-    self.textView.textContainerInset = UIEdgeInsetsMake(12, 10, 12, 10);
+    self.textView.textContainerInset = UIEdgeInsetsMake(14, 12, 14, 12);
+    self.textView.delegate = self;
     [self.container addSubview:self.textView];
 
-    // Voice field
-    self.voiceField = [[UITextField alloc] initWithFrame:CGRectZero];
-    self.voiceField.borderStyle = UITextBorderStyleRoundedRect;
-    self.voiceField.placeholder = kDefaultVoiceID;
-    self.voiceField.autocorrectionType = UITextAutocorrectionTypeNo;
-    self.voiceField.autocapitalizationType = UITextAutocapitalizationTypeNone;
-    self.voiceField.font = [UIFont systemFontOfSize:14];
-    self.voiceField.returnKeyType = UIReturnKeyDone;
-    self.voiceField.delegate = self;
-    [self.container addSubview:self.voiceField];
+    // Character counter, bottom-right under the text input. Limit tracks
+    // kPromptCharacterLimit — see the v1.1 changelog at the top of this file
+    // for why 120 became 240 (it was never a real ceiling, just a defensive
+    // cap around a since-fixed crash in ez-elevenlabs' base64 encoding).
+    self.charCountLabel = [[UILabel alloc] init];
+    self.charCountLabel.font = [UIFont systemFontOfSize:12 weight:UIFontWeightRegular];
+    self.charCountLabel.textColor = [UIColor secondaryLabelColor];
+    self.charCountLabel.textAlignment = NSTextAlignmentRight;
+    [self.container addSubview:self.charCountLabel];
+    [self updateCharCountLabel];
 
-    // Format control
-    self.formatControl = [[UISegmentedControl alloc] initWithItems:@[@"WAV (44.1k)", @"M4A"]];
-    self.formatControl.selectedSegmentIndex = 0;
-    [self.container addSubview:self.formatControl];
+    self.voiceSectionLabel = [self sectionHeaderLabel];
+    self.voiceSectionLabel.text = @"VOICE";
+    [self.container addSubview:self.voiceSectionLabel];
 
-    // Fetch voices button
-    self.fetchVoicesButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    [self.fetchVoicesButton setTitle:@"Fetch Voices" forState:UIControlStateNormal];
-    self.fetchVoicesButton.layer.cornerRadius = 8;
-    self.fetchVoicesButton.backgroundColor = [UIColor systemBlueColor];
-    [self.fetchVoicesButton setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
-    self.fetchVoicesButton.layer.shadowColor = [UIColor systemBlueColor].CGColor;
-    self.fetchVoicesButton.layer.shadowOpacity = 0.25;
-    self.fetchVoicesButton.layer.shadowOffset = CGSizeMake(0,4);
-    self.fetchVoicesButton.layer.shadowRadius = 8;
-    [self.fetchVoicesButton addTarget:self action:@selector(fetchVoicesTapped:) forControlEvents:UIControlEventTouchUpInside];
-    [self.container addSubview:self.fetchVoicesButton];
-
-    // Play & Download buttons
-    self.playButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    [self.playButton setTitle:@"Play" forState:UIControlStateNormal];
-    self.playButton.layer.cornerRadius = 8;
-    self.playButton.backgroundColor = [UIColor systemGray5Color];
-    [self.playButton setTitleColor:[UIColor labelColor] forState:UIControlStateNormal];
-    self.playButton.layer.borderWidth = 0.5;
-    self.playButton.layer.borderColor = [UIColor systemGray3Color].CGColor;
-    self.playButton.layer.shadowColor = [UIColor blackColor].CGColor;
-    self.playButton.layer.shadowOpacity = 0.07;
-    self.playButton.layer.shadowOffset = CGSizeMake(0,3);
-    self.playButton.layer.shadowRadius = 6;
-    [self.playButton addTarget:self action:@selector(synthesizeAndPlay:) forControlEvents:UIControlEventTouchUpInside];
-    [self.container addSubview:self.playButton];
-
-    self.downloadButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    [self.downloadButton setTitle:@"Download" forState:UIControlStateNormal];
-    self.downloadButton.layer.cornerRadius = 8;
-    self.downloadButton.backgroundColor = [UIColor systemGray5Color];
-    [self.downloadButton setTitleColor:[UIColor labelColor] forState:UIControlStateNormal];
-    self.downloadButton.layer.borderWidth = 0.5;
-    self.downloadButton.layer.borderColor = [UIColor systemGray3Color].CGColor;
-    self.downloadButton.layer.shadowColor = [UIColor blackColor].CGColor;
-    self.downloadButton.layer.shadowOpacity = 0.07;
-    self.downloadButton.layer.shadowOffset = CGSizeMake(0,3);
-    self.downloadButton.layer.shadowRadius = 6;
-    [self.downloadButton addTarget:self action:@selector(synthesizeAndDownload:) forControlEvents:UIControlEventTouchUpInside];
-    [self.container addSubview:self.downloadButton];
+    // Voice picker button — never shows a raw voice ID, only the resolved name.
+    self.voiceButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    self.voiceButton.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeft;
+    self.voiceButton.titleLabel.font = [UIFont systemFontOfSize:16 weight:UIFontWeightMedium];
+    self.voiceButton.backgroundColor = [UIColor systemBackgroundColor];
+    self.voiceButton.layer.cornerRadius = 12;
+    self.voiceButton.layer.borderWidth = 1.0;
+    self.voiceButton.layer.borderColor = [UIColor systemGray4Color].CGColor;
+    self.voiceButton.contentEdgeInsets = UIEdgeInsetsMake(0, 14, 0, 14);
+    [self updateVoiceButtonTitle];
+    [self.voiceButton addTarget:self action:@selector(voiceButtonTapped) forControlEvents:UIControlEventTouchUpInside];
+    [self.container addSubview:self.voiceButton];
 
     // Speed label + slider (ElevenLabs speed: 0.7 = slowest, 1.2 = fastest)
     self.speedLabel = [[UILabel alloc] initWithFrame:CGRectZero];
@@ -161,26 +177,39 @@ static NSString *timestampString(void) {
     self.speedSlider.minimumValueImage = [UIImage systemImageNamed:@"tortoise.fill"];
     self.speedSlider.maximumValueImage = [UIImage systemImageNamed:@"hare.fill"];
     [self.speedSlider addTarget:self
-                         action:@selector(speedSliderChanged:)
-               forControlEvents:UIControlEventValueChanged];
+                          action:@selector(speedSliderChanged:)
+                forControlEvents:UIControlEventValueChanged];
     [self.container addSubview:self.speedSlider];
+
+    // One big, obvious primary action — everything generated is archived automatically,
+    // so there's no separate Download button anymore; Play is the whole interaction.
+    self.playButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    UIButtonConfiguration *playConfig = [UIButtonConfiguration filledButtonConfiguration];
+    playConfig.title = @"Generate";
+    playConfig.image = [UIImage systemImageNamed:@"play.fill"];
+    playConfig.imagePadding = 8;
+    playConfig.baseBackgroundColor = [UIColor systemBlueColor];
+    playConfig.baseForegroundColor = [UIColor whiteColor];
+    playConfig.cornerStyle = UIButtonConfigurationCornerStyleLarge;
+    playConfig.titleTextAttributesTransformer =
+        ^NSDictionary<NSAttributedStringKey,id> * _Nonnull(NSDictionary<NSAttributedStringKey,id> * _Nonnull attrs) {
+        NSMutableDictionary *m = [attrs mutableCopy];
+        m[NSFontAttributeName] = [UIFont systemFontOfSize:19 weight:UIFontWeightSemibold];
+        return m;
+    };
+    self.playButton.configuration = playConfig;
+    self.playButton.layer.shadowColor = [UIColor systemBlueColor].CGColor;
+    self.playButton.layer.shadowOpacity = 0.3;
+    self.playButton.layer.shadowOffset = CGSizeMake(0, 6);
+    self.playButton.layer.shadowRadius = 12;
+    [self.playButton addTarget:self action:@selector(synthesizeAndPlay:) forControlEvents:UIControlEventTouchUpInside];
+    [self.container addSubview:self.playButton];
 
     // Spinner
     self.spinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
     self.spinner.hidesWhenStopped = YES;
     [self.container addSubview:self.spinner];
 
-    // Voices table
-    self.voicesTable = [[UITableView alloc] initWithFrame:CGRectZero style:UITableViewStylePlain];
-    self.voicesTable.delegate = self;
-    self.voicesTable.dataSource = self;
-    self.voicesTable.layer.cornerRadius = 10;
-    self.voicesTable.layer.borderWidth = 1.0;
-    self.voicesTable.layer.borderColor = [UIColor systemGray4Color].CGColor;
-    self.voicesTable.estimatedRowHeight = 56;
-    [self.view addSubview:self.voicesTable];
-
-    self.voices = @[];
     self.stopMeterTimer = nil;
 
     // Dismiss keyboard when tapping outside the text view
@@ -189,7 +218,7 @@ static NSString *timestampString(void) {
     dismissTap.cancelsTouchesInView = NO;
     [self.view addGestureRecognizer:dismissTap];
 
-    // Keyboard avoidance — shift the container up so buttons stay visible
+    // Keyboard avoidance — shift the container up so the Play button stays visible
     [[NSNotificationCenter defaultCenter] addObserver:self
         selector:@selector(keyboardWillShow:)
         name:UIKeyboardWillShowNotification object:nil];
@@ -198,6 +227,15 @@ static NSString *timestampString(void) {
         name:UIKeyboardWillHideNotification object:nil];
 
     EZLog(EZLogLevelInfo, @"TTS_UI", @"TextToSpeechViewController loaded");
+
+    [self applyPendingPrefillIfNeeded];
+}
+
+- (UILabel *)sectionHeaderLabel {
+    UILabel *label = [[UILabel alloc] init];
+    label.font = [UIFont systemFontOfSize:12 weight:UIFontWeightSemibold];
+    label.textColor = [UIColor secondaryLabelColor];
+    return label;
 }
 
 - (void)dealloc {
@@ -209,13 +247,7 @@ static NSString *timestampString(void) {
 
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
-    NSString *saved = [[NSUserDefaults standardUserDefaults] stringForKey:@"elevenVoiceID"];
-    if (saved.length > 0 && self.voiceField.text.length == 0) {
-        self.voiceField.text = saved;
-    }
-    if (self.voices.count == 0 && [EZAuthManager shared].isLoggedIn) {
-        [self fetchVoicesTapped:nil];
-    }
+    // Nothing to fetch here anymore — the voice picker fetches for itself when opened.
 }
 
 - (void)viewDidLayoutSubviews {
@@ -223,47 +255,43 @@ static NSString *timestampString(void) {
 
     CGFloat topInset = self.view.safeAreaInsets.top + 12;
     CGFloat side = 16;
-    CGFloat containerWidth = self.view.bounds.size.width - side*2;
-    CGFloat y = topInset;
+    CGFloat containerWidth = self.view.bounds.size.width - side * 2;
 
-    CGFloat containerHeight = 424;
-    self.container.frame = CGRectMake(side, y, containerWidth, containerHeight);
+    CGFloat innerX = 16;
+    CGFloat innerW = containerWidth - innerX * 2;
+    CGFloat curY = 16;
 
-    CGFloat innerX = 12;
-    CGFloat innerW = containerWidth - innerX*2;
-    CGFloat curY = 12;
+    self.promptSectionLabel.frame = CGRectMake(innerX, curY, innerW, 14);
+    curY += 14 + 6;
 
-    self.textView.frame = CGRectMake(innerX, curY, innerW, 140);
-    curY += 140 + 12;
+    self.textView.frame = CGRectMake(innerX, curY, innerW, 134);
+    curY += 134 + 4;
 
-    self.voiceField.frame = CGRectMake(innerX, curY, innerW, 36);
-    curY += 36 + 10;
+    self.charCountLabel.frame = CGRectMake(innerX, curY, innerW, 16);
+    curY += 16 + 16;
 
-    self.formatControl.frame = CGRectMake(innerX, curY, innerW, 34);
-    curY += 34 + 10;
+    self.voiceSectionLabel.frame = CGRectMake(innerX, curY, innerW, 14);
+    curY += 14 + 6;
 
-    self.fetchVoicesButton.frame = CGRectMake(innerX, curY, innerW, 44);
-    curY += 44 + 10;
+    self.voiceButton.frame = CGRectMake(innerX, curY, innerW, 48);
+    curY += 48 + 20;
 
-    // Speed label
     self.speedLabel.frame = CGRectMake(innerX, curY, innerW, 18);
     curY += 18 + 4;
 
-    // Speed slider
     self.speedSlider.frame = CGRectMake(innerX, curY, innerW, 28);
-    curY += 28 + 12;
+    curY += 28 + 24;
 
-    CGFloat btnW = (innerW - 10) / 2.0;
-    self.playButton.frame = CGRectMake(innerX, curY, btnW, 44);
-    self.downloadButton.frame = CGRectMake(innerX + btnW + 10, curY, btnW, 44);
-    curY += 44 + 12;
+    self.playButton.frame = CGRectMake(innerX, curY, innerW, 58);
+    curY += 58 + 16;
 
-    self.spinner.center = CGPointMake(self.container.frame.origin.x + containerWidth/2.0, self.container.frame.origin.y + containerHeight - 28);
+    // Container height derives from its actual content — no leftover empty space now
+    // that the format picker, download button, fetch-voices button, and voices table
+    // are all gone.
+    CGFloat containerHeight = curY;
+    self.container.frame = CGRectMake(side, topInset, containerWidth, containerHeight);
 
-    CGFloat tableY = CGRectGetMaxY(self.container.frame) + 12;
-    CGFloat tableH = self.view.bounds.size.height - tableY - self.view.safeAreaInsets.bottom - 12;
-    if (tableH < 120) tableH = 120;
-    self.voicesTable.frame = CGRectMake(side, tableY, containerWidth, tableH);
+    self.spinner.center = CGPointMake(containerWidth / 2.0, containerHeight - 30);
 }
 
 #pragma mark - Timer helpers (fix for your invalidate error)
@@ -285,6 +313,30 @@ static NSString *timestampString(void) {
     }
 }
 
+#pragma mark - Voice picker
+
+- (void)updateVoiceButtonTitle {
+    NSString *display = self.selectedVoiceName.length > 0 ? self.selectedVoiceName : @"Choose a voice…";
+    [self.voiceButton setTitle:[NSString stringWithFormat:@"🎙️  %@   ›", display] forState:UIControlStateNormal];
+}
+
+- (void)voiceButtonTapped {
+    EZVoicePickerViewController *picker = [[EZVoicePickerViewController alloc] init];
+    __weak typeof(self) weakSelf = self;
+    picker.onVoiceSelected = ^(NSString *voiceID, NSString * _Nullable voiceName) {
+        weakSelf.selectedVoiceID = voiceID;
+        weakSelf.selectedVoiceName = voiceName;
+        [weakSelf updateVoiceButtonTitle];
+        [[NSUserDefaults standardUserDefaults] setObject:voiceID forKey:kVoiceIDDefaultsKey];
+        if (voiceName.length > 0) {
+            [[NSUserDefaults standardUserDefaults] setObject:voiceName forKey:kVoiceNameDefaultsKey];
+        }
+        EZLogf(EZLogLevelInfo, @"TTS", @"Selected voice %@ (%@)", voiceName ?: @"", voiceID);
+    };
+    UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:picker];
+    [self presentViewController:nav animated:YES completion:nil];
+}
+
 #pragma mark - Buttons
 
 - (void)speedSliderChanged:(UISlider *)slider {
@@ -294,88 +346,27 @@ static NSString *timestampString(void) {
     self.speedLabel.text = [NSString stringWithFormat:@"Speed: %.2f×", snapped];
 }
 
-- (void)fetchVoicesTapped:(id)sender {
-    [self setLoading:YES];
+#pragma mark - Character limit
 
-    NSString *token = [EZAuthManager shared].accessToken;
-    if (token.length == 0) {
-        [self setLoading:NO];
-        [self showAlert:@"Not logged in" message:@"Please sign in to fetch voices."];
-        return;
+- (BOOL)textView:(UITextView *)textView shouldChangeTextInRange:(NSRange)range replacementText:(NSString *)text {
+    NSUInteger newLength = textView.text.length - range.length + text.length;
+    return newLength <= kPromptCharacterLimit;
+}
+
+- (void)textViewDidChange:(UITextView *)textView {
+    [self updateCharCountLabel];
+}
+
+- (void)updateCharCountLabel {
+    NSUInteger remaining = kPromptCharacterLimit - MIN(self.textView.text.length, kPromptCharacterLimit);
+    self.charCountLabel.text = [NSString stringWithFormat:@"%lu characters remaining", (unsigned long)remaining];
+    if (remaining <= 10) {
+        self.charCountLabel.textColor = [UIColor systemRedColor];
+    } else if (remaining <= 30) {
+        self.charCountLabel.textColor = [UIColor systemOrangeColor];
+    } else {
+        self.charCountLabel.textColor = [UIColor secondaryLabelColor];
     }
-
-    NSURL *url = [NSURL URLWithString:
-        @"https://spuoimtqofhbdzosrbng.supabase.co/functions/v1/ez-elevenlabs"];
-    NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:url];
-    req.HTTPMethod = @"POST";
-    [req setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
-    [req setValue:[NSString stringWithFormat:@"Bearer %@", token]
-       forHTTPHeaderField:@"Authorization"];
-    req.HTTPBody = [NSJSONSerialization dataWithJSONObject:@{@"action": @"fetch_voices"}
-                                                  options:0 error:nil];
-
-    EZLog(EZLogLevelInfo, @"TTS", @"Fetching voices via Edge Function");
-
-    [[[NSURLSession sharedSession] dataTaskWithRequest:req
-          completionHandler:^(NSData *data, NSURLResponse *resp, NSError *err) {
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [self setLoading:NO];
-            if (err) {
-                [self showAlert:@"Network error" message:err.localizedDescription];
-                return;
-            }
-            NSHTTPURLResponse *http = (NSHTTPURLResponse *)resp;
-            if (http.statusCode == 402) {
-                [self showAlert:@"Insufficient coins"
-                        message:@"You don't have enough coins for this action."];
-                return;
-            }
-            if (http.statusCode == 403) {
-                [self showAlert:@"Not authorized"
-                        message:@"Please sign in and try again."];
-                return;
-            }
-            if (http.statusCode != 200) {
-                NSString *msg = data.length
-                    ? [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding]
-                    : @"Server error";
-                [self showAlert:@"Error" message:msg];
-                return;
-            }
-
-            NSError *jerr;
-            id json = [NSJSONSerialization JSONObjectWithData:data options:0 error:&jerr];
-            if (jerr) {
-                [self showAlert:@"Parse error" message:jerr.localizedDescription];
-                return;
-            }
-
-            NSArray *voicesArray = nil;
-            if ([json isKindOfClass:[NSDictionary class]]) {
-                voicesArray = json[@"voices"];
-            } else if ([json isKindOfClass:[NSArray class]]) {
-                voicesArray = json;
-            }
-
-            if (!voicesArray) {
-                [self showAlert:@"Unexpected response"
-                        message:@"Voices response format was unexpected."];
-                return;
-            }
-
-            NSMutableArray *safe = [NSMutableArray array];
-            for (id item in voicesArray) {
-                if ([item isKindOfClass:[NSDictionary class]]) [safe addObject:item];
-            }
-            self.voices = [safe copy];
-            [self.voicesTable reloadData];
-            EZLogf(EZLogLevelInfo, @"TTS", @"Fetched %lu voices",
-                   (unsigned long)self.voices.count);
-            if (self.voices.count == 0) {
-                [self showAlert:@"No voices" message:@"No voices returned."];
-            }
-        });
-    }] resume];
 }
 
 #pragma mark - Synthesize actions
@@ -409,71 +400,9 @@ static NSString *timestampString(void) {
     }];
 }
 
-- (void)synthesizeAndDownload:(id)sender {
-    NSString *text = [self.textView.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] ?: @"";
-    if (text.length == 0) { [self showAlert:@"Missing text" message:@"Please enter text to synthesize."]; return; }
+#pragma mark - Core: TTS via Supabase Edge Function
 
-    BOOL userWantsWAV = (self.formatControl.selectedSegmentIndex == 0);
-    NSString *requestFormat = userWantsWAV ? @"wav_44100" : kFallbackMP3Format;
-
-    [self setLoading:YES];
-    [self performTTSWithText:text preferredFormat:requestFormat completion:^(NSURL *fileURL, NSString *mime, NSError *err) {
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [self setLoading:NO];
-            if (err) {
-                [self showAlert:@"TTS Error" message:err.localizedDescription ?: @"Failed to synthesize."];
-                return;
-            }
-            if (!fileURL) {
-                [self showAlert:@"TTS Error" message:@"No audio returned."];
-                return;
-            }
-
-            // If user requested M4A but server returned MP3, convert
-            if (!userWantsWAV && [[fileURL.pathExtension lowercaseString] isEqualToString:@"mp3"]) {
-                [self setLoading:YES];
-                [self convertToM4AFromURL:fileURL completion:^(NSURL *m4aURL, NSError *convErr) {
-                    dispatch_async(dispatch_get_main_queue(), ^{
-                        [self setLoading:NO];
-                        NSURL *shareURL = m4aURL ?: fileURL;
-                        UIActivityViewController *avc = [[UIActivityViewController alloc] initWithActivityItems:@[shareURL] applicationActivities:nil];
-                        avc.popoverPresentationController.sourceView = self.downloadButton;
-                        [self presentViewController:avc animated:YES completion:nil];
-                        if (convErr) {
-                            EZLogf(EZLogLevelWarning, @"TTS", @"M4A conversion failed: %@", convErr.localizedDescription);
-                        } else {
-                            EZLog(EZLogLevelInfo, @"TTS", @"Converted and offered M4A");
-                        }
-                    });
-                }];
-                return;
-            }
-
-            if (userWantsWAV && ![[fileURL.pathExtension lowercaseString] isEqualToString:@"wav"]) {
-                [self showAlert:@"Note" message:@"Uncompressed WAV requires Creator/Pro on ElevenLabs. Downloading highest-available MP3 instead."];
-            }
-
-            UIActivityViewController *avc = [[UIActivityViewController alloc] initWithActivityItems:@[fileURL] applicationActivities:nil];
-            avc.popoverPresentationController.sourceView = self.downloadButton;
-            [self presentViewController:avc animated:YES completion:nil];
-            EZLogf(EZLogLevelInfo, @"TTS", @"Presented download for %@", fileURL.lastPathComponent);
-        });
-    }];
-}
-
-#pragma mark - Core: TTS with retry/fallback
-/*
-- (NSString *)elevenLabsAPIKey {
-    NSString *key = [EZKeyVault loadKeyForIdentifier:EZVaultKeyElevenLabs];
-    if (!key) EZLog(EZLogLevelWarning, @"TTS", @"Missing ElevenLabs API key in EZKeyVault");
-    return key;
-}
-*/
 /// Perform TTS; preferredFormat examples: @"wav_44100", @"mp3_44100_192", @"mp3_44100_128", or nil
-// No longer needed — remove this method entirely
-// - (NSString *)elevenLabsAPIKey { ... }
-
-// ── Core: TTS via Supabase Edge Function ─────────────────────────────────────
 - (void)performTTSWithText:(NSString *)text
            preferredFormat:(NSString * _Nullable)preferredFormat
                 completion:(void(^)(NSURL *fileURL, NSString *mime, NSError *err))completion
@@ -485,8 +414,7 @@ static NSString *timestampString(void) {
         return;
     }
 
-    NSString *voiceID = (self.voiceField.text.length > 0)
-        ? self.voiceField.text : kDefaultVoiceID;
+    NSString *voiceID = self.selectedVoiceID.length > 0 ? self.selectedVoiceID : kDefaultVoiceID;
     NSString *fmt = preferredFormat.length > 0 ? preferredFormat : kFallbackMP3Format;
 
     // Snap speed to 2 decimal places matching slider steps
@@ -610,44 +538,103 @@ static NSString *timestampString(void) {
         }
 
         EZLogf(EZLogLevelInfo, @"TTS", @"Audio saved: %@", fname);
+
+        // Archive every successful generation to the permanent library, independent of
+        // whether the user goes on to actually listen. Fire-and-forget from this
+        // completion flow's point of view — playback below does not wait on it.
+        [self archiveGeneratedAudio:audioData extension:ext prompt:text voiceID:voiceID];
+
         completion(tmpURL, returnedMime, nil);
 
     }] resume];
 }
 
-#pragma mark - Conversion helpers
+#pragma mark - Prefill (called from History's Regenerate / Change Voice)
 
-- (void)convertToM4AFromURL:(NSURL *)srcURL completion:(void(^)(NSURL *m4aURL, NSError *err))completion {
-    if (!srcURL) {
-        completion(nil, [NSError errorWithDomain:@"TTS" code:-10 userInfo:@{NSLocalizedDescriptionKey: @"Source file missing."}]);
-        return;
+/// Populates the prompt and voice, e.g. when the user taps Regenerate on an archived
+/// clip. Does NOT auto-submit — this only gets them one tap away from generating,
+/// without duplicating any of the network/auth logic in
+/// -performTTSWithText:preferredFormat:completion: onto another screen. Pass the voice's
+/// display name too (callers already have it, from the manifest entry or the picker) so
+/// the button updates immediately instead of showing whatever voice was selected before —
+/// passing voiceID alone left the old name displayed next to the new, wrong id.
+- (void)prefillWithText:(nullable NSString *)text
+                 voiceID:(nullable NSString *)voiceID
+               voiceName:(nullable NSString *)voiceName
+{
+    self.pendingPrefillText = [text copy];
+    if (voiceID.length > 0) {
+        self.pendingPrefillVoiceID = [voiceID copy];
+        self.pendingPrefillVoiceName = [voiceName copy];
+        self.hasPendingVoicePrefill = YES;
     }
-    AVURLAsset *asset = [AVURLAsset URLAssetWithURL:srcURL options:nil];
-    if (![[AVAssetExportSession exportPresetsCompatibleWithAsset:asset] containsObject:AVAssetExportPresetAppleM4A]) {
-        NSError *e = [NSError errorWithDomain:@"TTS" code:-11 userInfo:@{NSLocalizedDescriptionKey: @"M4A export not supported on this device."}];
-        completion(nil, e);
-        return;
+    if (self.isViewLoaded) {
+        [self applyPendingPrefillIfNeeded];
     }
-    NSString *dstName = [[srcURL.lastPathComponent stringByDeletingPathExtension] stringByAppendingPathExtension:@"m4a"];
-    NSURL *dstURL = [NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:dstName]];
-    if ([[NSFileManager defaultManager] fileExistsAtPath:dstURL.path]) {
-        [[NSFileManager defaultManager] removeItemAtURL:dstURL error:nil];
+}
+
+- (void)applyPendingPrefillIfNeeded {
+    if (self.pendingPrefillText) {
+        NSString *text = self.pendingPrefillText;
+        if (text.length > kPromptCharacterLimit) {
+            text = [text substringToIndex:kPromptCharacterLimit];
+        }
+        self.textView.text = text;
+        [self updateCharCountLabel];
+        self.pendingPrefillText = nil;
     }
-    AVAssetExportSession *exp = [AVAssetExportSession exportSessionWithAsset:asset presetName:AVAssetExportPresetAppleM4A];
-    exp.outputURL = dstURL;
-    exp.outputFileType = AVFileTypeAppleM4A;
-    exp.shouldOptimizeForNetworkUse = YES;
-    [exp exportAsynchronouslyWithCompletionHandler:^{
-        dispatch_async(dispatch_get_main_queue(), ^{
-            if (exp.status == AVAssetExportSessionStatusCompleted) {
-                EZLogf(EZLogLevelInfo, @"TTS", @"M4A conversion done: %@", dstURL.lastPathComponent);
-                completion(dstURL, nil);
-            } else {
-                NSError *err = exp.error ?: [NSError errorWithDomain:@"TTS" code:-12 userInfo:@{NSLocalizedDescriptionKey: @"M4A conversion failed."}];
-                EZLogf(EZLogLevelError, @"TTS", @"M4A conversion error: %@", err.localizedDescription);
-                completion(nil, err);
-            }
-        });
+    if (self.hasPendingVoicePrefill) {
+        self.selectedVoiceID = self.pendingPrefillVoiceID;
+        self.selectedVoiceName = self.pendingPrefillVoiceName; // may be nil — that's correct, not stale
+        self.pendingPrefillVoiceID = nil;
+        self.pendingPrefillVoiceName = nil;
+        self.hasPendingVoicePrefill = NO;
+        [[NSUserDefaults standardUserDefaults] setObject:self.selectedVoiceID forKey:kVoiceIDDefaultsKey];
+        if (self.selectedVoiceName.length > 0) {
+            [[NSUserDefaults standardUserDefaults] setObject:self.selectedVoiceName forKey:kVoiceNameDefaultsKey];
+        } else {
+            [[NSUserDefaults standardUserDefaults] removeObjectForKey:kVoiceNameDefaultsKey];
+        }
+        [self updateVoiceButtonTitle];
+    }
+}
+
+#pragma mark - Library archiving / History
+
+- (void)historyButtonTapped {
+    EZTTSLibraryViewController *libraryVC = [[EZTTSLibraryViewController alloc] init];
+    if (self.navigationController) {
+        [self.navigationController pushViewController:libraryVC animated:YES];
+    } else {
+        // Not embedded in a navigation controller — fall back to a modal presentation
+        // wrapped in its own nav bar so the user still has a way back.
+        UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:libraryVC];
+        [self presentViewController:nav animated:YES completion:nil];
+    }
+}
+
+/// The one call this view controller makes into EZTTSLibraryManager. No manifest or
+/// file-management logic lives here — this just gathers what the manager needs and
+/// hands off. Safe to call from a background queue (performTTSWithText:'s completion
+/// handler runs off the URLSession delegate queue, not main).
+- (void)archiveGeneratedAudio:(NSData *)audioData
+                     extension:(NSString *)extension
+                        prompt:(NSString *)prompt
+                       voiceID:(NSString *)voiceID
+{
+    [[EZTTSLibraryManager sharedManager] saveAudioData:audioData
+                                                  prompt:prompt
+                                               voiceName:self.selectedVoiceName
+                                                 voiceID:voiceID
+                                                provider:@"elevenlabs"
+                                                   model:kDefaultModelID
+                                               extension:extension
+                                              completion:^(EZTTSManifestEntry *entry, NSError *error) {
+        if (error) {
+            EZLogf(EZLogLevelError, @"TTSLibrary", @"Archive failed: %@", error.localizedDescription);
+            return;
+        }
+        EZLogf(EZLogLevelInfo, @"TTSLibrary", @"Archived clip %@", entry.uuid);
     }];
 }
 
@@ -698,80 +685,6 @@ static NSString *timestampString(void) {
     return wav;
 }
 
-#pragma mark - Table view (voices)
-
-- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
-    return self.voices.count;
-}
-
-- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
-    static NSString *cellID = @"VoiceCell";
-    UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:cellID];
-    if (!cell) {
-        cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:cellID];
-        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
-    }
-    NSDictionary *voice = self.voices[indexPath.row];
-    NSString *name = voice[@"name"] ?: voice[@"voice_name"] ?: @"(unnamed)";
-    NSString *vid = voice[@"voice_id"] ?: voice[@"id"] ?: voice[@"voiceId"] ?: @"";
-    cell.textLabel.text = name;
-    NSString *subtitle = vid.length ? vid : @"";
-    BOOL isCustom = NO;
-    if (voice[@"is_custom"]) {
-        isCustom = [voice[@"is_custom"] boolValue];
-    } else if (voice[@"type"]) {
-        NSString *type = [NSString stringWithFormat:@"%@", voice[@"type"]];
-        isCustom = ([type.lowercaseString containsString:@"custom"] || [type.lowercaseString containsString:@"clone"]);
-    }
-    if (isCustom) {
-        subtitle = [subtitle stringByAppendingString:(subtitle.length ? @" • " : @"")];
-        subtitle = [subtitle stringByAppendingString:@"custom"];
-        cell.imageView.image = [self smallBadgeImageWithColor:[UIColor systemPurpleColor]];
-    } else {
-        cell.imageView.image = [self smallBadgeImageWithColor:[UIColor systemTealColor]];
-    }
-    cell.detailTextLabel.text = subtitle;
-    return cell;
-}
-
-- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
-     [tableView deselectRowAtIndexPath:indexPath animated:YES];
-     NSDictionary *voice = self.voices[indexPath.row];
-     NSString *vid = voice[@"voice_id"] ?: voice[@"id"] ?: voice[@"voiceId"] ?: @"";
-     if (vid.length == 0) {
-         [self showAlert:@"No voice id" message:@"Selected voice had no usable id."];
-         return;
-     }
-     self.voiceField.text = vid;
-     // Persist so the voice survives leaving and returning to this VC
-     [[NSUserDefaults standardUserDefaults] setObject:vid forKey:@"elevenVoiceID"];
-     EZLogf(EZLogLevelInfo, @"TTS", @"Selected voice %@ (%@)", voice[@"name"] ?: @"", vid);
-     [self showAlert:@"Voice selected" message:[NSString stringWithFormat:@"Using voice: %@", voice[@"name"] ?: vid]];
-}
-
-- (UIImage *)smallBadgeImageWithColor:(UIColor *)c {
-    CGSize s = CGSizeMake(28,28);
-    UIGraphicsBeginImageContextWithOptions(s, NO, 0);
-    CGContextRef ctx = UIGraphicsGetCurrentContext();
-    CGContextSetFillColorWithColor(ctx, c.CGColor);
-    UIBezierPath *path = [UIBezierPath bezierPathWithRoundedRect:CGRectMake(0,0,s.width,s.height) cornerRadius:6];
-    [path fill];
-    UIImage *img = UIGraphicsGetImageFromCurrentImageContext();
-    UIGraphicsEndImageContext();
-    return img;
-}
-
-#pragma mark - UITextFieldDelegate
-
-- (BOOL)textFieldShouldReturn:(UITextField *)textField {
-    [textField resignFirstResponder];
-    // Persist any manually typed voice ID on return
-    if (textField == self.voiceField && textField.text.length > 0) {
-        [[NSUserDefaults standardUserDefaults] setObject:textField.text forKey:@"elevenVoiceID"];
-    }
-    return YES;
-}
-
 #pragma mark - Keyboard handling
 
 - (void)dismissKeyboard {
@@ -783,7 +696,7 @@ static NSString *timestampString(void) {
     CGFloat kbH = kbFrame.size.height;
     NSTimeInterval duration = [notification.userInfo[UIKeyboardAnimationDurationUserInfoKey] doubleValue];
     [UIView animateWithDuration:duration animations:^{
-        // Slide container up just enough that the buttons clear the keyboard
+        // Slide container up just enough that the Play button clears the keyboard
         CGFloat visibleH = self.view.bounds.size.height - kbH;
         CGFloat containerBottom = self.container.frame.origin.y + self.container.frame.size.height;
         if (containerBottom > visibleH - 12) {
@@ -792,8 +705,6 @@ static NSString *timestampString(void) {
             f.origin.y -= shift;
             if (f.origin.y < self.view.safeAreaInsets.top + 4) f.origin.y = self.view.safeAreaInsets.top + 4;
             self.container.frame = f;
-            // Hide voices table while keyboard is up — it would be obscured anyway
-            self.voicesTable.alpha = 0;
         }
     }];
 }
@@ -804,7 +715,6 @@ static NSString *timestampString(void) {
         // Let viewDidLayoutSubviews restore the original position
         [self.view setNeedsLayout];
         [self.view layoutIfNeeded];
-        self.voicesTable.alpha = 1;
     }];
 }
 

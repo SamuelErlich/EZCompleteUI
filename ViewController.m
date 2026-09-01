@@ -1,5 +1,67 @@
 // ViewController.m
-// EZCompleteUI v7.5
+// EZCompleteUI v7.9
+//
+// Changes from v7.8:
+//   - Added long-press-to-copy on chat bubbles (both user prompts and AI
+//     completions). Implemented as a UIContextMenuInteraction attached to
+//     each EZBubbleCell's contentView in cellForRowAtIndexPath, rather than
+//     inside EZBubbleCell itself — didn't have that file in context, and
+//     this approach doesn't need it: the interaction resolves which
+//     message it belongs to at invocation time via indexPathForCell:, so
+//     it stays correct across cell reuse without touching the cell class.
+//     "Copy" puts the message's raw text on the pasteboard and confirms
+//     with the same "[System: ...]" convention used for every other
+//     transient confirmation in this file (verified appendToChat tags
+//     these role:"system", which the API payload builder already excludes
+//     — same as the existing "[System: Image saved...]" etc. messages).
+//     Added UIContextMenuInteractionDelegate to the class extension's
+//     protocol list at the top of this file.
+//
+// Changes from v7.7:
+//   - speakWithElevenLabsEdge: root-caused the recurring "TTS network error"
+//     reports. The edge function's base64 encoding was crashing on any
+//     non-trivial audio length (fixed server-side in ez-elevenlabs v6.6 —
+//     see that file's changelog); the client made it worse by leaving
+//     req.timeoutInterval on the 60s default, too short once the server
+//     legitimately needs up to two 90s attempts on a format fallback.
+//     Timeout raised to 220s. Also added a client-side 10,000-char cap
+//     (matches ez-elevenlabs MAX_TTS_CHARS / the eleven_multilingual_v2
+//     model's real limit) so an oversized response fails immediately with
+//     a clear message instead of attempting a doomed round trip.
+//   - Generic non-200 handler now shows the server's "reason" field when
+//     present instead of a bare status code — ez-elevenlabs' new error
+//     paths (text_too_long, tts_timeout, tts_fetch_failed) all include one.
+//
+// Changes from v7.6:
+//   - self.models: added gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna (new
+//     flagship/standard/mini tier, replaces gpt-5.5 as OpenAI's top model)
+//     and gpt-image-2 (supersedes gpt-image-1.5). isGptImage1Family and
+//     modelSupportsVision already prefix-match "gpt-image-"/"gpt-5" so both
+//     picked up the new models automatically — no changes needed there.
+//   - Fixed duplicate vision-capability whitelist: the image-attach handler
+//     in handleAttachImage kept its own hardcoded NSSet of vision-capable
+//     models instead of calling modelSupportsVision:, so it never learned
+//     about gpt-4.1.x, o3.x, o4.x, or now gpt-5.6.x — attaching an image
+//     while one of those was selected would silently downgrade to gpt-4o.
+//     Now calls [self modelSupportsVision:] directly; one source of truth.
+//   - Fixed coin-tier bucketing for gpt-5.6: the featureTier classifier
+//     assumed every cheap gpt-5.x variant ends in "-mini" or "-nano"
+//     (true for 5, 5.4), but gpt-5.6's tiers are named sol/terra/luna with
+//     no shared suffix. Added an explicit cheap-tier name check so
+//     gpt-5.6-luna logs as chat_mini instead of chat_premium. Logging only —
+//     real billing is computed server-side in ez-chat off the exact model
+//     string, this just keeps ez_usage_log's feature column meaningful.
+//
+// Changes from v7.5:
+//   - Added insurancePolicyButton to the top button row, wired to
+//     openInsurancePolicy, presenting EZInsuranceLandingViewController the
+//     same way openSupport/openTTS/openCloning present their view
+//     controllers. Added to the existing fixed-width topStack for now —
+//     that stack isn't actually inside the SidewaysScrollView the class
+//     declares a property for (see the unused sidewaysScrollView property
+//     below); it's a plain UIStackView pinned to the view's edges. Worth
+//     revisiting once SidewaysScrollView.h is available, since the row is
+//     now at 14 icons in a fixed width.
 //
 // Changes from v7.4:
 //   - sanitizedContextForAPI: Responses API image blocks now use
@@ -135,6 +197,7 @@
 #import "MemoriesViewController.h"
 #import "SupportRequestViewController.h"
 #import "BrainRotViewController.h"
+#import "EZInsuranceLandingViewController.h"
 #import "EZBubbleCell.h"
 #import "EZSystemCell.h"
 #import "EZCodeBlockCell.h"
@@ -161,6 +224,7 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
                                PHPickerViewControllerDelegate,
                                SFSpeechRecognizerDelegate,
                                UIGestureRecognizerDelegate,
+                               UIContextMenuInteractionDelegate,
                                ChatHistoryViewControllerDelegate>
 
 
@@ -193,6 +257,7 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
 @property (nonatomic, strong) UIButton      *cloningButton;
 @property (nonatomic, strong) UIButton      *galleryButton;
 @property (nonatomic, strong) UIButton      *brainRotButton;
+@property (nonatomic, strong) UIButton      *insurancePolicyButton;
 //@property (nonatomic, strong) UIButton      *textToSpeechButton;
 
 @property (nonatomic, strong) NSLayoutConstraint *containerBottomConstraint;
@@ -341,20 +406,28 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
 }
 
 - (void)setupData {
-    // Model list — internal identifiers. Display labels added in showModelPicker.
-    //added several gpt 5 models that are new, need to check any other references to gpt 5 includes them
+    // Model list — internal identifiers, must match real OpenAI API model
+    // strings exactly (not ChatGPT subscription tier names — see the isGPT5
+    // comment in callChatCompletions for why that distinction matters).
+    // Display labels are added downstream in EZModelPickerViewController,
+    // which takes this array as-is.
     self.models = @[
            // ── Chat / Reasoning ──────────────────────────────────────────────
+           @"gpt-5.6-sol", @"gpt-5.6-terra", @"gpt-5.6-luna", // current flagship family
            @"gpt-5-pro", @"gpt-5", @"gpt-5-mini",
            @"gpt-4o", @"gpt-4o-mini", @"gpt-4-turbo", @"gpt-4",
            @"gpt-3.5-turbo",
            // ── Image Generation & Edit ───────────────────────────────────────
-           @"gpt-image-1.5",        // newest image model
+           @"gpt-image-2",          // newest image model
+           @"gpt-image-1.5",
            @"gpt-image-1",          // generation + edit
            @"gpt-image-1-mini",     // faster/cheaper image generation
            @"chatgpt-image-latest", // always points to current ChatGPT image model
            @"dall-e-3",             // generation only (legacy)
         // ── Video ─────────────────────────────────────────────────────────
+        // NOTE: OpenAI has the Sora API itself scheduled for shutdown
+        // 2026-09-24. Both entries below need a removal/fallback plan before
+        // then — see the standalone Sora conversation we agreed to have.
         @"sora-2", @"sora-2-pro",
         // ── Audio ─────────────────────────────────────────────────────────
         @"whisper-1"
@@ -755,9 +828,9 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
     self.brainRotButton = [self _iconButton:@"brain.head.profile" tint:nil action:@selector(openBrainRot)];
 
     self.textToSpeechButton = [self _iconButton:@"play.circle.fill" tint:nil action:@selector(openTTS)];
-    
-    
-    
+
+    self.insurancePolicyButton = [self _iconButton:@"lock.shield.fill" tint:nil action:@selector(openInsurancePolicy)];
+
     
     self.memoriesButton   = [self _iconButton:@"memory" tint:nil
                                       action:@selector(openMemories)];
@@ -789,7 +862,7 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
         self.addChatButton, self.historyButton, self.clipboardButton,
         self.speakButton, self.webSearchButton, self.coinPotView,
         self.renameButton, self.clearButton, self.memoriesButton, self.cloningButton, self.supportRequestButton,
-        self.textToSpeechButton, self.galleryButton
+        self.textToSpeechButton, self.galleryButton, self.insurancePolicyButton
     ]];
     topStack.distribution = UIStackViewDistributionEqualSpacing;
     topStack.alignment    = UIStackViewAlignmentCenter;
@@ -1598,12 +1671,11 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
             @"[System: Image %@ attached — switched to image edit mode. "
             @"Type a prompt describing your edits.]", saveName]];
     } else {
-        // Vision analysis mode — ensure model supports vision
-        NSSet *visionModels = [NSSet setWithObjects:
-            @"gpt-4o", @"gpt-4o-mini", @"gpt-4-turbo", @"gpt-4",
-            @"gpt-5", @"gpt-5-mini", @"gpt-5-pro", nil];
-
-        if (![visionModels containsObject:self.selectedModel]) {
+        // Vision analysis mode — ensure model supports vision.
+        // Delegates to modelSupportsVision: (single source of truth) rather
+        // than keeping a second hardcoded list here that drifts out of sync
+        // every time a new model family ships.
+        if (![self modelSupportsVision:self.selectedModel]) {
             NSString *prev     = self.selectedModel;
             self.selectedModel = @"gpt-4o";
             [self.modelButton setTitle:@"Model: gpt-4o" forState:UIControlStateNormal];
@@ -1879,10 +1951,32 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     EZLogf(EZLogLevelInfo, @"TTS", @"ElevenLabs edge TTS voiceID=%@ chars=%ld",
            voiceID, (long)charCount);
 
+    // eleven_multilingual_v2 (the model ez-elevenlabs uses) hard-caps requests
+    // at 10,000 characters — matches MAX_TTS_CHARS server-side. Fail fast
+    // here instead of spending a round trip (and a coin deduct/refund cycle)
+    // on a request the server will reject anyway.
+    static const NSInteger kMaxTTSChars = 10000;
+    if (charCount > kMaxTTSChars) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self appendToChat:[NSString stringWithFormat:
+                @"[TTS: Response is %ld characters, ElevenLabs' limit is %ld — using Apple TTS instead]",
+                (long)charCount, (long)kMaxTTSChars]];
+            [self speakWithApple:text];
+        });
+        return;
+    }
+
     NSURL *edgeURL = [NSURL URLWithString:
         @"https://spuoimtqofhbdzosrbng.supabase.co/functions/v1/ez-elevenlabs"];
     NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:edgeURL];
     req.HTTPMethod = @"POST";
+    // Was left on the NSURLSession default (60s). ElevenLabs generation time
+    // scales with text length and the edge function itself now has a 90s
+    // budget per attempt (up to two attempts on a format fallback — see
+    // ez-elevenlabs EL_REQUEST_TIMEOUT_MS) — 60s meant longer responses could
+    // time out client-side before the server had a real chance to fail
+    // cleanly and refund. 220s covers two 90s server attempts plus margin.
+    req.timeoutInterval = 220;
     [req setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
     [req setValue:[NSString stringWithFormat:@"Bearer %@", jwt]
        forHTTPHeaderField:@"Authorization"];
@@ -1946,11 +2040,19 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
         // ── Any other non-200 ─────────────────────────────────────────────────
         if (http.statusCode != 200) {
             NSString *errorDetail = json[@"error"] ?: @"Unknown error";
+            // ez-elevenlabs sends a human-readable "reason" alongside the
+            // error code for the cases users are most likely to hit
+            // (text_too_long, tts_timeout, tts_fetch_failed) — show it when
+            // present instead of a bare status code that means nothing to
+            // someone who isn't looking at server logs.
+            NSString *reason = json[@"reason"];
             EZLogf(EZLogLevelError, @"TTS", @"Edge function HTTP %ld: %@",
                    (long)http.statusCode, errorDetail);
             dispatch_async(dispatch_get_main_queue(), ^{
-                [self appendToChat:[NSString stringWithFormat:
-                    @"[TTS Error %ld — using Apple TTS]", (long)http.statusCode]];
+                NSString *displayMessage = reason.length
+                    ? [NSString stringWithFormat:@"[TTS: %@ — using Apple TTS]", reason]
+                    : [NSString stringWithFormat:@"[TTS Error %ld — using Apple TTS]", (long)http.statusCode];
+                [self appendToChat:displayMessage];
                 [self speakWithApple:text];
             });
             return;
@@ -2471,7 +2573,8 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     // "gpt-5-pro" is a ChatGPT subscription tier name, not an API model string —
     // sending it to the API returns a model-not-found error. Remove it from
     // any model picker. Real API strings: gpt-5, gpt-5-mini, gpt-5.4, gpt-5.4-mini,
-    // gpt-5.4-nano, gpt-5.5. All are correctly matched by hasPrefix:@"gpt-5".
+    // gpt-5.4-nano, gpt-5.5, gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna. All are
+    // correctly matched by hasPrefix:@"gpt-5".
     BOOL isGPT5 = [self.selectedModel hasPrefix:@"gpt-5"];
     // Web search works on gpt-5.x (via Responses API), gpt-4.1.x, and listed gpt-4o models.
     // Prefix checks cover all sub-variants without needing to enumerate each.
@@ -2528,8 +2631,19 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     if ([self.selectedModel hasPrefix:@"o1"] || [self.selectedModel hasPrefix:@"o3"]) {
         featureTier = @"chat_premium"; // reasoning models
     } else if (isGPT5) {
-        // gpt-5, gpt-5.4, gpt-5.5 = premium; mini/nano variants = mini
-        if ([self.selectedModel hasSuffix:@"-mini"] || [self.selectedModel hasSuffix:@"-nano"]) {
+        // gpt-5, gpt-5.4, gpt-5.5 = premium; mini/nano variants = mini.
+        // gpt-5.6 broke the suffix convention (sol/terra/luna instead of
+        // base/-mini/-nano), so it needs an explicit name check rather than
+        // hasSuffix — a future gpt-5.7 etc. renamed the same way will need
+        // its own line here too.
+        static NSSet<NSString *> *cheapGPT56Tiers;
+        static dispatch_once_t onceToken;
+        dispatch_once(&onceToken, ^{
+            cheapGPT56Tiers = [NSSet setWithObjects:@"gpt-5.6-luna", nil];
+        });
+        if ([self.selectedModel hasSuffix:@"-mini"] ||
+            [self.selectedModel hasSuffix:@"-nano"] ||
+            [cheapGPT56Tiers containsObject:self.selectedModel]) {
             featureTier = @"chat_mini";
         } else {
             featureTier = @"chat_premium";
@@ -2580,9 +2694,10 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     NSURL *ezURL = [NSURL URLWithString:@"https://spuoimtqofhbdzosrbng.supabase.co/functions/v1/ez-chat"];
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:ezURL];
     request.HTTPMethod = @"POST";
-    if (isGPT5 && useWebSearch)  request.timeoutInterval = 240;
-    else if (isGPT5)             request.timeoutInterval = 180;
-    else                         request.timeoutInterval = 90;
+    BOOL isHeavyReasoningModel = [self.selectedModel isEqualToString:@"gpt-5.6-sol"];
+    if ((isGPT5 && useWebSearch) || isHeavyReasoningModel) request.timeoutInterval = 240;
+    else if (isGPT5)                                        request.timeoutInterval = 180;
+    else                                                     request.timeoutInterval = 90;
     [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
     [request setValue:[NSString stringWithFormat:@"Bearer %@", token] forHTTPHeaderField:@"Authorization"];
     request.HTTPBody = [NSJSONSerialization dataWithJSONObject:ezBody options:0 error:nil];
@@ -4218,6 +4333,7 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
                       timestamp:msg[@"timestamp"]
                         chatKey:msg[@"chatKey"]
                        threadID:msg[@"threadID"]];
+        [self ez_attachCopyInteractionToCellIfNeeded:cell];
         return cell;
     } else {
         EZSystemCell *cell = [tableView dequeueReusableCellWithIdentifier:@"EZSystem"
@@ -4227,7 +4343,58 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     }
 }
 
-// ── Present deferred Sora video once the view is on screen ──────────────────
+// ── Long-press-to-copy for chat bubbles (user prompts + AI completions) ─────
+// Attached once per EZBubbleCell instance from cellForRowAtIndexPath, guarded
+// below against re-attaching on every reuse/scroll. A single interaction
+// instance stays correct across cell reuse because it resolves *which*
+// message it belongs to at invocation time — by walking from the
+// interaction's view up to its enclosing UITableViewCell and asking the
+// table view for that cell's current indexPath — rather than capturing the
+// message text once at attach time. This means it works without needing
+// anything from EZBubbleCell's own header/implementation.
+- (void)ez_attachCopyInteractionToCellIfNeeded:(UITableViewCell *)cell {
+    for (id<UIInteraction> existing in cell.contentView.interactions) {
+        if ([existing isKindOfClass:[UIContextMenuInteraction class]]) return;
+    }
+    UIContextMenuInteraction *interaction =
+        [[UIContextMenuInteraction alloc] initWithDelegate:self];
+    [cell.contentView addInteraction:interaction];
+}
+
+- (UIContextMenuConfiguration *)contextMenuInteraction:(UIContextMenuInteraction *)interaction
+                         configurationForMenuAtLocation:(CGPoint)location {
+    // interaction.view is the contentView we attached to in
+    // ez_attachCopyInteractionToCellIfNeeded:. Its direct superview is the
+    // owning UITableViewCell for a standard cell layout; walk up defensively
+    // in case EZBubbleCell nests an extra container between them.
+    UIView *walker = interaction.view;
+    while (walker && ![walker isKindOfClass:[UITableViewCell class]]) {
+        walker = walker.superview;
+    }
+    UITableViewCell *cell = (UITableViewCell *)walker;
+    if (!cell) return nil;
+
+    NSIndexPath *indexPath = [self.chatTableView indexPathForCell:cell];
+    if (!indexPath || (NSUInteger)indexPath.row >= self.displayMessages.count) return nil;
+
+    NSString *textToCopy = self.displayMessages[(NSUInteger)indexPath.row][@"text"];
+    if (textToCopy.length == 0) return nil;
+
+    return [UIContextMenuConfiguration configurationWithIdentifier:nil
+                                                     previewProvider:nil
+                                                      actionProvider:^UIMenu *(NSArray<UIMenuElement *> *suggested) {
+        UIAction *copyAction = [UIAction actionWithTitle:@"Copy"
+                                                    image:[UIImage systemImageNamed:@"doc.on.doc"]
+                                               identifier:nil
+                                                  handler:^(__kindof UIAction *action) {
+            [UIPasteboard generalPasteboard].string = textToCopy;
+            [self appendToChat:@"[System: Copied ✓]"];
+        }];
+        return [UIMenu menuWithTitle:@"" children:@[copyAction]];
+    }];
+}
+
+
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
     [self updateCoinBalanceDisplay];
@@ -4325,7 +4492,7 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     UINavigationController *nav = [[UINavigationController alloc]
         initWithRootViewController:brainRot];
     nav.modalPresentationStyle = UIModalPresentationPageSheet;
-    [self presentViewController:nav animated:YES completion:nil];
+    [self presentViewController:nav animated:NO completion:nil];
 }
 
 - (void)presentCoinStoreForFeature:(NSString * _Nullable)featureName {
@@ -4374,6 +4541,12 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
 - (void)openSupport {
     UINavigationController *nav = [[UINavigationController alloc]
         initWithRootViewController:[[SupportRequestViewController alloc] init]];
+    [self presentViewController:nav animated:YES completion:nil];
+}
+
+- (void)openInsurancePolicy {
+    UINavigationController *nav = [[UINavigationController alloc]
+        initWithRootViewController:[[EZInsuranceLandingViewController alloc] init]];
     [self presentViewController:nav animated:YES completion:nil];
 }
 

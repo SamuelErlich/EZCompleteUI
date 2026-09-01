@@ -1,8 +1,56 @@
 // BrainRotViewController.m
 // BrainRotGame
-// EZCompleteUI v2.7
+// EZCompleteUI v3.2
 //
 // Purpose:
+//   Main game view controller for BrainRot — a top-down AI-generated maze
+//   game. Owns the complete game lifecycle: new-run asset generation via the
+//   br-ai edge function, saved-game loading from BRGameLibrary, player
+//   movement and combat, item collection, HUD rendering, level-end card,
+//   high-score submission, and the scrolling marquee banner. Audio is managed
+//   here too: looping background music and reactive sound effects for all
+//   meaningful player actions. Navigation into and out of this screen is
+//   coordinated via block callbacks rather than tight coupling to child VCs.
+//
+// Changes from v3.1:
+//   - Removed dispatch_async from the initial picker presentation in
+//     viewDidAppear:. The async dispatch was added to guarantee the view is
+//     in the window before presentViewController: runs, but viewDidAppear:
+//     already provides that guarantee. The one-frame defer just left
+//     BrainRotVC's view visible for an extra run-loop tick before the picker
+//     appeared — now presentViewController is called synchronously.
+//   - showGamePicker now presents the picker with animated:NO. The main VC
+//     already presents BrainRotViewController with animated:NO, so there is
+//     no visual transition to BrainRotVC itself. The picker appearing with
+//     animated:YES on top of an already-animated BrainRotVC was the "two
+//     animations" the player noticed as a delay. Net result: tap "BrainRot"
+//     in the main app → picker appears instantly with no intermediate state.
+//   - See BRGamePickerViewController v2.8 for the matching dismiss fix
+//     (collapsing both BrainRotVC + picker into one dismiss animation).
+//
+// Changes from v3.0:
+//   - bannerContainerView added to setGameChromeHidden:. The banner was
+//     briefly visible (empty, colored border, no content) during the
+//     BrainRotVC → picker transition. Hidden until a game actually starts.
+//
+// Changes from v2.7:
+//   - FIXED: when BrainRotViewController first appeared, the player briefly
+//     saw the empty game grid, d-pad, and HUD (no game loaded) before the
+//     Game Picker slid in on top. On dismiss (X button, no game selected),
+//     this same empty chrome was visible again while BrainRotViewController
+//     was dismissing. Fixed via a new setGameChromeHidden: method that hides
+//     all game-playing UI (gameView, playerImageView, HUD, d-pad, action/
+//     restart/pause buttons) at the end of viewDidLoad and shows them only
+//     at the start of startNewRun and loadGameRecord:. The scores banner is
+//     unaffected — it stays visible at all times.
+//   - HUD split into two rows. Row 1: HP hearts (left) and pause/restart
+//     controls (right). Row 2: full-width level/score/items label. The
+//     previous single-row layout squeezed all three into the space left after
+//     the hearts, causing truncation on smaller screens.
+//   - hudLabel format string widened: "Level %ld   Score: %ld   Items: %lu".
+//   - Banner raised: effective top offset clamped to MAX(6, safeAreaInsets.top
+//     - 24) to reclaim up to 24 pt of dead black space on Dynamic Island
+//     devices. Banner height increased from 28 pt to 30 pt with the saved room.
 //   Main game view controller for BrainRot — a top-down AI-generated maze game.
 //   Owns the full game lifecycle: new-run asset generation, saved-game loading,
 //   player movement and combat, HUD, level-end card, high-score submission, and
@@ -94,6 +142,7 @@
 #import "EZEntitlementManager.h"
 #import <AVFoundation/AVFoundation.h>
 #import <objc/runtime.h>
+#import <QuartzCore/QuartzCore.h>
 
 #pragma mark - UITextField (MaxLength) category
 
@@ -152,9 +201,15 @@ static const void *kBRObserverAddedKey = &kBRObserverAddedKey;
 @property (nonatomic, strong) UILabel       *bannerLabel;
 @property (nonatomic, strong) CADisplayLink *bannerDisplayLink;
 @property (nonatomic, assign) CGFloat        bannerScrollOffset;
+@property (nonatomic, strong) CADisplayLink *heartPulseDisplayLink;
 
 // ── Compact single-line HUD ───────────────────────────────────────────────────
 @property (nonatomic, strong) UILabel   *hudLabel;
+@property (nonatomic, strong) UIView    *hudHeartContainer;
+@property (nonatomic, strong) NSArray<UIImageView *> *hudHeartImageViews;
+@property (nonatomic, strong) UIImage   *hudHeartFilledSymbol;
+@property (nonatomic, strong) UIImage   *hudHeartEmptySymbol;
+@property (nonatomic, assign) NSInteger lastDisplayedPlayerHP;
 @property (nonatomic, strong) UIButton  *pauseBtn;
 @property (nonatomic, assign) BOOL       isPaused;
 
@@ -245,6 +300,8 @@ static const void *kBRObserverAddedKey = &kBRObserverAddedKey;
 static NSString *const kBRBrainRotAIURL = @"https://spuoimtqofhbdzosrbng.supabase.co/functions/v1/br-ai";
 NSString *const kBRHighScoreURL  = @"https://spuoimtqofhbdzosrbng.supabase.co/functions/v1/br-highscores";
 
+static const NSInteger kBRMaxHeartDisplay = 3;
+
 // File-scope keys for associated objects attached to the end-card submit button.
 // Must be file-scope so checkHighScoreQualificationForScore: (setter) and
 // submitScoreFromEndCard: (getter) resolve to the same pointer address.
@@ -284,8 +341,38 @@ static const void *kBREndCardNavigateAfterSubmitKey    = &kBREndCardNavigateAfte
     self.hudLabel.font          = [UIFont monospacedSystemFontOfSize:13 weight:UIFontWeightBold];
     self.hudLabel.textColor     = [UIColor whiteColor];
     self.hudLabel.textAlignment = NSTextAlignmentCenter;
-    self.hudLabel.text          = @"♥♥♥   Score: 0   Items: 0";
+    self.hudLabel.text          = @"L1   Score: 0   Items: 0";
     [self.view addSubview:self.hudLabel];
+
+    UIImageSymbolConfiguration *heartConfig =
+        [UIImageSymbolConfiguration configurationWithPointSize:20 weight:UIFontWeightSemibold];
+    self.hudHeartFilledSymbol = [[UIImage systemImageNamed:@"heart.fill"
+                                                withConfiguration:heartConfig]
+                                 imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+    self.hudHeartEmptySymbol = [[UIImage systemImageNamed:@"heart"
+                                               withConfiguration:heartConfig]
+                                imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+
+    self.hudHeartContainer = [[UIView alloc] init];
+    self.hudHeartContainer.backgroundColor = [UIColor clearColor];
+    self.hudHeartContainer.userInteractionEnabled = NO;
+    [self.view addSubview:self.hudHeartContainer];
+
+    NSMutableArray<UIImageView *> *heartViews = [NSMutableArray arrayWithCapacity:kBRMaxHeartDisplay];
+    for (NSInteger i = 0; i < kBRMaxHeartDisplay; i++) {
+        UIImageView *heartView = [[UIImageView alloc] initWithImage:self.hudHeartEmptySymbol];
+        heartView.contentMode = UIViewContentModeScaleAspectFit;
+        heartView.tintColor = [UIColor colorWithWhite:0.45 alpha:1.0];
+        heartView.layer.shadowColor = [UIColor systemRedColor].CGColor;
+        heartView.layer.shadowOpacity = 0.25;
+        heartView.layer.shadowOffset = CGSizeZero;
+        heartView.layer.shadowRadius = 3;
+        [self.hudHeartContainer addSubview:heartView];
+        [heartViews addObject:heartView];
+    }
+    self.hudHeartImageViews = [heartViews copy];
+    self.lastDisplayedPlayerHP = -1;
+    [self startHUDHeartLoopAnimation];
 
     // Background image is rendered inside BRGameView (v1.5), so no separate
     // UIImageView is needed. gameView.backgroundImage drives everything.
@@ -371,6 +458,14 @@ static const void *kBREndCardNavigateAfterSubmitKey    = &kBREndCardNavigateAfte
     // nothing was being created — see viewDidAppear: for the real fix.)
     self.loadingOverlayView.hidden = YES;
     self.loadingOverlayView.alpha  = 0;
+
+    // Hide the game-playing UI until an actual game is selected. Without
+    // this, the player briefly sees an empty maze grid, d-pad, and "Score: 0"
+    // HUD every time BrainRotViewController appears — on first open before
+    // the picker slides in, and on dismiss (X button, no selection) while
+    // this VC is still transitioning out. setGameChromeHidden:NO is called
+    // at the start of both loadGameRecord: and startNewRun.
+    [self setGameChromeHidden:YES];
 
     self.tickTimer = [NSTimer scheduledTimerWithTimeInterval:0.25
                                                       target:self
@@ -479,12 +574,22 @@ static const void *kBREndCardNavigateAfterSubmitKey    = &kBREndCardNavigateAfte
 - (void)layoutViews {
     CGFloat screenWidth  = CGRectGetWidth(self.view.bounds);
     CGFloat screenHeight = CGRectGetHeight(self.view.bounds);
-    CGFloat safeTop      = self.view.safeAreaInsets.top;
-    CGFloat safeBottom   = self.view.safeAreaInsets.bottom;
-    CGFloat sideMargin   = 10;
+
+    // Clamp the top offset so the banner sits closer to the actual screen edge.
+    // Dynamic Island phones have safeAreaInsets.top ≈ 59 pt, leaving large
+    // dead black space above the banner when consumed in full. Subtracting 24 pt
+    // reclaims that space while keeping ≥ 6 pt below the status bar so we never
+    // clip the clock or battery indicator. On flat-top devices the MAX clamp
+    // keeps a 6 pt minimum regardless.
+    CGFloat rawSafeTop  = self.view.safeAreaInsets.top;
+    CGFloat safeTop     = (rawSafeTop > 0) ? MAX(6.0, rawSafeTop - 24.0) : 6.0;
+    CGFloat safeBottom  = self.view.safeAreaInsets.bottom;
+    CGFloat sideMargin  = 10;
 
     // ── Banner ────────────────────────────────────────────────────────────────
-    CGFloat bannerHeight = 28;
+    // 30 pt — taller than the previous 28 pt, using space recovered by the
+    // safeTop reduction above.
+    CGFloat bannerHeight = 30;
     self.bannerContainerView.frame = CGRectMake(0, safeTop, screenWidth, bannerHeight);
     CGFloat bannerLabelCenterY = bannerHeight / 2.0;
     CGFloat bannerLabelH       = CGRectGetHeight(self.bannerLabel.frame);
@@ -493,23 +598,43 @@ static const void *kBREndCardNavigateAfterSubmitKey    = &kBREndCardNavigateAfte
                                         CGRectGetWidth(self.bannerLabel.frame),
                                         bannerLabelH);
 
-    // ── HUD row: stats label left, restart button right ─────────────────────
-    // Restart sits here (far from d-pad) to prevent accidental New Run taps.
-    CGFloat hudHeight  = 28;
-    CGFloat restartW   = 36;
-    CGFloat hudTop     = safeTop + bannerHeight + 4;
-    CGFloat pauseW = 36;
-    self.restartBtn.frame = CGRectMake(screenWidth - sideMargin - restartW,
-                                       hudTop, restartW, hudHeight);
-    self.pauseBtn.frame   = CGRectMake(screenWidth - sideMargin - restartW - pauseW - 6,
-                                       hudTop, pauseW, hudHeight);
-    self.hudLabel.frame   = CGRectMake(sideMargin, hudTop,
-                                       screenWidth - sideMargin * 2 - restartW - pauseW - 12, hudHeight);
+    // ── HUD row 1: HP hearts (left) + pause/restart controls (right) ─────────
+    // Controls on this row (far from d-pad) prevent accidental restart taps
+    // during play. Giving hearts their own row removes the horizontal crowding
+    // that caused the stats label to truncate on smaller screens.
+    CGFloat hudRowOneHeight = 26;
+    CGFloat hudControlWidth = 36;
+    CGFloat hudRowOneTop    = safeTop + bannerHeight + 2;
+
+    self.restartBtn.frame = CGRectMake(screenWidth - sideMargin - hudControlWidth,
+                                       hudRowOneTop, hudControlWidth, hudRowOneHeight);
+    self.pauseBtn.frame   = CGRectMake(screenWidth - sideMargin - hudControlWidth * 2 - 4,
+                                       hudRowOneTop, hudControlWidth, hudRowOneHeight);
+
+    CGFloat heartSize           = 22;
+    CGFloat heartSpacing        = 4;
+    CGFloat heartContainerWidth = kBRMaxHeartDisplay * heartSize
+                                  + (kBRMaxHeartDisplay - 1) * heartSpacing;
+    self.hudHeartContainer.frame = CGRectMake(sideMargin, hudRowOneTop,
+                                              heartContainerWidth, hudRowOneHeight);
+    for (NSInteger idx = 0; idx < (NSInteger)self.hudHeartImageViews.count; idx++) {
+        UIImageView *heartView = self.hudHeartImageViews[idx];
+        CGFloat xOffset = idx * (heartSize + heartSpacing);
+        heartView.frame = CGRectMake(xOffset, (hudRowOneHeight - heartSize) / 2.0,
+                                     heartSize, heartSize);
+    }
+
+    // ── HUD row 2: level / score / item count ─────────────────────────────────
+    // Full screen width — no truncation regardless of inventory count.
+    CGFloat hudRowTwoHeight = 20;
+    CGFloat hudRowTwoTop    = hudRowOneTop + hudRowOneHeight + 3;
+    self.hudLabel.frame = CGRectMake(sideMargin, hudRowTwoTop,
+                                     screenWidth - sideMargin * 2, hudRowTwoHeight);
 
     // ── Game grid — use all remaining space above button area ─────────────────
     // Button area: up-row(40) + gap(6) + left/down/right-row(40) + gap(8) + action-row(40) + safeBottom + pad(8)
     CGFloat buttonAreaHeight = 40 + 6 + 40 + 8 + 40 + safeBottom + 8;
-    CGFloat gridTop          = CGRectGetMaxY(self.hudLabel.frame) + 6;
+    CGFloat gridTop          = CGRectGetMaxY(self.hudLabel.frame) + 4;
     CGFloat gridAvailable    = screenHeight - gridTop - buttonAreaHeight;
     CGFloat gridSize         = MIN(screenWidth - sideMargin * 2, MAX(200, gridAvailable));
     CGFloat gridLeft         = (screenWidth - gridSize) / 2.0;
@@ -535,6 +660,32 @@ static const void *kBREndCardNavigateAfterSubmitKey    = &kBREndCardNavigateAfte
     CGFloat actionRowY = CGRectGetMaxY(self.downBtn.frame) + 8;
     self.actionBtn.frame = CGRectMake(sideMargin, actionRowY,
                                       screenWidth - sideMargin * 2, 40);
+}
+
+/// Hides or reveals every piece of game-playing UI as a unit. Called with
+/// YES at the end of viewDidLoad so the picker is the first thing the player
+/// sees — no empty maze grid, zero-score HUD, d-pad, or unfilled banner.
+/// Called with NO at the start of loadGameRecord: and startNewRun, the two
+/// entry points that actually load game content. The loading overlay is
+/// managed separately and is not affected by this method.
+- (void)setGameChromeHidden:(BOOL)hidden {
+    // Banner included here: the picker is full-screen so it covers
+    // bannerContainerView while it's open anyway, but the empty/loading
+    // banner with its colored border was briefly visible during the
+    // BrainRotViewController→picker transition before content loaded.
+    // Starting it hidden removes that flash entirely.
+    self.bannerContainerView.hidden = hidden;
+    self.gameView.hidden          = hidden;
+    self.playerImageView.hidden   = hidden;
+    self.hudLabel.hidden          = hidden;
+    self.hudHeartContainer.hidden = hidden;
+    self.pauseBtn.hidden          = hidden;
+    self.restartBtn.hidden        = hidden;
+    self.upBtn.hidden             = hidden;
+    self.downBtn.hidden           = hidden;
+    self.leftBtn.hidden           = hidden;
+    self.rightBtn.hidden          = hidden;
+    self.actionBtn.hidden         = hidden;
 }
 
 - (UIButton *)makeArrowButtonWithTitle:(NSString *)title selector:(SEL)selector {
@@ -618,15 +769,77 @@ static const void *kBREndCardNavigateAfterSubmitKey    = &kBREndCardNavigateAfte
 
 - (void)updateHUD {
     if (!self.model) return;
-    NSMutableString *hearts = [NSMutableString string];
-    // kBRMaxHeartDisplay matches the starting playerHP in BRGameModel.
-    // Replace with self.model.maxHP if that property is added to the model later.
-    static const NSInteger kBRMaxHeartDisplay = 3;
-    for (NSInteger heartIndex = 0; heartIndex < kBRMaxHeartDisplay; heartIndex++) {
-        [hearts appendString:(heartIndex < self.model.playerHP) ? @"♥" : @"♡"];
+    for (NSInteger heartIndex = 0; heartIndex < self.hudHeartImageViews.count; heartIndex++) {
+        UIImageView *heartView = self.hudHeartImageViews[heartIndex];
+        BOOL filled = heartIndex < self.model.playerHP;
+        heartView.image = filled ? self.hudHeartFilledSymbol : self.hudHeartEmptySymbol;
+        heartView.tintColor = filled ? [UIColor systemRedColor]
+                                     : [UIColor colorWithWhite:0.45 alpha:1.0];
     }
-    self.hudLabel.text = [NSString stringWithFormat:@"%@   L%ld   Score: %ld   Items: %lu",
-                          hearts, (long)self.currentLevel, (long)self.score, (unsigned long)self.inventory.count];
+    self.hudLabel.text = [NSString stringWithFormat:@"Level %ld   Score: %ld   Items: %lu",
+                          (long)self.currentLevel, (long)self.score, (unsigned long)self.inventory.count];
+    NSInteger previousHP = self.lastDisplayedPlayerHP;
+    if (previousHP < 0) previousHP = self.model.playerHP;
+    if (self.model.playerHP > previousHP) {
+        [self animateHUDHeartGainFrom:previousHP to:self.model.playerHP];
+    }
+    self.lastDisplayedPlayerHP = self.model.playerHP;
+}
+
+- (void)startHUDHeartLoopAnimation {
+    CABasicAnimation *loop = [CABasicAnimation animationWithKeyPath:@"transform.scale"];
+    loop.fromValue = @1.0;
+    loop.toValue = @1.06;
+    loop.duration = 1.0;
+    loop.autoreverses = YES;
+    loop.repeatCount = INFINITY;
+    loop.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
+    [self.hudHeartContainer.layer addAnimation:loop forKey:@"hudHeartLoop"];
+}
+
+- (void)animateHUDHeartGainFrom:(NSInteger)previousHP to:(NSInteger)newHP {
+    NSInteger startIndex = MIN(MAX(0, previousHP), kBRMaxHeartDisplay);
+    NSInteger endIndex   = MIN(MAX(0, newHP), kBRMaxHeartDisplay);
+    if (startIndex >= endIndex) return;
+    for (NSInteger idx = startIndex; idx < endIndex; idx++) {
+        UIImageView *heartView = self.hudHeartImageViews[idx];
+        [self popHUDHeartView:heartView];
+    }
+}
+
+- (void)popHUDHeartView:(UIImageView *)heartView {
+    if (!heartView) return;
+    CABasicAnimation *pop = [CABasicAnimation animationWithKeyPath:@"transform.scale"];
+    pop.fromValue = @1.0;
+    pop.toValue = @1.35;
+    pop.duration = 0.28;
+    pop.autoreverses = YES;
+    pop.repeatCount = 1;
+    pop.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
+    [heartView.layer addAnimation:pop forKey:@"hudHeartGainPop"];
+}
+
+- (void)startHeartPulseLink {
+    [self stopHeartPulseLink];
+    if (!self.gameView) return;
+    self.gameView.heartPulsePhase = 0;
+    self.heartPulseDisplayLink = [CADisplayLink displayLinkWithTarget:self
+                                                              selector:@selector(heartPulseTick:)];
+    [self.heartPulseDisplayLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
+}
+
+- (void)stopHeartPulseLink {
+    [self.heartPulseDisplayLink invalidate];
+    self.heartPulseDisplayLink = nil;
+}
+
+- (void)heartPulseTick:(CADisplayLink *)link {
+    if (!self.gameView) return;
+    CGFloat delta = link.duration * M_PI;
+    CGFloat phase = self.gameView.heartPulsePhase + delta;
+    if (phase > M_PI * 2) phase -= M_PI * 2;
+    self.gameView.heartPulsePhase = phase;
+    [self.gameView setNeedsDisplay];
 }
 
 - (void)checkForWinOrLoss {
@@ -2077,6 +2290,9 @@ static const void *kBREndCardNavigateAfterSubmitKey    = &kBREndCardNavigateAfte
 /// chrome from before the picker appeared, "closing the picker" should mean
 /// "leave this screen entirely", not "reveal that chrome".
 - (void)showGamePicker {
+    // Cover whatever is currently on screen — game chrome is hidden, but
+    // resetLoadingOverlayToPhase1 or startNewRun may have shown the overlay.
+    // (See setGameChromeHidden: — the overlay is managed separately.)
     BRGamePickerViewController *picker = [[BRGamePickerViewController alloc] init];
     __weak typeof(self) weakSelf = self;
     picker.onSelection = ^(BRGameRecord *selectedRecord) {
@@ -2094,7 +2310,12 @@ static const void *kBREndCardNavigateAfterSubmitKey    = &kBREndCardNavigateAfte
         [strongSelf dismissSelfBackToCaller];
     };
     picker.modalPresentationStyle = UIModalPresentationFullScreen;
-    [self presentViewController:picker animated:YES completion:nil];
+    // animated:NO — BrainRotViewController itself is presented with
+    // animated:NO by the main VC, so there is already no transition visible
+    // when this VC appears. Adding a second animation here (BrainRotVC slides
+    // in, then picker slides in) created the delay the player noticed.
+    // The picker simply appears: tap → picker, no intermediate state.
+    [self presentViewController:picker animated:NO completion:nil];
 }
 
 /// "Go back" for this view controller itself, used when the picker is closed
@@ -2125,6 +2346,10 @@ static const void *kBREndCardNavigateAfterSubmitKey    = &kBREndCardNavigateAfte
 /// Mirrors playAgainRun but sources everything from a BRGameRecord instead
 /// of savedRunAssets/savedRunSeed, and skips the loading overlay entirely.
 - (void)loadGameRecord:(BRGameRecord *)record {
+    // Reveal the game-playing UI — hidden since viewDidLoad until a game
+    // is actually being loaded (see setGameChromeHidden:).
+    [self setGameChromeHidden:NO];
+
     // Immediately hide the loading overlay — a saved game does zero API calls
     // and needs no loading screen. startNewRun may have left it visible if
     // it was called first (e.g. from viewDidLoad before the picker appeared).
@@ -2212,6 +2437,10 @@ static const void *kBREndCardNavigateAfterSubmitKey    = &kBREndCardNavigateAfte
 #pragma mark - New Run
 
 - (void)startNewRun {
+    // Reveal the game-playing UI — hidden since viewDidLoad until a game
+    // is actually starting (see setGameChromeHidden:).
+    [self setGameChromeHidden:NO];
+
     _endCardFired          = NO;
     self.score             = 0;
     self.currentLevel      = 1;
@@ -3749,29 +3978,23 @@ static const void *kBREndCardNavigateAfterSubmitKey    = &kBREndCardNavigateAfte
     // Re-fetch when coming back into view — covers the case where the user
     // played offline, then backgrounded the app, then came back with WiFi.
     [self fetchHighScoresForBanner];
+    [self startHeartPulseLink];
 
-    // One-shot: present the picker (members) or kick off a new run
-    // (non-members) the first time this view appears. Done here rather than
-    // in viewDidLoad so the view is actually in the window before
-    // presentViewController: runs — viewDidLoad previously worked around
-    // this with an arbitrary 0.1s dispatch_after, during which this view
-    // controller's own gameView/d-pad/HUD were briefly visible underneath.
-    // dispatch_async (no delay) defers just long enough for this
-    // viewDidAppear pass to finish, keeping that gap to ~1 frame.
+    // One-shot: present the picker (members) or start a new run (non-members).
+    // Called directly here — no dispatch_async — because viewDidAppear: already
+    // guarantees the view is in the window hierarchy. The old dispatch_async
+    // deferred by one run-loop tick specifically to wait for that guarantee,
+    // but that 1-tick gap was exactly what made BrainRotViewController briefly
+    // visible (black screen or empty chrome) before the picker appeared.
+    // Presenting synchronously here means the picker is pushed in the same
+    // call stack as viewDidAppear:, which iOS handles correctly.
     if (!_hasPresentedInitialFlow) {
         _hasPresentedInitialFlow = YES;
-        __weak typeof(self) weakSelf = self;
-        dispatch_async(dispatch_get_main_queue(), ^{
-            __strong typeof(weakSelf) strongSelf = weakSelf;
-            if (!strongSelf) return;
-            // Members get the full picker (saved library + new game option).
-            // Non-members go straight to a new game — no library, no save.
-            if ([strongSelf userHasMembership]) {
-                [strongSelf showGamePicker];
-            } else {
-                [strongSelf startNewRun];
-            }
-        });
+        if ([self userHasMembership]) {
+            [self showGamePicker];
+        } else {
+            [self startNewRun];
+        }
     }
 }
 
@@ -3779,6 +4002,7 @@ static const void *kBREndCardNavigateAfterSubmitKey    = &kBREndCardNavigateAfte
     [super viewDidDisappear:animated];
     [self stopScrollingBanner];
     [self stopBackgroundMusic];
+    [self stopHeartPulseLink];
 }
 
 #pragma mark - High Score Submission

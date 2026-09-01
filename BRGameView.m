@@ -1,23 +1,30 @@
 // BRGameView.m
 // BrainRotGame
-// EZCompleteUI v1.5
+// EZCompleteUI v1.7
 //
-// Changes from v1.4:
-//   - Background image rendered directly in drawRect by cropping the viewport
-//     region from backgroundImage using CGImageCreateWithImageInRect. Since
-//     this happens inside drawRect using the same cameraCol/cameraRow the rest
-//     of the tile loop uses, the image is always perfectly in sync with the
-//     maze overlay — no separate UIImageView that lags behind.
-//   - Passability overlay replaces floorsTransparent logic:
-//       Wall tiles: dark overlay (black 65% alpha) drawn on top of the image
-//                   so the player always sees impassable areas even on busy art.
-//       Floor tiles: no overlay — image shows through, giving them a visually
-//                    distinct "open" appearance.
-//       Exit tile: bright green overlay (unchanged).
-//     In fallback mode (no backgroundImage) the original solid-color tile fills
-//     are used so the game works without any AI assets.
-//   - floorsTransparent removed entirely; image presence drives the behaviour.
-//   - Enemy indicators, item dots, grid lines, and player dot unchanged from v1.4.
+// Purpose:
+//   Custom UIView responsible for rendering the visible portion of the maze
+//   in a single drawRect: pass. Draws the background image cropped to the
+//   current viewport, passability overlays for wall and exit tiles, coin and
+//   heart item indicators, enemy position indicators, and (in no-image fallback
+//   mode) the player dot. All layout is driven by cameraCol/cameraRow and the
+//   viewport dimensions set by BrainRotViewController; this view is passive and
+//   calls setNeedsDisplay only in response to property changes set externally.
+//
+// Changes from v1.6:
+//   - Heart pickup icon enlarged to ~88% of the tile cell. Previously it was
+//     sized against the inset baseRect (≈64% of the tile) and then scaled to
+//     80% of that, resulting in an icon that covered roughly half the tile and
+//     was hard to read at a glance during gameplay. Now uses tileRect directly
+//     as the size reference so the heart nearly fills the cell, matching the
+//     visual weight of the enemy and coin indicators.
+//
+// Changes from v1.5:
+//   - Heart pickup icon replaced. The previous BRGameViewHeartPath() bezier
+//     function produced a shape that read as a circle at typical tile sizes.
+//     The pickup now draws heart.png from the main bundle instead, rendered
+//     via UIGraphicsPushContext so UIKit handles the coordinate-system flip.
+//   - BRGameViewHeartPath() removed entirely.
 
 #import "BRGameView.h"
 #import "BRGameModel.h"
@@ -161,16 +168,38 @@
                 CGContextStrokeRect(ctx, tileRect);
             }
 
-            // ── Item dot — both modes ─────────────────────────────────────────
+            // ── Item indicator — coins vs heart pickups ─────────────────────────
             if (tile.itemName) {
-                CGRect dotRect = CGRectInset(tileRect, tileWidth * 0.18, tileHeight * 0.18);
-                CGContextSetFillColorWithColor(ctx,
-                    [UIColor colorWithRed:1.0 green:0.88 blue:0.0 alpha:1.0].CGColor);
-                CGContextFillEllipseInRect(ctx, dotRect);
-                CGContextSetStrokeColorWithColor(ctx,
-                    [UIColor colorWithRed:0.55 green:0.40 blue:0.0 alpha:0.9].CGColor);
-                CGContextSetLineWidth(ctx, 1.0);
-                CGContextStrokeEllipseInRect(ctx, CGRectInset(dotRect, 0.5, 0.5));
+                CGRect baseRect = CGRectInset(tileRect, tileWidth * 0.18, tileHeight * 0.18);
+                BOOL isHeartPickup = ([tile.itemName rangeOfString:@"heart"
+                                                      options:NSCaseInsensitiveSearch].location != NSNotFound);
+                if (isHeartPickup) {
+                    // Load heart.png from the bundle (cached by UIImage after first call).
+                    UIImage *heartImage = [UIImage imageNamed:@"heart"];
+                    if (heartImage) {
+                        // Use tileRect as the size reference rather than the inset
+                        // baseRect, so the heart nearly fills the full tile cell.
+                        // 0.88 leaves a small visible margin so adjacent tiles remain
+                        // distinguishable even when two hearts are side by side.
+                        CGFloat pulseScale  = 1.0 + 0.12 * sinf(self.heartPulsePhase);
+                        CGFloat baseSize    = MIN(tileRect.size.width, tileRect.size.height) * 0.88;
+                        CGFloat scaledSize  = baseSize * pulseScale;
+                        CGRect heartDrawRect = CGRectMake(CGRectGetMidX(tileRect) - scaledSize / 2.0,
+                                                          CGRectGetMidY(tileRect) - scaledSize / 2.0,
+                                                          scaledSize, scaledSize);
+                        UIGraphicsPushContext(ctx);
+                        [heartImage drawInRect:heartDrawRect];
+                        UIGraphicsPopContext();
+                    }
+                } else {
+                    CGContextSetFillColorWithColor(ctx,
+                        [UIColor colorWithRed:1.0 green:0.88 blue:0.0 alpha:1.0].CGColor);
+                    CGContextFillEllipseInRect(ctx, baseRect);
+                    CGContextSetStrokeColorWithColor(ctx,
+                        [UIColor colorWithRed:0.55 green:0.40 blue:0.0 alpha:0.9].CGColor);
+                    CGContextSetLineWidth(ctx, 1.0);
+                    CGContextStrokeEllipseInRect(ctx, CGRectInset(baseRect, 0.5, 0.5));
+                }
             }
 
             // ── Enemy indicator — always drawn regardless of hidePlayerDot ────

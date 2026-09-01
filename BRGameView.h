@@ -1,19 +1,18 @@
 // BRGameView.h
 // BrainRotGame
-// EZCompleteUI v1.5
+// EZCompleteUI v1.6
 //
-// Changes from v1.4:
-//   - backgroundImage property added. When set, drawRect crops the portion of
-//     the image corresponding to the current viewport and draws it as the base
-//     layer, automatically synchronized with cameraCol/cameraRow. The separate
-//     backgroundImageView in the ViewController is no longer needed.
-//   - floorsTransparent removed. Tile passability overlays are now always drawn
-//     on top of the background image: wall tiles get a dark semi-transparent
-//     overlay so the player can always see where they can't walk; floor tiles
-//     draw nothing (the image shows through). This replaces the old approach
-//     of relying on image brightness to communicate passability, which was
-//     unreliable across different AI-generated art styles.
-//   - hidePlayerDot behaviour unchanged; enemy indicators still always draw.
+// Changes from v1.5:
+//   - heartPulsePhase comment updated to reflect that the heart pickup now
+//     draws heart.png (see BRGameView.m v1.6). The property itself and the
+//     CADisplayLink driving it in BrainRotViewController are unchanged.
+//
+// Purpose:
+//   Public interface for BRGameView, the custom UIView that renders the
+//   visible maze viewport. The view is deliberately passive: it holds the
+//   BRGameModel reference and a few display properties, and BrainRotViewController
+//   calls setNeedsDisplay whenever the model changes. All drawing happens in
+//   a single drawRect: pass — see BRGameView.m for the rendering pipeline.
 
 #import <UIKit/UIKit.h>
 #import "BRGameModel.h"
@@ -45,6 +44,13 @@ NS_ASSUME_NONNULL_BEGIN
 
 /// Top edge of the visible window in model tile coordinates.
 @property (nonatomic, assign) NSInteger cameraRow;
+
+/// Phase angle (0–2π) used to drive the heart pickup's pulse animation.
+/// Incremented every CADisplayLink tick by BrainRotViewController's
+/// heartPulseTick: and read in drawRect: to scale heart.png by
+/// (1 + 0.12 × sin(phase)). Do not set this directly — use
+/// startHeartPulseLink / stopHeartPulseLink in BrainRotViewController.
+@property (nonatomic, assign) CGFloat heartPulsePhase;
 
 @end
 

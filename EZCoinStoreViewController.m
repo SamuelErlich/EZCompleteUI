@@ -5,7 +5,26 @@
 // Uses SFSafariViewController for PayPal checkout flow.
 // Coin image: EZCoin.png (bundled asset).
 //
+// Subscription architecture:
+//   The app never holds PayPal plan IDs. Each subscription tier is identified
+//   by a name ("basic", "standard", "pro", "ultra") and the edge function
+//   (create-paypal-subscription) resolves the real plan_id from server-side
+//   env vars. This keeps plan IDs out of the binary, which is especially
+//   important given the jailbreak audience — plan IDs in the binary can be
+//   read and potentially misused via method hooks.
+//
 // Recent changes:
+//   - Removed hardcoded PayPal plan ID constants (kPlanBasic, kPlanStandard,
+//     kPlanPro, kPlanUltra). Subscription items now store tier names instead.
+//     The edge function resolves the real plan_id from environment variables.
+//     Previously, sandbox plan IDs were baked into the binary causing "failed
+//     to open store" errors when the backend switched to live mode.
+//   - createPayPalSubscriptionForPlanID:token: renamed to
+//     createPayPalSubscriptionForTier:token: and updated to send { tier, user_id }
+//     instead of { plan_id, user_id } to match the updated edge function contract.
+//   - startSubscriptionForPlanID:token: renamed to startSubscriptionForTier:token:
+//   - pendingPlanID property renamed to pendingTierName to reflect the new
+//     tier-name-based architecture (property remains reserved for future retry logic)
 //   - Daily free coins: 5/day for free users, 10/day for active subscribers (any tier)
 //   - Floating "Daily Coins" button added top-left, mirroring the Ledger button on the right
 //   - Ledger button and its methods wrapped in #if DEBUG — absent in Release/production builds
@@ -15,7 +34,6 @@
 //     driven by an NSTimer that fires every second; timer starts when the server confirms
 //     coins were already claimed and stops automatically when the countdown reaches zero,
 //     when coins become available, or when the view disappears
-//   - pendingPlanID property is currently unused — retained for future subscription retry logic
 //   - Short local variable names (pad, w, h, req, url, card, etc.) renamed for readability
 //   - Replaced NSISO8601DateFormatter with NSDateFormatter (crash fix: SIGABRT on iOS 15 / jailbreak)
 //   - All JSON value reads now use NSNull-safe helpers (crash fix: JSON null → [NSNull null] → ___forwarding___)
@@ -26,6 +44,8 @@
 #import "EZCoinPotView.h"
 #import "helpers.h"
 #import "EZCoinLedgerViewController.h"
+
+
 #import "EZCoinUsageViewController.h"
 
 // ── Safe JSON value helpers ───────────────────────────────────────────────────
@@ -94,11 +114,15 @@ static NSString *const kStoreSupabaseURL   = @"https://spuoimtqofhbdzosrbng.supa
 // Daily coins endpoint — see supabase/functions/claim-daily-coins/index.ts
 static NSString *const kDailyCoinsEndpoint = @"/functions/v1/claim-daily-coins";
 
-// Subscription plan IDs — replace sandbox IDs with live IDs before release
-static NSString *const kPlanBasic    = @"P-1HW38522AL709604TNHUUASA"; // $5/mo  400 coins
-static NSString *const kPlanStandard = @"P-0KG918617R081535MNH7AY4Y"; // $10/mo 900 coins
-static NSString *const kPlanPro      = @"P-6MD31726ST362124GNH7A3YY"; // $15/mo 1600 coins
-static NSString *const kPlanUltra    = @"P-73L708182D9034800NH7EXZY";  // $20/mo 2500 coins
+// Subscription tier names sent to the create-paypal-subscription edge function.
+// The edge function resolves the real PayPal plan_id from server-side env vars
+// (PAYPAL_PLAN_BASIC, PAYPAL_PLAN_STANDARD, etc.) so plan IDs never live in
+// the binary. To add a tier: add a constant here, add it to buildItems, and
+// set the matching PAYPAL_PLAN_* env var in Supabase.
+static NSString *const kTierBasic    = @"basic";
+static NSString *const kTierStandard = @"standard";
+static NSString *const kTierPro      = @"pro";
+static NSString *const kTierUltra    = @"ultra";
 
 // ── Store item model ──────────────────────────────────────────────────────────
 
@@ -268,7 +292,7 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
 @property (nonatomic, strong) NSArray<EZStoreItem *>  *items;
 @property (nonatomic, strong) UIImage                 *coinImage;
 @property (nonatomic, strong) NSString                *pendingPurchaseType;  // @"subscription" or @"topup"
-@property (nonatomic, strong) NSString                *pendingPlanID;        // Reserved for subscription retry logic (currently unused)
+@property (nonatomic, strong) NSString                *pendingTierName;      // Reserved for subscription retry logic (currently unused)
 @property (nonatomic, strong) NSString                *pendingOrderID;
 @property (nonatomic, strong) EZCoinPotView           *storePotView;
 @property (nonatomic, strong) UIActivityIndicatorView *spinner;
@@ -350,7 +374,7 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
     basic.title           = @"Basic";
     basic.subtitle        = @"400 coins / month\nIdeal for casual use";
     basic.priceString     = @"$5 / mo";
-    basic.planOrPackageID = kPlanBasic;
+    basic.planOrPackageID = kTierBasic;
     basic.type            = EZStoreItemTypeSubscription;
     basic.coins           = 400;
     basic.accentColor     = [UIColor systemBlueColor];
@@ -363,7 +387,7 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
     standard.title           = @"Standard";
     standard.subtitle        = @"900 coins / month\nGreat for daily users";
     standard.priceString     = @"$10 / mo";
-    standard.planOrPackageID = kPlanStandard;
+    standard.planOrPackageID = kTierStandard;
     standard.type            = EZStoreItemTypeSubscription;
     standard.coins           = 900;
     standard.accentColor     = [UIColor systemPurpleColor];
@@ -378,7 +402,7 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
     pro.title           = @"Pro";
     pro.subtitle        = @"1,600 coins / month\nFor power users & GPT-5";
     pro.priceString     = @"$15 / mo";
-    pro.planOrPackageID = kPlanPro;
+    pro.planOrPackageID = kTierPro;
     pro.type            = EZStoreItemTypeSubscription;
     pro.coins           = 1600;
     pro.accentColor     = [UIColor systemOrangeColor];
@@ -393,7 +417,7 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
     ultra.title           = @"Ultra";
     ultra.subtitle        = @"2,500 coins / month\nUnlimited power";
     ultra.priceString     = @"$20 / mo";
-    ultra.planOrPackageID = kPlanUltra;
+    ultra.planOrPackageID = kTierUltra;
     ultra.type            = EZStoreItemTypeSubscription;
     ultra.coins           = 2500;
     ultra.accentColor     = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:1.0]; // gold
@@ -810,6 +834,8 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
 // Raw transaction inspector showing cost info and balance history.
 // TODO: wrap in #if DEBUG before release build.
 
+#if DEBUG
+
 - (void)addLedgerButton {
     UIButton *ledgerButton = [UIButton buttonWithType:UIButtonTypeSystem];
     [ledgerButton setTitle:@"Ledger" forState:UIControlStateNormal];
@@ -839,7 +865,7 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
         [self presentViewController:ledgerNav animated:YES completion:nil];
     }
 }
-
+#endif
 /// User-facing coin usage history — triggered via the clock icon in the nav bar
 - (void)historyTapped {
     EZCoinUsageViewController *usageVC = [[EZCoinUsageViewController alloc] init];
@@ -898,7 +924,7 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
     self.tableView.userInteractionEnabled = NO;
 
     if (item.type == EZStoreItemTypeSubscription) {
-        [self startSubscriptionForPlanID:item.planOrPackageID token:token];
+        [self startSubscriptionForTier:item.planOrPackageID token:token];
     } else {
         [self startTopUpForPackageID:item.planOrPackageID coins:item.coins token:token];
     }
@@ -906,7 +932,7 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
 
 // ── Subscription checkout ─────────────────────────────────────────────────────
 
-- (void)startSubscriptionForPlanID:(NSString *)planID token:(NSString *)token {
+- (void)startSubscriptionForTier:(NSString *)tierName token:(NSString *)token {
     NSString *currentTier   = [EZEntitlementManager shared].currentTier;
     NSString *currentStatus = [EZEntitlementManager shared].currentStatus;
 
@@ -917,10 +943,10 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
     if (hasActiveSub) {
         [self cancelCurrentSubscriptionWithToken:token completion:^(BOOL success) {
             // Proceed to new plan regardless — PayPal handles the new charge
-            [self createPayPalSubscriptionForPlanID:planID token:token];
+            [self createPayPalSubscriptionForTier:tierName token:token];
         }];
     } else {
-        [self createPayPalSubscriptionForPlanID:planID token:token];
+        [self createPayPalSubscriptionForTier:tierName token:token];
     }
 }
 
@@ -944,7 +970,9 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
     }] resume];
 }
 
-- (void)createPayPalSubscriptionForPlanID:(NSString *)planID token:(NSString *)token {
+- (void)createPayPalSubscriptionForTier:(NSString *)tierName token:(NSString *)token {
+    // Sends the tier name, not a plan ID. The edge function resolves the real
+    // PayPal plan_id from server-side env vars so it never lives in the binary.
     NSURL *createSubURL = [NSURL URLWithString:[kStoreSupabaseURL
         stringByAppendingString:@"/functions/v1/create-paypal-subscription"]];
     NSMutableURLRequest *createSubRequest = [NSMutableURLRequest requestWithURL:createSubURL];
@@ -954,7 +982,7 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
     [createSubRequest setValue:[NSString stringWithFormat:@"Bearer %@", token]
             forHTTPHeaderField:@"Authorization"];
     createSubRequest.HTTPBody = [NSJSONSerialization dataWithJSONObject:@{
-        @"plan_id": planID,
+        @"tier":    tierName,
         @"user_id": [EZAuthManager shared].userId ?: @""
     } options:0 error:nil];
 

@@ -1,6 +1,25 @@
 // BRGamePickerViewController.m
 // BrainRotGame
-// EZCompleteUI v2.7 — Community Download via Reveal Card
+// EZCompleteUI v2.9 — Community Admin Panel
+//
+// Changes from v2.8:
+//   - Added a debug-only admin panel entry point (shield icon, top-left,
+//     visible only when the Community tab is active). Tapping it presents
+//     BRCommunityAdminViewController inside a UINavigationController.
+//     The button is wrapped in #if DEBUG / #endif so it never compiles into
+//     App Store or ad-hoc builds. The server-side BR_ADMIN_CODE check is
+//     independent and enforced regardless of build type.
+//
+// Changes from v2.7:
+//   - handleCloseTapped now dismisses self.presentingViewController
+//     (BrainRotViewController) rather than self (the picker). Dismissing
+//     the presenter collapses the whole stack — picker + BrainRotVC — in
+//     one animation from the main VC's perspective, rather than two
+//     sequential dismissals (picker slides away → BrainRotVC briefly
+//     visible → BrainRotVC slides away). After the single dismiss animation
+//     the player is back in the main app with no intermediate state.
+//     A nil-presenter fallback keeps the old self-dismiss as a safety path
+//     if the picker is ever pushed rather than presented modally.
 //
 // Changes from v2.6:
 //   - Tapping a community card now opens the same BRGameResultViewController
@@ -182,6 +201,9 @@
 #import "BRGameResultViewController.h"
 #import "BRRemoteImageLoader.h"
 #import "EZAuthManager.h"
+#if DEBUG
+#import "BRCommunityAdminViewController.h"
+#endif
 
 extern NSString *const kBRHighScoreURL;
 
@@ -629,13 +651,19 @@ typedef NS_ENUM(NSInteger, BRPickerTab) {
 @property (nonatomic, assign) BRPickerTab currentTab;
 @property (nonatomic, strong) NSArray<BRGameRecord *> *savedGames;
 
-// Community browse state. communityGames starts nil (never loaded) rather
-// than empty, so loadFirstCommunityPageIfNeeded can distinguish "haven't
-// tried yet" from "tried and the list is genuinely empty".
+// Community browse state.
 @property (nonatomic, strong, nullable) NSArray<BRCommunitySharedGame *> *communityGames;
 @property (nonatomic, copy, nullable) NSString *communityNextCursor;
 @property (nonatomic, assign) BOOL isLoadingCommunityPage;
 @property (nonatomic, assign) BOOL communityReachedEnd;
+
+#if DEBUG
+/// Admin panel entry point — only compiled into debug builds. Appears in the
+/// top-trailing corner when the Community tab is active. The server still
+/// validates BR_ADMIN_CODE independently, so a jailbroken release build
+/// that somehow calls the endpoint directly gets a 403.
+@property (nonatomic, strong) UIButton *adminButton;
+#endif
 @end
 
 @implementation BRGamePickerViewController
@@ -680,6 +708,30 @@ typedef NS_ENUM(NSInteger, BRPickerTab) {
     [self.tabControl addTarget:self action:@selector(handleTabChanged:) forControlEvents:UIControlEventValueChanged];
     self.tabControl.translatesAutoresizingMaskIntoConstraints = NO;
     [self.view addSubview:self.tabControl];
+
+#if DEBUG
+    // Admin panel button — debug builds only. Appears in the top-trailing
+    // corner when the Community tab is selected; hidden on My Games to keep
+    // the button contextually relevant (all admin actions target community
+    // content) and out of sight during normal gameplay sessions.
+    self.adminButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    [self.adminButton setImage:[UIImage systemImageNamed:@"shield.lefthalf.filled"]
+                     forState:UIControlStateNormal];
+    self.adminButton.tintColor = [UIColor systemOrangeColor];
+    self.adminButton.hidden = YES; // shown only on Community tab
+    [self.adminButton addTarget:self
+                         action:@selector(handleAdminButtonTapped)
+               forControlEvents:UIControlEventTouchUpInside];
+    self.adminButton.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:self.adminButton];
+
+    [NSLayoutConstraint activateConstraints:@[
+        [self.adminButton.centerYAnchor constraintEqualToAnchor:closeButton.centerYAnchor],
+        [self.adminButton.leadingAnchor  constraintEqualToAnchor:self.view.leadingAnchor constant:16],
+        [self.adminButton.widthAnchor    constraintEqualToConstant:44],
+        [self.adminButton.heightAnchor   constraintEqualToConstant:44],
+    ]];
+#endif
 
     // ── Collection view ───────────────────────────────────────────────────────
     UICollectionViewFlowLayout *layout = [[UICollectionViewFlowLayout alloc] init];
@@ -735,7 +787,26 @@ typedef NS_ENUM(NSInteger, BRPickerTab) {
     }
     [self.collectionView reloadData];
     [self.collectionView setContentOffset:CGPointZero animated:NO];
+#if DEBUG
+    self.adminButton.hidden = (self.currentTab != BRPickerTabCommunity);
+#endif
 }
+
+#if DEBUG
+- (void)handleAdminButtonTapped {
+    NSURL *referenceURL = [NSURL URLWithString:kBRHighScoreURL];
+    NSString *resolvedHost = referenceURL.host ?: @"localhost:54321";
+    NSURL *endpointURL = [NSURL URLWithString:
+        [NSString stringWithFormat:@"https://%@/functions/v1/br-community", resolvedHost]];
+
+    BRCommunityAdminViewController *adminVC =
+        [[BRCommunityAdminViewController alloc] initWithBrCommunityEndpointURL:endpointURL];
+    UINavigationController *navController =
+        [[UINavigationController alloc] initWithRootViewController:adminVC];
+    navController.modalPresentationStyle = UIModalPresentationFullScreen;
+    [self presentViewController:navController animated:YES completion:nil];
+}
+#endif
 
 - (void)reloadSavedGames {
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
@@ -1442,9 +1513,26 @@ typedef NS_ENUM(NSInteger, BRPickerTab) {
 /// and "start a new run").
 - (void)handleCloseTapped {
     void (^closedBlock)(void) = self.onClosedWithoutSelection;
-    [self dismissViewControllerAnimated:YES completion:^{
-        if (closedBlock) closedBlock();
-    }];
+    // Dismiss self.presentingViewController (BrainRotViewController) rather
+    // than self (the picker). When a presenting VC is dismissed it takes its
+    // presented VC with it, so both the picker and BrainRotVC collapse in one
+    // animation from the main VC's perspective — no brief reveal of the blank
+    // BrainRotVC between the picker sliding away and BrainRotVC sliding away.
+    // BrainRotVC's onClosedWithoutSelection block still fires afterward; since
+    // BrainRotVC is already gone at that point, dismissSelfBackToCaller is a
+    // harmless no-op (self.presentingViewController will be nil).
+    UIViewController *presenter = self.presentingViewController;
+    if (presenter) {
+        [presenter dismissViewControllerAnimated:YES completion:^{
+            if (closedBlock) closedBlock();
+        }];
+    } else {
+        // Fallback: if somehow the picker has no presenter (e.g. pushed onto
+        // a nav stack instead), dismiss ourselves as before.
+        [self dismissViewControllerAnimated:YES completion:^{
+            if (closedBlock) closedBlock();
+        }];
+    }
 }
 
 @end

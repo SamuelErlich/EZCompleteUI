@@ -1090,8 +1090,7 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
             for (NSDictionary *v in voices) {
                 if (![v isKindOfClass:[NSDictionary class]]) continue;
                 NSString *cat = v[@"category"];
-                if ([cat isEqualToString:@"cloned"] ||
-                    [cat isEqualToString:@"professional"]) {
+                if ([cat isEqualToString:@"cloned"]) {
                     NSDictionary *safeVoice = [weakSelf sanitizedVoiceDictionary:v];
                     if (safeVoice) [cloned addObject:safeVoice];
                 }
@@ -1332,7 +1331,7 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
                 [weakSelf.myVoices insertObject:removed atIndex:restoreAt];
                 [weakSelf rebuildVoiceRows];
                 NSString *msg = networkError.localizedDescription
-                    ?: responseDict[@"error"] ?: @"Delete failed.";
+                    ?: responseDict[@"reason"] ?: responseDict[@"error"] ?: @"Delete failed.";
                 [weakSelf showAlert:@"Delete Failed" message:msg];
                 EZLogf(EZLogLevelError, @"DEL", @"Delete voice %@ failed: %@", voiceID, msg);
             } else {

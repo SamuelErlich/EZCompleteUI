@@ -20,6 +20,14 @@
 	</dict>
 	<key>CFBundleIdentifier</key>
 	<string>com.i0stweak3r.ezcompleteui</string>
+	<key>CFBundleName</key>
+	<string>EZCompleteUI</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>7.0.6-1</string>
+	<key>CFBundleSignature</key>
+	<string>????</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -31,16 +39,8 @@
 			</array>
 		</dict>
 	</array>
-	<key>CFBundleName</key>
-	<string>EZCompleteUI</string>
-	<key>CFBundlePackageType</key>
-	<string>APPL</string>
-	<key>CFBundleShortVersionString</key>
-	<string>7.0.5-16</string>
-	<key>CFBundleSignature</key>
-	<string>????</string>
 	<key>CFBundleVersion</key>
-	<string>7.0.5-16</string>
+	<string>7.0.6-1</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>MinimumOSVersion</key>
@@ -53,6 +53,8 @@
 	<string>Used for live dictation input</string>
 	<key>UIApplicationSystemGroup</key>
 	<string>mobile</string>
+<key>UIUserInterfaceStyle</key>
+<string>Dark</string>
 	<key>UIApplicationSystemUser</key>
 	<string>mobile</string>
 	<key>UIDeviceFamily</key>
