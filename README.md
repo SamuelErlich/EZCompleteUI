@@ -1,259 +1,119 @@
 # EZCompleteUI
 
-> A feature-rich AI chat client for iOS — works on **any iPhone running iOS 15.0 through iOS 26**, with no subscription and no App Store required.
+EZCompleteUI is a native iOS AI workspace built with Objective-C and Theos. It combines coin-metered AI chat, image generation and editing, transcription, voice tools, local thread history, searchable memories, a photo gallery, and a custom game-creation area in one app.
 
-EZCompleteUI was built with a simple goal: bring a genuinely capable, modern AI chat experience to iPhones that mainstream AI apps have abandoned. Whether you're on an iPhone 8 running iOS 15 or the latest device on the iOS 26 developer beta, EZCompleteUI runs natively and supports the same full feature set. Chat with GPT models, generate images, edit images, transcribe audio, generate video with Sora, and more — all from one app with persistent chat history and intelligent memory.
+The current release is **7.0.7** and targets iOS 15.0 and later.
 
----
+## What it includes
 
-## Features
+- Authenticated, coin-based access with a coin store, balance display, user usage ledger, and admin cost ledger.
+- Persistent chats with local thread restore, inline image attachments, generated-image grids, code blocks, and Quick Look previews.
+- AI memory: conversations are summarized, searchable, editable, and can retain attachment references.
+- Image gallery: view generated images, ask about an image, edit it with AI, share or delete it, or pass it into the custom game workflow.
+- Image generation and editing with configurable size, quality, output format, background, and moderation settings where supported.
+- File and vision workflows for images, PDFs, ePub, text, HTML, RTF, CSV, and JSON files.
+- Apple speech dictation, Whisper transcription, Apple text-to-speech, ElevenLabs text-to-speech, and ElevenLabs voice-clone management.
+- Web search toggle with an optional location hint.
+- BrainRot custom-game creation, saved games, game library/picker, and community/admin game tools.
+- In-app Terms, Privacy, Refund, and Support/Feedback screens.
 
-### 🤖 AI Chat
-- Full conversation support with **GPT-5 Pro, GPT-5, GPT-5 Mini, GPT-4o, GPT-4o Mini, GPT-4 Turbo, GPT-4, and GPT-3.5 Turbo**
-- **4-tier intelligent routing** — simple questions are answered instantly by a lightweight helper model without burning tokens on a full API call; complex queries with memory needs automatically inject the right context
-- **Web search** powered by OpenAI's Responses API — toggle with the 🌐 button, optionally set a location hint in Settings
-- Persistent **AI memory** — key facts from every conversation are summarized and recalled automatically in future chats
-- **Full chat history** — every conversation is saved to disk and can be browsed, restored, or deleted from the history panel
+## Model picker
 
-### 🖼 Image Generation & Editing
-- **DALL-E 3** text-to-image generation
-- **DALL-E 2 image editing** — attach any image and describe changes; the app routes to the edit API automatically
-- Smart follow-up awareness — "try that again but darker" correctly references the previous image prompt
-- Generated images saved locally for session persistence
+The picker is the source of truth for models exposed by the app.
 
-### 🎬 Text-to-Video (Sora 2)
-- **Sora 2** and **Sora 2 Pro** video generation
-- Configurable resolution (`1280x720`, `1792x1024`, `720x1280`, `1024x1792`) and duration
-- Async job polling with live status updates in chat — survives app backgrounding and resumes on return
-- Generated videos saved locally and presented via QuickLook
+| Group | Models |
+| --- | --- |
+| Frontier reasoning | `gpt-6-astra`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5-pro`, `gpt-5`, `gpt-5-mini` |
+| GPT-4 chat | `gpt-4o`, `gpt-4o-mini`, `gpt-4-turbo`, `gpt-4`, `gpt-3.5-turbo` |
+| Image generation | `gpt-image-2`, `gpt-image-1.5`, `gpt-image-1`, `gpt-image-1-mini`, `chatgpt-image-latest`, `dall-e-3` |
+| Audio transcription | `whisper-1` |
 
-### 🎙 Voice & Audio
-- **Voice dictation** using Apple's on-device Speech Recognition framework
-- ***Instant VOICE CLONES*** CLone any voice using a few seconds of audio in mp3 format.  For higher quality upload multiple mp3 files or one long file.  Uses Elevenlabs API Key, and the cloned voices live in the in-app settings for voice selection. (for TTS Responses)
-- **Whisper transcription** — attach any audio or video file for accurate AI transcription
-- **Text-to-speech** via Apple TTS (built-in, no key needed) or **ElevenLabs** for high-quality voices
+`gpt-6-astra` is shown as the newest frontier model. The GPT-5.6 variants are presented as full, balanced, and fast/cheap choices. Image models can generate new images; the `gpt-image-*` family also supports the app’s attachment-driven editing flow. `whisper-1` is transcription-only and is not used as a chat model.
 
-### 📄 File Analysis
-- **PDF** text extraction and analysis via PDFKit
-- **ePub** reading and Q&A
-- **Plain text, HTML, RTF, CSV, JSON** file analysis
-- **Vision** — attach images for GPT-4o visual analysis
-- All attached files saved locally for session replay
+## Using the app
 
-### 🔧 Developer / Power User
-- **Shake to debug** — shake the device to view helper stats, routing tier breakdown, and recent log entries; tap Copy to grab the full log to clipboard
-- System log file: `Documents/ezui_system.log` (rotates at 512 KB)
-- Verbose helper decision log: `Documents/ezui_helper.log` (rotates at 512 KB)
-- Per-conversation thread files stored in `Documents/EZThreads/`
-- Attachments stored in `Documents/EZAttachments/`
+1. Sign in and accept the in-app terms.
+2. Add coins or manage your subscription from Settings or the coin balance control.
+3. Choose a model from the model button.
+4. Send a prompt, or attach an image/file with the attachment control.
+5. Use the history drawer to restore chats and the Memories view to search or edit retained summaries.
 
----
+Image attachments are stored locally and reconstructed in their original thread position when the thread is restored. Generated and edited images are also kept in the photo gallery.
 
-## Requirements
+## Local data
 
-- iPhone running **iOS 15.0 through iOS 26** (including the iOS 26 developer beta)
-- Installation via any of the methods below — no jailbreak required
-- An **OpenAI API key** (required)
-- An **ElevenLabs API key** (optional, for premium TTS voices)
----
+The app keeps its local working data in the app Documents directory:
 
-## Installation
+| Path | Purpose |
+| --- | --- |
+| `EZThreads/` | Saved conversation JSON files |
+| `EZAttachments/` | Attached, generated, edited, and restored files |
+| `ezui_memory.json` | Memory summaries and attachment references |
+| `ezui_system.log` | System diagnostic log |
+| `ezui_helper.log` | Helper/routing diagnostic log |
 
-EZCompleteUI can be installed several ways depending on your device and iOS version. No jailbreak is required for any of the primary methods.
+Authenticated requests, entitlement checks, billing, and usage logging are handled through the project’s Supabase edge functions. API costs and coin deductions are recorded in the appropriate usage ledgers.
 
-### TrollStore (iOS 14–17, recommended for older devices)
-The easiest no-jailbreak option for supported iOS versions.
-1. Install [TrollStore](https://github.com/opa334/TrollStore) on your device
-2. Build the IPA using the instructions below, or download a pre-built release
-3. Open TrollStore, tap **+**, and select the `.ipa` file
-4. Tap **Install**
+## Building from source
 
-### LiveContainer (iOS 26 developer beta)
-Run EZCompleteUI as a containerized app alongside other sideloaded apps without using an additional signing slot.
-1. Install [LiveContainer](https://github.com/khanhduytran0/LiveContainer) on your device
-2. Import the `.ipa` into LiveContainer
-3. Launch from the LiveContainer home screen
+Requirements:
 
-### AltStore / SideStore (any iOS, 7-day free signing)
-Works on any iPhone without a paid developer account — re-signs automatically every 7 days.
-1. Install [AltStore](https://altstore.io) or [SideStore](https://sidestore.io) on your device
-2. Open AltStore/SideStore and tap **+**
-3. Select the `.ipa` file
-4. App installs and is valid for 7 days; AltStore re-signs automatically when on the same Wi-Fi as your Mac
+- macOS with Xcode and Command Line Tools
+- [Theos](https://theos.dev/docs/installation)
+- iPhoneOS SDK compatible with the configured Theos target
 
-### Sideloadly / Xcode (any iOS, requires Apple ID)
-1. Open [Sideloadly](https://sideloadly.io) or Xcode on your Mac
-2. Connect your iPhone
-3. Drag the `.ipa` in and sign with your Apple ID
-4. Trust the developer certificate in **Settings → General → VPN & Device Management**
+For a development build:
 
-### Jailbreak (.deb — Dopamine, palera1n, etc.)
-```
-make package
-scp packages/*.deb mobile@<device-ip>:/tmp/
-ssh mobile@<device-ip> "dpkg -i /tmp/*.deb; uicache"
+```sh
+make
 ```
 
----
+For the packaged IPA and rootless `.deb` workflow:
 
-## Building from Source
-
-### Prerequisites
-- macOS with **Xcode** and **Xcode Command Line Tools**
-- [Theos](https://theos.dev/docs/installation) installed
-- iPhone SDK (iPhoneOS16.2 or later)
-- Python 3 (included with macOS)
-
-### Build
-```
-git clone https://github.com/tweaker177/EZCompleteUI.git
-cd EZCompleteUI
+```sh
 ./build.sh
 ```
 
-The `build.sh` script runs `make clean && make stage`, injects required permission keys into the Info.plist, packages everything into `EZCompleteUI.ipa`, and prints `EZCompleteUI.ipa ready` when done.
+The build script stages the app, applies the required microphone, speech-recognition, and document-access usage descriptions to the staged plist, creates `EZCompleteUI.ipa`, and packages the rootless Debian archive.
 
----
+## Project layout
 
-## Setup & First Use
-
-### 1. Get an OpenAI API Key
-1. Go to [platform.openai.com](https://platform.openai.com)
-2. Sign in or create an account
-3. Navigate to **API Keys** and create a new key
-4. Copy the key — it starts with `sk-`
-
-> ⚠️ API usage is billed to your OpenAI account. Set a spending limit at platform.openai.com/account/limits to avoid surprises.
-
-### 2. Configure the App
-1. Open EZCompleteUI
-2. Tap the **⚙️ gear icon** in the top bar
-3. Paste your OpenAI API key into the **API Key** field
-4. Optionally set a **System Message** (e.g. "You are a helpful assistant")
-5. Tap **Done**
-
-### 3. Start Chatting
-- Type a message and tap **Send**
-- Tap the **model name button** to switch between GPT models
-- Tap the **🌐 globe** to toggle web search on/off
-- Tap the **📎 paperclip** to attach files, images, or audio
-
----
-
-## ElevenLabs TTS (Optional)
-
-For high-quality AI voices instead of Apple's built-in TTS:
-
-1. Create a free account at [elevenlabs.io](https://elevenlabs.io)
-2. Go to **Profile → API Key** and copy your key
-3. In EZCompleteUI Settings, paste it into **ElevenLabs API Key**
-4. Tap **Get Voices** next to the Voice ID field to browse and select a voice
-5. Tap the **🔊 speaker button** after any AI response to hear it spoken
-
-If no ElevenLabs key is set, the app falls back to Apple TTS automatically.
-
----
-
-## Sora Text-to-Video (Optional)
-
-1. Ensure your OpenAI account has Sora API access
-2. In Settings, choose your **Sora model** (`sora-2` or `sora-2-pro`), **resolution**, and **duration**
-3. Select `sora-2` or `sora-2-pro` from the model picker
-4. Type a video prompt and tap **Send**
-5. Watch the status update in chat: ⏳ queued → ⚙️ processing → ✅ completed
-6. The video opens in QuickLook when ready — tap Share to save to Photos
-
-**Duration constraints:**
-| Model | Valid durations |
-|-------|----------------|
-| sora-2 | 4s, 8s, 12s, 16s |
-| sora-2-pro | 5s, 10s, 15s, 20s |
-
-The app automatically snaps your selected duration to the nearest valid value.
-
----
-
-## Top Bar Buttons
-
-| Button | Action |
-|--------|--------|
-| ✏️ Green pencil | Save current chat and start a new one |
-| 🕐 Clock | Browse and restore past conversations |
-| 📋 Copy | Copy the last AI response to clipboard |
-| 🔊 Speaker | Speak the last AI response aloud |
-| 🌐 Globe | Toggle web search (green = on) |
-| ⚙️ Gear | Open Settings |
-| 🗑 Trash | Delete the current chat (confirms before deleting) |
-
----
-
-## Privacy
-
-- All conversation data is stored **locally on your device** in the app's Documents directory
-- Your API key is stored in `NSUserDefaults` on-device only — it is never transmitted anywhere except directly to OpenAI's and ElevenLabs' APIs
-- AI memory summaries are stored in `Documents/ezui_memory.log` — clear them anytime from Settings → Clear All Memories
-- No analytics, no tracking, no third-party SDKs
-
----
-
-## Project Structure
-
-```
+```text
 EZCompleteUI/
-├── ViewController.h / .m          # Main UI, all API calls, routing
-├── helpers.h / helpers.m     # Logging, memory, thread store, context routing
-├── ChatHistoryViewController.h / .m  # Past conversations browser
-├── SettingsViewController.h / .m  # Settings for the app including API Keys, Resolution for video gen, etc
-├── MemoriesViewController.h / .m  # An in-app browser of stored memories, attachments and generated images.
-├── AppDelegate.h / .m        # App lifecycle, Sora job resume on foreground
-├── Info.plist                # Bundle metadata and permission descriptions
-├── entitlements.plist        # Code signing entitlements
-├── Makefile                  # Theos build configuration
-└── build.sh                  # One-command IPA builder
+├── ViewController.m                         # Main chat UI, model routing, attachments
+├── helpers.m                                # Threads, memory, attachments, logging, context routing
+├── EZModelPickerViewController.m            # Current model picker sections and labels
+├── EZImageGridCell.m                        # Inline generated-image presentation
+├── EZPhotoGalleryViewController.m           # Generated-image gallery and actions
+├── MemoriesViewController.m                 # Searchable/editable memory browser
+├── EZCoin*.m / EZEntitlementManager.*       # Coin store, ledgers, and entitlement client
+├── TextToSpeechViewController.m             # Text-to-speech UI
+├── ElevenLabsCloneViewController.m          # Voice clone management
+├── BrainRotViewController.m                 # Custom game workflow entry point
+├── BR*.m                                    # Game editor, model, library, and related views
+├── Resources/Info.plist                     # Bundle metadata
+├── Makefile                                 # Theos target and source list
+└── build.sh                                 # IPA and rootless .deb packaging workflow
 ```
-
----
 
 ## Troubleshooting
 
-**App crashes on launch**
-- Ensure `NSMicrophoneUsageDescription` and `NSSpeechRecognitionUsageDescription` are present in the bundled `Info.plist`. Run `./build.sh` — the script injects these automatically.
+**Images or attachments are blank after restoring a chat**
 
-**"No API Key" error**
-- Open Settings (⚙️) and paste your OpenAI key starting with `sk-`
+Open the thread again after updating. Current builds resolve attachment filenames against the local attachment store and restore generated-image events from the ordered thread timeline. Files that no longer exist on the device cannot be recreated locally.
 
-**Sora returns an error**
-- Verify your OpenAI account has Sora API access at platform.openai.com
-- Check that duration matches the model's valid values (see table above)
-- Sora jobs can take 1–5 minutes — the app polls automatically and resumes if you background it
+**A feature says there are not enough coins**
 
-**Dictation button does nothing**
-- Go to iOS Settings → Privacy → Microphone and ensure EZCompleteUI is enabled
-- Go to iOS Settings → Privacy → Speech Recognition and ensure EZCompleteUI is enabled
+Open the coin store, add coins or manage the subscription, then retry. The user usage ledger shows credits and deductions; administrators can use the admin ledger for API cost and cost-basis detail.
 
-**Shake gesture not working**
-- The shake gesture requires the app to be the active first responder — tap anywhere in the chat first
+**Dictation is unavailable**
 
----
+Enable Microphone and Speech Recognition access for EZCompleteUI in iOS Settings.
 
-## Contributing
+**A file cannot be previewed**
 
-Pull requests welcome. The codebase is intentionally kept in a small number of files to stay auditable and easy to modify on-device.
-
----
+Confirm it was fully saved under `EZAttachments/`, then reopen the associated chat or memory entry. Quick Look is used for supported previews.
 
 ## License
 
-MIT License — see [LICENSE](LICENSE) for details.
-
----
-
-## Support
-
-If EZCompleteUI saves you time or you just want to say thanks:
-
-[![Donate via PayPal](https://img.shields.io/badge/Donate-PayPal-blue.svg)](https://paypal.me/i0stweak3r)
-
----
-
-*Built to bring modern AI to every iPhone — from iOS 15 to iOS 26 and beyond.*
+MIT License — see [LICENSE](LICENSE).
