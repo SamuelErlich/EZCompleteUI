@@ -3,6 +3,8 @@
 .ipa
 .theos
 .bak
+*.bak*
+*.ts
 .cache
 .git
 /packages/
