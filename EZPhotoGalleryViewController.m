@@ -7,6 +7,7 @@
 //  Tap → full-screen detail sheet with action buttons.
 
 #import "EZPhotoGalleryViewController.h"
+#import "BrainRotViewController.h"
 #import <SafariServices/SafariServices.h>
 
 // ── Notification names ────────────────────────────────────────────────────────
@@ -116,6 +117,7 @@ static NSInteger const kDefaultColumns  = 3;
     UIVisualEffectView *_toolbar;
     UIButton          *_askButton;
     UIButton          *_editButton;
+    UIButton          *_useInGameButton;
     UIButton          *_shareButton;
     UIButton          *_deleteButton;
     UILabel           *_filenameLabel;
@@ -137,6 +139,17 @@ static NSInteger const kDefaultColumns  = 3;
                target:self
                action:@selector(dismiss)];
     self.navigationItem.leftBarButtonItem.tintColor = [UIColor colorWithWhite:0.6 alpha:1];
+
+    _shareButton = [self makeIconButton:@"square.and.arrow.up" color:[UIColor colorWithWhite:0.75 alpha:1]];
+    _shareButton.frame = CGRectMake(0, 0, 36, 36);
+    [_shareButton addTarget:self action:@selector(shareTapped) forControlEvents:UIControlEventTouchUpInside];
+    _deleteButton = [self makeIconButton:@"trash" color:[UIColor systemRedColor]];
+    _deleteButton.frame = CGRectMake(0, 0, 36, 36);
+    [_deleteButton addTarget:self action:@selector(deleteTapped) forControlEvents:UIControlEventTouchUpInside];
+    self.navigationItem.rightBarButtonItems = @[
+        [[UIBarButtonItem alloc] initWithCustomView:_deleteButton],
+        [[UIBarButtonItem alloc] initWithCustomView:_shareButton]
+    ];
 
     // Filename as title
     NSString *name = self.filePath.lastPathComponent ?: @"";
@@ -218,6 +231,7 @@ static NSInteger const kDefaultColumns  = 3;
 
     _toolbar.frame = CGRectMake(0, self.view.bounds.size.height - toolbarH,
                                 self.view.bounds.size.width, toolbarH);
+    [self layoutToolbarButtons];
 }
 
 - (void)setupToolbar {
@@ -247,14 +261,13 @@ static NSInteger const kDefaultColumns  = 3;
     [_editButton addTarget:self action:@selector(editTapped) forControlEvents:UIControlEventTouchUpInside];
     [_toolbar.contentView addSubview:_editButton];
 
-    // Share & Delete — icon-only
-    _shareButton = [self makeIconButton:@"square.and.arrow.up" color:[UIColor colorWithWhite:0.75 alpha:1]];
-    [_shareButton addTarget:self action:@selector(shareTapped) forControlEvents:UIControlEventTouchUpInside];
-    [_toolbar.contentView addSubview:_shareButton];
-
-    _deleteButton = [self makeIconButton:@"trash" color:[UIColor systemRedColor]];
-    [_deleteButton addTarget:self action:@selector(deleteTapped) forControlEvents:UIControlEventTouchUpInside];
-    [_toolbar.contentView addSubview:_deleteButton];
+    _useInGameButton = [self makeButtonTitle:@"Use in Video Game"
+                                         icon:@"gamecontroller.fill"
+                                  accentColor:[UIColor systemPurpleColor]
+                                         dark:NO];
+    [_useInGameButton addTarget:self action:@selector(useInVideoGameTapped)
+                forControlEvents:UIControlEventTouchUpInside];
+    [_toolbar.contentView addSubview:_useInGameButton];
 
     [self.view addSubview:_toolbar];
 
@@ -264,20 +277,14 @@ static NSInteger const kDefaultColumns  = 3;
 - (void)layoutToolbarButtons {
     CGFloat pad  = 16;
     CGFloat btnH = 48;
-    CGFloat iconW = 48;
     CGFloat y    = 14;
     CGFloat W    = self.view.bounds.size.width;
     if (W == 0) W = UIScreen.mainScreen.bounds.size.width;
 
-    CGFloat availW = W - pad * 2 - iconW * 2 - pad * 2;
-    CGFloat halfW  = (availW - 8) / 2;
-
-    _askButton.frame   = CGRectMake(pad, y, halfW, btnH);
-    _editButton.frame  = CGRectMake(pad + halfW + 8, y, halfW, btnH);
-
-    CGFloat iconY = y + (btnH - iconW) / 2;
-    _shareButton.frame = CGRectMake(W - pad - iconW * 2 - 8, iconY, iconW, iconW);
-    _deleteButton.frame = CGRectMake(W - pad - iconW, iconY, iconW, iconW);
+    CGFloat buttonW = (W - pad * 2 - 16) / 3.0;
+    _askButton.frame       = CGRectMake(pad, y, buttonW, btnH);
+    _editButton.frame      = CGRectMake(pad + buttonW + 8, y, buttonW, btnH);
+    _useInGameButton.frame = CGRectMake(pad + (buttonW + 8) * 2, y, buttonW, btnH);
 }
 
 - (UIButton *)makeButtonTitle:(NSString *)title icon:(NSString *)iconName
@@ -344,6 +351,21 @@ static NSInteger const kDefaultColumns  = 3;
                       object:nil
                     userInfo:@{ @"image": self.image, @"editMode": @YES }];
     [self dismissAllTheWay];
+}
+
+- (void)useInVideoGameTapped {
+    UIViewController *presenter = self.navigationController.presentingViewController;
+    if (!presenter) return;
+
+    UIImage *selectedImage = self.image;
+    [presenter dismissViewControllerAnimated:YES completion:^{
+        BrainRotViewController *brainRot = [[BrainRotViewController alloc] init];
+        brainRot.initialWorkshopImage = selectedImage;
+        UINavigationController *gameNavigation =
+            [[UINavigationController alloc] initWithRootViewController:brainRot];
+        gameNavigation.modalPresentationStyle = UIModalPresentationPageSheet;
+        [presenter presentViewController:gameNavigation animated:YES completion:nil];
+    }];
 }
 
 - (void)shareTapped {

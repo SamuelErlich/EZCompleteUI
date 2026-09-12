@@ -16,6 +16,10 @@ NS_ASSUME_NONNULL_BEGIN
 
 @interface BrainRotViewController : UIViewController
 
+/// A gallery image to hand into the Custom Workshop when this controller is
+/// opened from EZ Attachments. Leave nil for the normal game-library flow.
+@property (nonatomic, strong, nullable) UIImage *initialWorkshopImage;
+
 @end
 
 NS_ASSUME_NONNULL_END

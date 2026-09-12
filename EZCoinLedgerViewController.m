@@ -170,6 +170,12 @@ static NSString *formattedCoinCount(NSInteger count) {
     UILabel *_effLabel;
     UILabel *_timeLabel;
     UIView  *_statusDot;
+    NSString *_contactEmail;
+    NSString *_contactFeature;
+    NSString *_contactDateTime;
+    NSString *_contactCoinChange;
+    NSString *_contactBalanceAfter;
+    NSString *_contactStatus;
 }
 
 - (instancetype)initWithStyle:(UITableViewCellStyle)style
@@ -200,16 +206,24 @@ static NSString *formattedCoinCount(NSInteger count) {
 
     _featureLabel   = makeLabel(13, UIFontWeightBold,    EZGold(),                              1);
     _modelLabel     = makeLabel(11, UIFontWeightRegular, EZMuted(),                             1);
-    _userEmailLabel = makeLabel(10, UIFontWeightRegular, [UIColor colorWithWhite:0.55 alpha:1], 1);
+    _userEmailLabel = makeLabel(13, UIFontWeightMedium,  [UIColor systemBlueColor],              1);
+    _userEmailLabel.userInteractionEnabled = YES;
+    [_userEmailLabel addGestureRecognizer:[[UITapGestureRecognizer alloc]
+                                     initWithTarget:self action:@selector(contactUser:)]];
     _ipLabel        = makeLabel(10, UIFontWeightRegular, EZMuted(),                             1);
     _promptLabel    = makeLabel(12, UIFontWeightRegular, [UIColor colorWithWhite:0.80 alpha:1], 2);
     _coinsLabel     = makeLabel(14, UIFontWeightBold,    [UIColor systemOrangeColor],           1);
-    _balanceLabel   = makeLabel(11, UIFontWeightRegular, EZMuted(),                             1);
+    _balanceLabel   = makeLabel(16, UIFontWeightSemibold, [UIColor whiteColor],                  1);
     _tokensLabel    = makeLabel(11, UIFontWeightRegular, [UIColor colorWithWhite:0.60 alpha:1], 1);
     _imagesLabel    = makeLabel(11, UIFontWeightRegular, [UIColor colorWithWhite:0.60 alpha:1], 1);
-    _costLabel      = makeLabel(11, UIFontWeightRegular, EZMuted(),                             1);
-    _effLabel       = makeLabel(12, UIFontWeightBold,    [UIColor systemGreenColor],            1);
+    // Keep the per-call API cost prominent: it is the bottom-left value in
+    // each ledger card and needs to remain readable at a glance.
+    _costLabel      = makeLabel(16, UIFontWeightSemibold, [UIColor whiteColor],                  1);
+    _effLabel       = makeLabel(14, UIFontWeightSemibold,[UIColor systemGreenColor],            1);
     _timeLabel      = makeLabel(10, UIFontWeightRegular, EZMuted(),                             1);
+
+    _coinsLabel.textAlignment   = NSTextAlignmentRight;
+    _balanceLabel.textAlignment = NSTextAlignmentRight;
 
     _statusDot = [UIView new];
     _statusDot.layer.cornerRadius = 4;
@@ -235,7 +249,11 @@ static NSString *formattedCoinCount(NSInteger count) {
     // User identity (admin-only fields)
     NSString *email = safeString(row[@"user_email"]);
     NSString *ip    = safeString(row[@"ip_address"]);
+    _contactEmail = email;
+    _contactFeature = _featureLabel.text;
+    BOOL hasContactEmail = [email containsString:@"@"] && ![email containsString:@" "];
     _userEmailLabel.text = email.length ? email : safeString(row[@"user_id"]);
+    _userEmailLabel.alpha = hasContactEmail ? 1.0 : 0.55;
     _ipLabel.text        = ip.length   ? [NSString stringWithFormat:@"IP: %@", ip] : @"";
 
     // Prompt
@@ -265,6 +283,8 @@ static NSString *formattedCoinCount(NSInteger count) {
         _coinsLabel.textColor = [UIColor systemOrangeColor];
     }
     _balanceLabel.text = [NSString stringWithFormat:@"Balance after: %ld", (long)runningBalance];
+    _contactCoinChange = _coinsLabel.text;
+    _contactBalanceAfter = [NSString stringWithFormat:@"%ld coins", (long)runningBalance];
 
     // Token counts, image counts, API cost, and efficiency are meaningless for
     // credit rows (no model was called). Suppress them so the card doesn't
@@ -326,10 +346,12 @@ static NSString *formattedCoinCount(NSInteger count) {
     } else {
         _timeLabel.text = isoDate;
     }
+    _contactDateTime = _timeLabel.text.length ? _timeLabel.text : @"Not recorded";
 
     // Status dot
     NSString *status = safeString(row[@"status"]);
     if (!status.length) status = @"complete";
+    _contactStatus = status.capitalizedString;
     if ([status isEqualToString:@"pending"]) {
         _statusDot.backgroundColor = [UIColor systemYellowColor];
     } else if ([status isEqualToString:@"error"]) {
@@ -339,6 +361,39 @@ static NSString *formattedCoinCount(NSInteger count) {
     }
 
     [self setNeedsLayout];
+}
+
+// Tapping an email address opens the user's chosen mail app with a concise,
+// contextual follow-up ready to send. Prompt contents stay out of the draft
+// because ledger prompts can contain sensitive user-provided information.
+- (void)contactUser:(UITapGestureRecognizer *)gesture {
+    if (_contactEmail.length == 0 || ![_contactEmail containsString:@"@"]) return;
+
+    NSString *feature = _contactFeature.length ? _contactFeature : @"recent";
+    NSString *subject = [NSString stringWithFormat:@"EZCompleteUI — about your %@ request", feature];
+    NSString *body = [NSString stringWithFormat:
+                      @"Hi,\n\nI'm following up about your %@ request in EZCompleteUI.\n\n"
+                      @"Transaction details:\n"
+                      @"• Date and time: %@\n"
+                      @"• Status: %@\n"
+                      @"• Coins charged/credited: %@\n"
+                      @"• Balance after this transaction: %@\n\n"
+                      @"The balance shown is the ledger balance after this transaction's credits and deductions were applied.\n\n"
+                      @"Best,",
+                      feature,
+                      _contactDateTime.length ? _contactDateTime : @"Not recorded",
+                      _contactStatus.length ? _contactStatus : @"Unknown",
+                      _contactCoinChange.length ? _contactCoinChange : @"Not recorded",
+                      _contactBalanceAfter.length ? _contactBalanceAfter : @"Not recorded"];
+    NSURLComponents *components = [NSURLComponents new];
+    components.scheme = @"mailto";
+    components.path = _contactEmail;
+    components.queryItems = @[
+        [NSURLQueryItem queryItemWithName:@"subject" value:subject],
+        [NSURLQueryItem queryItemWithName:@"body" value:body],
+    ];
+    NSURL *url = components.URL;
+    if (url) [[UIApplication sharedApplication] openURL:url options:@{} completionHandler:nil];
 }
 
 - (NSString *)friendlyFeature:(NSString *)featureKey {
@@ -390,7 +445,7 @@ static NSString *formattedCoinCount(NSInteger count) {
 
     // Row 2: model (left) + user email (right)
     _modelLabel.frame     = CGRectMake(x, y, cardWidth * 0.45, 14);
-    _userEmailLabel.frame = CGRectMake(cardWidth - 190, y, 178, 14);
+    _userEmailLabel.frame = CGRectMake(cardWidth - 190, y, 178, 18);
     y += 16;
 
     // Row 3: IP address (right-aligned, small)
@@ -401,22 +456,26 @@ static NSString *formattedCoinCount(NSInteger count) {
     _promptLabel.frame = CGRectMake(x, y, cardWidth - x * 2, 36);
     y += 40;
 
-    // Coins + balance (left), efficiency (right)
-    _coinsLabel.frame   = CGRectMake(x, y, 180, 20);
-    _effLabel.frame     = CGRectMake(cardWidth - 188, y, 176, 20);
-    y += 22;
-    _balanceLabel.frame = CGRectMake(x, y, 220, 14);
-    y += 18;
-
-    // Detail rows
+    // Detail rows stay above the financial summary at the bottom of the card.
     _tokensLabel.frame  = CGRectMake(x, y, cardWidth - x * 2, 14);
     y += 17;
     _imagesLabel.frame  = CGRectMake(x, y, cardWidth - x * 2, 14);
-    y += 17;
-    _costLabel.frame    = CGRectMake(x, y, cardWidth - x * 2, 14);
+
+    // Bottom two-column financial summary:
+    // left = cost efficiency over API cost; right = coin change over balance.
+    CGFloat rightColumnWidth = MIN(178, cardWidth * 0.50);
+    CGFloat rightColumnX     = cardWidth - padding - rightColumnWidth;
+    CGFloat leftColumnWidth  = rightColumnX - x - 8;
+    CGFloat bottomRowY       = _card.bounds.size.height - padding - 20;
+    CGFloat topRowY          = bottomRowY - 22;
+
+    _effLabel.frame     = CGRectMake(x, topRowY, leftColumnWidth, 20);
+    _costLabel.frame    = CGRectMake(x, bottomRowY, leftColumnWidth, 20);
+    _coinsLabel.frame   = CGRectMake(rightColumnX, topRowY, rightColumnWidth, 20);
+    _balanceLabel.frame = CGRectMake(rightColumnX, bottomRowY, rightColumnWidth, 20);
 }
 
-+ (CGFloat)rowHeight { return 210; }
++ (CGFloat)rowHeight { return 216; }
 
 @end
 

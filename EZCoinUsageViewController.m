@@ -66,6 +66,7 @@ static NSString *friendlyFeatureName(NSString *feature) {
         @"voice_clone":     @"Voice Clone",
         @"whisper_minute":  @"Voice Transcription",
         @"web_search":      @"Web Search",
+        @"daily_reward":    @"Daily Free Coins",
     };
     return map[feature] ?: feature;
 }
@@ -79,6 +80,7 @@ static NSString *featureIcon(NSString *feature) {
     if ([feature isEqual:@"voice_clone"]) return @"🎤";
     if ([feature isEqual:@"whisper_minute"]) return @"🎙";
     if ([feature isEqual:@"web_search"]) return @"🔍";
+    if ([feature isEqual:@"daily_reward"]) return @"🎁";
     return @"🪙";
 }
 
@@ -170,11 +172,20 @@ static NSNumber *safeNumber(id value) {
     NSInteger coins    = [safeNumber(row[@"coins_charged"]) integerValue];
     NSInteger balance  = [safeNumber(row[@"running_balance"]) integerValue];
     NSInteger qty      = [safeNumber(row[@"quantity"]) integerValue];
+    BOOL isCredit       = [safeString(row[@"direction"]) isEqualToString:@"credit"];
 
-    // TTS stores character count in quantity, not a repeating unit — show chars instead
-    if ([feature isEqualToString:@"tts"]) {
+    // TTS stores character count and Whisper stores audio seconds in quantity,
+    // not repeating billable units — show the real unit instead of "× N ea.".
+    if (isCredit) {
+        _coinsLabel.text = [NSString stringWithFormat:@"+%ld coins", (long)ABS(coins)];
+        _coinsLabel.textColor = [UIColor systemGreenColor];
+    } else if ([feature isEqualToString:@"tts"]) {
         _coinsLabel.text = qty > 0
             ? [NSString stringWithFormat:@"−%ld coins  (%ld chars)", (long)coins, (long)qty]
+            : [NSString stringWithFormat:@"−%ld coins", (long)coins];
+    } else if ([feature isEqualToString:@"whisper_minute"]) {
+        _coinsLabel.text = qty > 0
+            ? [NSString stringWithFormat:@"−%ld coins  (%ld sec)", (long)coins, (long)qty]
             : [NSString stringWithFormat:@"−%ld coins", (long)coins];
     } else if (qty > 1) {
         NSInteger coinsPerUnit = coins / qty;
@@ -183,6 +194,7 @@ static NSNumber *safeNumber(id value) {
     } else {
         _coinsLabel.text = [NSString stringWithFormat:@"−%ld coins", (long)coins];
     }
+    if (!isCredit) _coinsLabel.textColor = [UIColor systemOrangeColor];
     _balanceLabel.text = [NSString stringWithFormat:@"Balance: %ld coins", (long)balance];
 
     // Detail line — images, tokens, model, error
@@ -306,7 +318,7 @@ static NSNumber *safeNumber(id value) {
                         NSTextAlignmentCenter, 1);
     _callsLabel   = lbl(12, UIFontWeightRegular, EZUMuted(), NSTextAlignmentCenter, 1);
     _hintLabel    = lbl(11, UIFontWeightRegular, EZUMuted(), NSTextAlignmentCenter, 2);
-    _hintLabel.text = @"This log shows every coin deduction in your account.\nKeep it as a record of usage.";
+    _hintLabel.text = @"This log shows coin deductions and free-coin credits.\nKeep it as a record of account activity.";
 
     UIView *dividerLine = [UIView new];
     dividerLine.backgroundColor = [UIColor colorWithWhite:1 alpha:0.08];
@@ -437,12 +449,15 @@ static NSNumber *safeNumber(id value) {
 
 - (void)updateSummary {
     NSInteger totalCoins = 0;
+    NSInteger debitCalls = 0;
     for (NSDictionary *row in self.rows) {
+        if ([safeString(row[@"direction"]) isEqualToString:@"credit"]) continue;
         totalCoins += [safeNumber(row[@"coins_charged"]) integerValue];
+        debitCalls++;
     }
     [self.summaryView configureWithBalance:self.currentBalance
                                 totalCoins:totalCoins
-                                totalCalls:(NSInteger)self.rows.count];
+                                totalCalls:debitCalls];
 }
 
 - (void)fetchPage:(NSInteger)page {

@@ -29,6 +29,25 @@
 #import "BRGameView.h"
 #import "BRGameModel.h"
 
+#pragma mark - Individual Wall Tile Cache
+
+static NSString *BRWallTileCacheKey(NSInteger col, NSInteger row) {
+    return [NSString stringWithFormat:@"%ld,%ld", (long)col, (long)row];
+}
+
+static uint32_t BRWallTileSeed(NSInteger col, NSInteger row) {
+    uint32_t value = (uint32_t)(col * 374761393 + row * 668265263);
+    value = (value ^ (value >> 13)) * 1274126177;
+    return value ^ (value >> 16);
+}
+
+@interface BRGameView ()
+
+/// Cached visual pieces for the model's wall tiles.
+@property (nonatomic, strong) NSMutableDictionary<NSString *, UIImage *> *wallTileCache;
+
+@end
+
 @implementation BRGameView
 
 - (instancetype)initWithFrame:(CGRect)frame {
@@ -38,6 +57,7 @@
         _viewportRows = 5;
         _cameraCol    = 0;
         _cameraRow    = 0;
+        _wallTileCache = [NSMutableDictionary dictionary];
     }
     return self;
 }
@@ -49,13 +69,165 @@
         _viewportRows = 5;
         _cameraCol    = 0;
         _cameraRow    = 0;
+        _wallTileCache = [NSMutableDictionary dictionary];
     }
     return self;
 }
 
+
+
+#pragma mark - Wall Image Tile Generation
+
+- (void)setModel:(BRGameModel *)model {
+    if (_model == model) return;
+
+    _model = model;
+    [self.wallTileCache removeAllObjects];
+    [self setNeedsDisplay];
+}
+
+- (void)setBackgroundImage:(UIImage *)backgroundImage {
+    if (_backgroundImage == backgroundImage) return;
+
+    _backgroundImage = backgroundImage;
+    [self.wallTileCache removeAllObjects];
+    [self setNeedsDisplay];
+}
+
+/// Builds one themed, square obstacle image for one wall coordinate.
+///
+/// The image starts with the matching part of the generated world texture,
+/// then receives an opaque obstacle layer, deterministic slabs, bevels, and
+/// visible energy cracks. Since every wall is a real image piece, your existing
+/// snapshotOfGameViewTileAtCol:row: explosion effect now destroys the actual
+/// displayed wall artwork instead of a generic transparent dark overlay.
+- (UIImage *)wallImageForCol:(NSInteger)col row:(NSInteger)row {
+    NSString *cacheKey = BRWallTileCacheKey(col, row);
+    UIImage *cachedImage = self.wallTileCache[cacheKey];
+    if (cachedImage) return cachedImage;
+
+    static const CGFloat kWallImageSize = 128.0;
+    CGSize imageSize = CGSizeMake(kWallImageSize, kWallImageSize);
+
+    UIGraphicsBeginImageContextWithOptions(imageSize, YES, 1.0);
+    CGContextRef context = UIGraphicsGetCurrentContext();
+
+    if (!context) {
+        UIGraphicsEndImageContext();
+        NSLog(@"[BrainRot] Failed to create graphics context for wall tile %ld,%ld.",
+              (long)col, (long)row);
+        return nil;
+    }
+
+    CGRect canvas = CGRectMake(0, 0, kWallImageSize, kWallImageSize);
+
+    // Use the corresponding piece of the generated floor texture as a visual
+    // foundation. This helps each wall belong to the AI-generated theme.
+    if (self.backgroundImage && self.model) {
+        CGRect fullWorldRect = CGRectMake(
+            -col * kWallImageSize,
+            -row * kWallImageSize,
+            self.model.cols * kWallImageSize,
+            self.model.rows * kWallImageSize
+        );
+
+        UIGraphicsPushContext(context);
+        [self.backgroundImage drawInRect:fullWorldRect];
+        UIGraphicsPopContext();
+    } else {
+        CGContextSetFillColorWithColor(context,
+            [UIColor colorWithRed:0.10 green:0.06 blue:0.16 alpha:1.0].CGColor);
+        CGContextFillRect(context, canvas);
+    }
+
+    // Dense wall base. This gives unmistakable visual passability contrast
+    // while retaining enough themed color from the source texture.
+    CGContextSetFillColorWithColor(context,
+        [UIColor colorWithRed:0.025 green:0.01 blue:0.06 alpha:0.80].CGColor);
+    CGContextFillRect(context, canvas);
+
+    uint32_t seed = BRWallTileSeed(col, row);
+    NSInteger slabCount = 4 + (seed % 4);
+
+    // Deterministic slab details prevent every 1x1 piece from looking cloned.
+    for (NSInteger index = 0; index < slabCount; index++) {
+        uint32_t slabSeed = seed + (uint32_t)(index * 7919);
+
+        CGFloat width = 30.0 + ((slabSeed >> 3) % 50);
+        CGFloat height = 16.0 + ((slabSeed >> 11) % 28);
+        CGFloat x = ((slabSeed >> 17) % 128);
+        CGFloat y = ((slabSeed >> 24) % 128);
+
+        CGRect slabRect = CGRectMake(
+            x - width / 2.0,
+            y - height / 2.0,
+            width,
+            height
+        );
+
+        UIColor *slabColor = (index % 2 == 0)
+            ? [UIColor colorWithRed:0.30 green:0.12 blue:0.42 alpha:0.55]
+            : [UIColor colorWithRed:0.08 green:0.20 blue:0.30 alpha:0.62];
+
+        CGContextSetFillColorWithColor(context, slabColor.CGColor);
+        CGContextFillRect(context, slabRect);
+
+        CGContextSetStrokeColorWithColor(context,
+            [UIColor colorWithWhite:0.85 alpha:0.14].CGColor);
+        CGContextSetLineWidth(context, 1.0);
+        CGContextStrokeRect(context, CGRectInset(slabRect, 0.5, 0.5));
+    }
+
+    // Raised block bevel: light at top/left, shadow at bottom/right.
+    CGContextSetStrokeColorWithColor(context,
+        [UIColor colorWithWhite:1.0 alpha:0.20].CGColor);
+    CGContextSetLineWidth(context, 3.0);
+    CGContextMoveToPoint(context, 1.5, kWallImageSize - 1.5);
+    CGContextAddLineToPoint(context, 1.5, 1.5);
+    CGContextAddLineToPoint(context, kWallImageSize - 1.5, 1.5);
+    CGContextStrokePath(context);
+
+    CGContextSetStrokeColorWithColor(context,
+        [UIColor colorWithWhite:0.0 alpha:0.72].CGColor);
+    CGContextSetLineWidth(context, 3.0);
+    CGContextMoveToPoint(context, kWallImageSize - 1.5, 1.5);
+    CGContextAddLineToPoint(context, kWallImageSize - 1.5, kWallImageSize - 1.5);
+    CGContextAddLineToPoint(context, 1.5, kWallImageSize - 1.5);
+    CGContextStrokePath(context);
+
+    // The crack is deterministic, ensuring a wall tile always looks identical
+    // after scrolling, redrawing, reloading, or generating an explosion snapshot.
+    CGContextSetStrokeColorWithColor(context,
+        [UIColor colorWithRed:0.66 green:0.20 blue:0.95 alpha:0.34].CGColor);
+    CGContextSetLineWidth(context, 1.5);
+
+    CGFloat crackStartX = 18.0 + ((seed >> 5) % 70);
+    CGFloat crackStartY = 18.0 + ((seed >> 13) % 60);
+
+    CGContextMoveToPoint(context, crackStartX, crackStartY);
+    CGContextAddLineToPoint(context, crackStartX + 14.0, crackStartY + 9.0);
+    CGContextAddLineToPoint(context, crackStartX + 7.0, crackStartY + 25.0);
+    CGContextAddLineToPoint(context, crackStartX + 27.0, crackStartY + 38.0);
+    CGContextStrokePath(context);
+
+    UIImage *wallImage = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+
+    if (!wallImage) {
+        NSLog(@"[BrainRot] Failed to build wall image for tile %ld,%ld.",
+              (long)col, (long)row);
+        return nil;
+    }
+
+    self.wallTileCache[cacheKey] = wallImage;
+    return wallImage;
+}
+
+
 - (void)drawRect:(CGRect)rect {
     if (!self.model) return;
     CGContextRef ctx = UIGraphicsGetCurrentContext();
+    if (!ctx) return;
 
     CGFloat viewWidth  = CGRectGetWidth(self.bounds);
     CGFloat viewHeight = CGRectGetHeight(self.bounds);
@@ -115,19 +287,20 @@
                 // any AI art style without depending on image brightness.
                 switch (tile.type) {
                     case BRTileTypeWall: {
-                        // Light vignette so the AI's wall art shows through clearly.
-                        // The template is now 1024×1024 and structurally 1:1 with the
-                        // output, so the generated image's dark wall areas already
-                        // signal impassability — we just add a subtle tint and a faint
-                        // inner border to separate adjacent tiles without boxing them.
-                        CGContextSetFillColorWithColor(ctx,
-                            [UIColor colorWithWhite:0.0 alpha:0.22].CGColor);
-                        CGContextFillRect(ctx, tileRect);
-                        CGRect wallBorderRect = CGRectInset(tileRect, 1.0, 1.0);
-                        CGContextSetStrokeColorWithColor(ctx,
-                            [UIColor colorWithWhite:0.0 alpha:0.30].CGColor);
-                        CGContextSetLineWidth(ctx, 0.75);
-                        CGContextStrokeRect(ctx, wallBorderRect);
+                        // The authoritative BRGameModel wall now has its own real
+                        // image tile. Maze topology is therefore always exact, and
+                        // wall-blast snapshots contain the displayed wall artwork.
+                        UIImage *wallImage = [self wallImageForCol:col row:row];
+                        if (wallImage) {
+                            UIGraphicsPushContext(ctx);
+                            [wallImage drawInRect:tileRect];
+                            UIGraphicsPopContext();
+                        } else {
+                            // Defensive fallback if image creation unexpectedly fails.
+                            CGContextSetFillColorWithColor(ctx,
+                                [UIColor colorWithRed:0.05 green:0.02 blue:0.10 alpha:1.0].CGColor);
+                            CGContextFillRect(ctx, tileRect);
+                        }
                         break;
                     }
                     case BRTileTypeExit:
@@ -219,6 +392,7 @@
                     CGContextFillEllipseInRect(ctx, enemyRect);
                 }
             }
+
         }
     }
 

@@ -49,6 +49,10 @@ static NSInteger brLCGNext(BRLCG *rng, NSInteger upperBound) {
 @property (nonatomic, assign) NSInteger _exitCol;
 @property (nonatomic, assign) NSInteger _exitRow;
 @property (nonatomic, assign) NSInteger _maxHP;
+
+/// Separate seeded stream for deterministic initial placement. This means
+/// retries, saved-game loads, and Play Again reproduce item/enemy starts.
+@property (nonatomic, assign) BRLCG placementRNG;
 @end
 
 @implementation BRGameModel
@@ -79,8 +83,14 @@ static NSInteger brLCGNext(BRLCG *rng, NSInteger upperBound) {
     }
     self.tiles = tiles;
 
+    uint64_t runSeed = (uint64_t)seed.integerValue;
+
     BRLCG rng;
-    brLCGSeed(&rng, (uint64_t)seed.integerValue);
+    brLCGSeed(&rng, runSeed);
+
+    // Placement gets an independent deterministic RNG stream. Maze carving
+    // remains unchanged, but item/enemy placement now reproduces exactly.
+    brLCGSeed(&_placementRNG, runSeed ^ 0xD1B54A32D192ED03ULL);
 
     // ── Depth-first backtracker on the logical (odd-indexed) grid ────────────
     // Logical grid dimensions (each logical cell maps to an odd tile index)
@@ -210,7 +220,7 @@ static NSInteger brLCGNext(BRLCG *rng, NSInteger upperBound) {
     NSInteger placed = 0;
     NSInteger nameCount = (NSInteger)itemNames.count;
     while (placed < count && candidateTiles.count > 0) {
-        NSInteger randomIndex = arc4random_uniform((uint32_t)candidateTiles.count);
+        NSInteger randomIndex = brLCGNext(&_placementRNG, candidateTiles.count);
         BRTile   *tile        = candidateTiles[randomIndex];
         if (!tile.itemName && !tile.enemyName) {
             tile.itemName = itemNames[placed % nameCount];
@@ -249,7 +259,7 @@ static NSInteger brLCGNext(BRLCG *rng, NSInteger upperBound) {
     NSInteger placed    = 0;
     NSInteger nameCount = (NSInteger)enemyNames.count;
     while (placed < count && candidateTiles.count > 0) {
-        NSInteger randomIndex = arc4random_uniform((uint32_t)candidateTiles.count);
+        NSInteger randomIndex = brLCGNext(&_placementRNG, candidateTiles.count);
         BRTile   *tile        = candidateTiles[randomIndex];
         tile.enemyName = enemyNames[placed % nameCount];
         placed++;

@@ -45,7 +45,7 @@ static NSString * const kFallbackMP3Format = @"mp3_44100_128";
 static NSString * const kVoiceIDDefaultsKey = @"elevenVoiceID";
 static NSString * const kVoiceNameDefaultsKey = @"elevenVoiceName";
 
-static NSUInteger const kPromptCharacterLimit = 500;
+static NSUInteger const kPromptCharacterLimit = 1200;
 
 @interface TextToSpeechViewController : UIViewController <UITextViewDelegate>
 @end

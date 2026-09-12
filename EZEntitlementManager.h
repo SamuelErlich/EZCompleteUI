@@ -80,6 +80,23 @@ typedef NS_ENUM(NSInteger, EZFeature) {
                                             NSInteger balance,
                                             NSString * _Nullable reason))completion;
 
+/// Quantity-aware flat-rate check with quality/size/edit metadata — used
+/// for images, where quality and size materially change the real cost.
+/// quality/size are sent to check-entitlement as img_quality/img_size
+/// (see that action's own code) — pass nil for non-image features, which
+/// still works correctly via the estimator's own fallback. isEdit affects
+/// the cost estimate for image edits specifically (adds reference-image
+/// input token cost on top of the base per-image fee).
+- (void)checkEntitlementForFeature:(EZFeature)feature
+                          quantity:(NSInteger)quantity
+                            prompt:(nullable NSString *)prompt
+                             model:(nullable NSString *)model
+                           quality:(nullable NSString *)quality
+                              size:(nullable NSString *)size
+                            isEdit:(BOOL)isEdit
+                        completion:(void(^)(BOOL allowed,
+                                           NSInteger balance,
+                                           NSString * _Nullable reason))completion;
 // ── Post-completion updates ───────────────────────────────────────────────────
 
 /// Call after image/sora API returns. Uses lastLogID automatically.

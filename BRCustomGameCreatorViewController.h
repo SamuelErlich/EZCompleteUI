@@ -16,6 +16,11 @@ NS_ASSUME_NONNULL_BEGIN
 
 @interface BRCustomGameCreatorViewController : UIViewController
 
+/// Optional photo supplied by another part of the app (for example, EZ
+/// Attachments). When present, the workshop asks whether to use it as the
+/// player character or the game's background before any generation begins.
+@property (nonatomic, strong, nullable) UIImage *initialWorkshopImage;
+
 /// Fired on the main thread when the backend approves the transaction,
 /// generations complete, and the asset pack is fully written to local storage.
 /// Fires once, at the moment the record becomes available — before the

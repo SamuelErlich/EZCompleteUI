@@ -3,6 +3,8 @@
 //  EZCompleteUI
 
 #import "EZImageGridCell.h"
+#import "EZPhotoGalleryViewController.h"
+#import "BrainRotViewController.h"
 
 // ── Layout constants ──────────────────────────────────────────────────────────
 
@@ -19,6 +21,10 @@ static CGFloat const kIGCCardPad     = 16.0;  // left/right margin from cell edg
 @property (nonatomic, strong) UIImage *image;
 @property (nonatomic, strong) UIScrollView *scrollView;
 @property (nonatomic, strong) UIImageView  *imageView;
+@property (nonatomic, strong) UIVisualEffectView *toolbar;
+@property (nonatomic, strong) UIButton *askButton;
+@property (nonatomic, strong) UIButton *editButton;
+@property (nonatomic, strong) UIButton *useInGameButton;
 @end
 
 @implementation EZFullScreenImageVC
@@ -77,15 +83,91 @@ static CGFloat const kIGCCardPad     = 16.0;  // left/right margin from cell edg
     [self.view addSubview:share];
     [NSLayoutConstraint activateConstraints:@[
         [share.topAnchor    constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor constant:12],
-        [share.leadingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.leadingAnchor constant:16],
+        [share.trailingAnchor constraintEqualToAnchor:close.leadingAnchor constant:-8],
         [share.widthAnchor  constraintEqualToConstant:44],
         [share.heightAnchor constraintEqualToConstant:44],
     ]];
+
+    [self setupActionToolbar];
+}
+
+- (void)setupActionToolbar {
+    UIBlurEffect *blur = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemUltraThinMaterialDark];
+    self.toolbar = [[UIVisualEffectView alloc] initWithEffect:blur];
+    self.toolbar.clipsToBounds = YES;
+    [self.view addSubview:self.toolbar];
+
+    self.askButton = [self actionButtonWithTitle:@"Ask a Question"
+                                             icon:@"bubble.left.and.bubble.right.fill"
+                                            color:[UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:1.0]
+                                             dark:YES];
+    [self.askButton addTarget:self action:@selector(askTapped) forControlEvents:UIControlEventTouchUpInside];
+    [self.toolbar.contentView addSubview:self.askButton];
+
+    self.editButton = [self actionButtonWithTitle:@"Edit with AI"
+                                              icon:@"wand.and.stars"
+                                             color:[UIColor systemBlueColor]
+                                              dark:NO];
+    [self.editButton addTarget:self action:@selector(editTapped) forControlEvents:UIControlEventTouchUpInside];
+    [self.toolbar.contentView addSubview:self.editButton];
+
+    self.useInGameButton = [self actionButtonWithTitle:@"Use in Video Game"
+                                                   icon:@"gamecontroller.fill"
+                                                  color:[UIColor systemPurpleColor]
+                                                   dark:NO];
+    [self.useInGameButton addTarget:self action:@selector(useInVideoGameTapped)
+                    forControlEvents:UIControlEventTouchUpInside];
+    [self.toolbar.contentView addSubview:self.useInGameButton];
+}
+
+- (UIButton *)actionButtonWithTitle:(NSString *)title
+                                icon:(NSString *)iconName
+                               color:(UIColor *)color
+                                dark:(BOOL)dark {
+    UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
+    button.backgroundColor = dark ? color : [color colorWithAlphaComponent:0.18];
+    button.layer.cornerRadius = 14;
+    button.layer.masksToBounds = YES;
+    button.tintColor = dark ? [UIColor colorWithRed:0.05 green:0.05 blue:0.12 alpha:1] : color;
+    UIImageSymbolConfiguration *config = [UIImageSymbolConfiguration configurationWithPointSize:13
+                                                                                           weight:UIImageSymbolWeightSemibold];
+    if (@available(iOS 15, *)) {
+        UIButtonConfiguration *buttonConfig = [UIButtonConfiguration filledButtonConfiguration];
+        buttonConfig.title = title;
+        buttonConfig.image = [UIImage systemImageNamed:iconName withConfiguration:config];
+        buttonConfig.imagePadding = 4;
+        buttonConfig.contentInsets = NSDirectionalEdgeInsetsMake(0, 6, 0, 6);
+        buttonConfig.background.backgroundColor = button.backgroundColor;
+        buttonConfig.baseForegroundColor = button.tintColor;
+        buttonConfig.titleTextAttributesTransformer =
+            ^NSDictionary<NSAttributedStringKey,id> *(NSDictionary<NSAttributedStringKey,id> *attributes) {
+                NSMutableDictionary *updated = [attributes mutableCopy];
+                updated[NSFontAttributeName] = [UIFont boldSystemFontOfSize:10.5];
+                return updated;
+            };
+        button.configuration = buttonConfig;
+    } else {
+        [button setTitle:title forState:UIControlStateNormal];
+        button.titleLabel.font = [UIFont boldSystemFontOfSize:10.5];
+        [button setTitleColor:button.tintColor forState:UIControlStateNormal];
+    }
+    return button;
 }
 
 - (void)viewDidLayoutSubviews {
     [super viewDidLayoutSubviews];
-    self.scrollView.frame = self.view.bounds;
+    CGFloat toolbarH = 76 + self.view.safeAreaInsets.bottom;
+    self.toolbar.frame = CGRectMake(0, CGRectGetHeight(self.view.bounds) - toolbarH,
+                                    CGRectGetWidth(self.view.bounds), toolbarH);
+    CGFloat pad = 16;
+    CGFloat buttonW = (CGRectGetWidth(self.view.bounds) - pad * 2 - 16) / 3.0;
+    CGFloat buttonY = 14;
+    self.askButton.frame = CGRectMake(pad, buttonY, buttonW, 48);
+    self.editButton.frame = CGRectMake(pad + buttonW + 8, buttonY, buttonW, 48);
+    self.useInGameButton.frame = CGRectMake(pad + (buttonW + 8) * 2, buttonY, buttonW, 48);
+
+    self.scrollView.frame = CGRectMake(0, 0, CGRectGetWidth(self.view.bounds),
+                                       CGRectGetHeight(self.view.bounds) - toolbarH);
     CGSize imgSize = self.image.size;
     if (imgSize.width > 0 && imgSize.height > 0) {
         CGFloat scale = MIN(self.view.bounds.size.width  / imgSize.width,
@@ -118,6 +200,35 @@ static CGFloat const kIGCCardPad     = 16.0;  // left/right margin from cell edg
 }
 
 - (void)dismissSelf { [self dismissViewControllerAnimated:YES completion:nil]; }
+
+- (void)askTapped {
+    [[NSNotificationCenter defaultCenter] postNotificationName:EZAttachImageToChat
+                                                        object:nil
+                                                      userInfo:@{ @"image": self.image }];
+    [self dismissSelf];
+}
+
+- (void)editTapped {
+    [[NSNotificationCenter defaultCenter] postNotificationName:EZEditImageInChat
+                                                        object:nil
+                                                      userInfo:@{ @"image": self.image, @"editMode": @YES }];
+    [self dismissSelf];
+}
+
+- (void)useInVideoGameTapped {
+    UIViewController *presenter = self.presentingViewController;
+    UIImage *selectedImage = self.image;
+    if (!presenter || !selectedImage) return;
+
+    [self dismissViewControllerAnimated:YES completion:^{
+        BrainRotViewController *brainRot = [[BrainRotViewController alloc] init];
+        brainRot.initialWorkshopImage = selectedImage;
+        UINavigationController *gameNavigation =
+            [[UINavigationController alloc] initWithRootViewController:brainRot];
+        gameNavigation.modalPresentationStyle = UIModalPresentationPageSheet;
+        [presenter presentViewController:gameNavigation animated:YES completion:nil];
+    }];
+}
 
 - (void)shareTapped:(UIButton *)btn {
     if (!self.image) return;

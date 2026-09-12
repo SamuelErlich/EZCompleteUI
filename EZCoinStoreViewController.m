@@ -25,10 +25,10 @@
 //   - startSubscriptionForPlanID:token: renamed to startSubscriptionForTier:token:
 //   - pendingPlanID property renamed to pendingTierName to reflect the new
 //     tier-name-based architecture (property remains reserved for future retry logic)
-//   - Daily free coins: 5/day for free users, 10/day for active subscribers (any tier)
-//   - Floating "Daily Coins" button added top-left, mirroring the Ledger button on the right
+//   - Free coins every 6 hours: 5 per claim for free users, 10 per claim for active subscribers (any tier)
+//   - Floating "Free Coins" button added top-left, mirroring the Ledger button on the right
 //   - Ledger button and its methods wrapped in #if DEBUG — absent in Release/production builds
-//   - Daily coin eligibility is always verified server-side (claim-daily-coins edge function)
+//   - Coin eligibility is always verified server-side (claim-daily-coins edge function)
 //   - Successful claim triggers the same coin celebration overlay used for purchases
 //   - Button shows a live ticking countdown (e.g. "Next: 4h 22m", "Next: 3m 45s", "Next: 12s")
 //     driven by an NSTimer that fires every second; timer starts when the server confirms
@@ -333,8 +333,9 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
     [self refreshBalance];
     [self addDailyCoinsButton];
     [self refreshDailyCoinsStatus];
-
+#if DEBUG
     [self addLedgerButton];
+#endif
 }
 
 - (void)viewWillAppear:(BOOL)animated {
@@ -457,17 +458,18 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
 // ── UI Setup ──────────────────────────────────────────────────────────────────
 
 - (void)setupUI {
-    self.headerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, self.view.bounds.size.width, 120)];
+    // Leave the first line clear for the floating daily-coins countdown.
+    self.headerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, self.view.bounds.size.width, 160)];
     self.headerView.backgroundColor = [UIColor colorWithRed:0.05 green:0.05 blue:0.12 alpha:1.0];
 
-    UILabel *storeTitleLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 20, self.view.bounds.size.width, 36)];
+    UILabel *storeTitleLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 56, self.view.bounds.size.width, 36)];
     storeTitleLabel.text          = @"⚡ EZ Coin Store";
     storeTitleLabel.font          = [UIFont boldSystemFontOfSize:24];
     storeTitleLabel.textColor     = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:1.0];
     storeTitleLabel.textAlignment = NSTextAlignmentCenter;
     [self.headerView addSubview:storeTitleLabel];
 
-    self.balanceLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 62, self.view.bounds.size.width, 22)];
+    self.balanceLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 98, self.view.bounds.size.width, 22)];
     self.balanceLabel.font          = [UIFont systemFontOfSize:15 weight:UIFontWeightMedium];
     self.balanceLabel.textColor     = [UIColor secondaryLabelColor];
     self.balanceLabel.textAlignment = NSTextAlignmentCenter;
@@ -476,7 +478,7 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
 
     // Low-coin warning banner — shown when the store is opened because
     // the user ran out mid-session (triggeringFeatureName is set by the caller)
-    self.warningLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 88, self.view.bounds.size.width, 28)];
+    self.warningLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 124, self.view.bounds.size.width, 28)];
     self.warningLabel.backgroundColor = [UIColor systemRedColor];
     self.warningLabel.font            = [UIFont boldSystemFontOfSize:13];
     self.warningLabel.textColor       = [UIColor whiteColor];
@@ -487,9 +489,6 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
         NSString *featureName = self.triggeringFeatureName ?: @"this feature";
         self.warningLabel.text = [NSString stringWithFormat:
             @"⚠️  Not enough coins for %@. Top up below.", featureName];
-        CGRect expandedHeaderFrame    = self.headerView.frame;
-        expandedHeaderFrame.size.height = 124;
-        self.headerView.frame           = expandedHeaderFrame;
     }
     [self.headerView addSubview:self.warningLabel];
 
@@ -594,11 +593,11 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
     return cell;
 }
 
-// ── Daily Coins button ────────────────────────────────────────────────────────
+// ── Free Coins button ─────────────────────────────────────────────────────────
 // Floats top-left over the table content, mirroring the DEBUG Ledger button on the right.
 // Coin amounts and eligibility are always enforced server-side. The button state here
 // is purely informational — a jailbreak user can enable a disabled button, but the
-// edge function will still reject the claim if the 24-hour window hasn't elapsed.
+// edge function will still reject the claim if the 6-hour window hasn't elapsed.
 
 - (void)addDailyCoinsButton {
     self.dailyCoinsButton = [UIButton buttonWithType:UIButtonTypeSystem];
@@ -637,7 +636,7 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
         NSTimeInterval secondsRemaining = [self.nextDailyClaimDate timeIntervalSinceNow];
         if (secondsRemaining > 0) {
             [self updateCountdownLabel:secondsRemaining];
-            self.dailyCoinsButton.tintColor = [UIColor tertiaryLabelColor];
+            self.dailyCoinsButton.tintColor = [UIColor whiteColor];
             self.dailyCoinsButton.enabled   = NO;
             [self startCountdownTimer];
         } else {
@@ -748,7 +747,7 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
     [self claimDailyCoins];
 }
 
-// POSTs to the claim-daily-coins edge function, which enforces the 24-hour cooldown
+// POSTs to the claim-daily-coins edge function, which enforces the 6-hour cooldown
 // server-side, determines the award amount by checking subscription status in the DB,
 // credits coins, and returns the new balance.
 - (void)claimDailyCoins {
@@ -817,7 +816,7 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
                 self.isDailyCoinsAvailable = NO;
                 [self updateDailyCoinsButtonState];
                 [self showAlert:@"Already Claimed"
-                        message:@"You've already claimed your daily coins. Check back tomorrow!"];
+                        message:@"You've already claimed your free coins. Check back in 6 hours!"];
 
             } else {
                 // Unexpected server error — allow retry

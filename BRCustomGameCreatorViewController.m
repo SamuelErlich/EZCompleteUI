@@ -162,6 +162,10 @@ typedef NS_ENUM(NSInteger, BRAssetSourceKind) {
 /// value of BRAssetSlotPlayer is never actually relied upon.
 @property (nonatomic, assign) BRAssetSlot activeAssetSlot;
 
+/// Prevents the imported-photo role chooser from reappearing after another
+/// sheet is dismissed or after the app returns from the background.
+@property (nonatomic, assign) BOOL hasPromptedForInitialWorkshopImage;
+
 @end
 
 @implementation BRCustomGameCreatorViewController
@@ -176,6 +180,39 @@ typedef NS_ENUM(NSInteger, BRAssetSourceKind) {
     [self initializeActivityIndicator];
 
     EZLogf(2, @"BR_WORKSHOP", @"Custom Game Generator view successfully initialised.");
+}
+
+- (void)viewDidAppear:(BOOL)animated {
+    [super viewDidAppear:animated];
+    if (!self.initialWorkshopImage || self.hasPromptedForInitialWorkshopImage) return;
+
+    self.hasPromptedForInitialWorkshopImage = YES;
+    UIAlertController *chooser = [UIAlertController
+        alertControllerWithTitle:@"Use This Image"
+                         message:@"Should this attachment be the game background or the player character?"
+                  preferredStyle:UIAlertControllerStyleActionSheet];
+    __weak typeof(self) weakSelf = self;
+    [chooser addAction:[UIAlertAction actionWithTitle:@"Use as Background"
+                                                style:UIAlertActionStyleDefault
+                                              handler:^(__unused UIAlertAction *action) {
+        [weakSelf setCustomImage:weakSelf.initialWorkshopImage
+                  forAssetSlot:BRAssetSlotBackground];
+        [weakSelf.collectionView reloadData];
+    }]];
+    [chooser addAction:[UIAlertAction actionWithTitle:@"Use as Character"
+                                                style:UIAlertActionStyleDefault
+                                              handler:^(__unused UIAlertAction *action) {
+        [weakSelf setCustomImage:weakSelf.initialWorkshopImage
+                  forAssetSlot:BRAssetSlotPlayer];
+        [weakSelf.collectionView reloadData];
+    }]];
+    [chooser addAction:[UIAlertAction actionWithTitle:@"Choose Later"
+                                                style:UIAlertActionStyleCancel
+                                              handler:nil]];
+    chooser.popoverPresentationController.sourceView = self.view;
+    chooser.popoverPresentationController.sourceRect = CGRectMake(CGRectGetMidX(self.view.bounds),
+                                                                     CGRectGetMidY(self.view.bounds), 1, 1);
+    [self presentViewController:chooser animated:YES completion:nil];
 }
 
 - (void)initializeNavigationItems {

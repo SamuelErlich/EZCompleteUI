@@ -60,12 +60,13 @@
 
     // ── ElevenLabs Voice Cloning ──────────────────────────────────────────────────
 
+/*
     // ── Sora video ────────────────────────────────────────────────────────────────
     @property (nonatomic, strong) UITextField  *soraModelField;
     @property (nonatomic, strong) UITextField  *soraSizeField;
     @property (nonatomic, strong) UISlider     *soraDurationSlider;
     @property (nonatomic, strong) UILabel      *soraDurationLabel;
-
+**/
     @end
 
 
@@ -256,7 +257,7 @@
                       y:&y w:w];
 
         y += 35;
-
+/*
         // ── Sora Text-to-Video ────────────────────────────────────────────────────
         [self addSection:@"🎬 Sora Text-to-Video" y:&y];
 
@@ -285,7 +286,7 @@
         self.soraDurationSlider = [self addSlider:w y:&y min:1 max:20];
         [self.soraDurationSlider addTarget:self action:@selector(updateVideoLabels)
                           forControlEvents:UIControlEventValueChanged];
-
+*/
         // ── AI Memory ─────────────────────────────────────────────────────────────
         [self addSection:@"🧠 AI Memory" y:&y];
         y += 8;
@@ -518,7 +519,7 @@
         self.freqLabel.text = [NSString stringWithFormat:@"Freq Penalty: %.2f",
                                self.freqSlider.value];
     }
-
+/*
     - (void)updateVideoLabels {
         NSString *model = self.soraModelField.text ?: @"sora-2";
         BOOL      isPro = [model isEqualToString:@"sora-2-pro"];
@@ -590,7 +591,7 @@
                                                   style:UIAlertActionStyleCancel handler:nil]];
         [self presentViewController:sheet animated:YES completion:nil];
     }
-
+***/
 
     // ─────────────────────────────────────────────────────────────────────────────
     // MARK: - ElevenLabs Voice Fetching
@@ -698,12 +699,12 @@
         self.elVoiceField.text        = [defaults stringForKey:@"elevenVoiceID"];
         self.webSearchSwitch.on       = [defaults boolForKey:@"webSearchEnabled"];
         self.webLocationField.text    = [defaults stringForKey:@"webSearchLocation"];
-        self.soraModelField.text      = [defaults stringForKey:@"soraModel"]   ?: @"sora-2";
-        self.soraSizeField.text       = [defaults stringForKey:@"soraSize"]    ?: @"1280x720";
-        self.soraDurationSlider.value = (float)([defaults integerForKey:@"soraDuration"] ?: 4);
+   //     self.soraModelField.text      = [defaults stringForKey:@"soraModel"]   ?: @"sora-2";
+   //     self.soraSizeField.text       = [defaults stringForKey:@"soraSize"]    ?: @"1280x720";
+     //  self.soraDurationSlider.value = (float)([defaults integerForKey:@"soraDuration"] ?: 4);
 
         [self updateLabels];
-        [self updateVideoLabels];
+      //  [self updateVideoLabels];
 
         dispatch_async(dispatch_get_main_queue(), ^{
             [self resizeSystemMsgView];
@@ -720,9 +721,9 @@
         [defaults setObject:self.elVoiceField.text      forKey:@"elevenVoiceID"];
         [defaults setBool:self.webSearchSwitch.isOn     forKey:@"webSearchEnabled"];
         [defaults setObject:self.webLocationField.text  forKey:@"webSearchLocation"];
-        [defaults setObject:self.soraModelField.text    forKey:@"soraModel"];
-        [defaults setObject:self.soraSizeField.text     forKey:@"soraSize"];
-        [defaults setInteger:(NSInteger)self.soraDurationSlider.value forKey:@"soraDuration"];
+      //  [defaults setObject:self.soraModelField.text    forKey:@"soraModel"];
+      //  [defaults setObject:self.soraSizeField.text     forKey:@"soraSize"];
+      //  [defaults setInteger:(NSInteger)self.soraDurationSlider.value forKey:@"soraDuration"];
         [defaults synchronize];
 
         EZLog(EZLogLevelInfo, @"SETTINGS", @"Settings saved");

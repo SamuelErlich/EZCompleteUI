@@ -138,6 +138,7 @@
 #import "BRGameView.h"
 #import "BRGameLibrary.h"
 #import "BRGamePickerViewController.h"
+#import "BRCustomGameCreatorViewController.h"
 #import "EZAuthManager.h"
 #import "EZEntitlementManager.h"
 #import <AVFoundation/AVFoundation.h>
@@ -2044,6 +2045,11 @@ static const void *kBREndCardNavigateAfterSubmitKey    = &kBREndCardNavigateAfte
         [self playRandomVariantOfSound:@"hurt-player" variantCount:2];
     }
     [self updateHUD];
+
+    // The next scheduled tick would eventually redraw the map, but requesting
+    // a redraw immediately makes newly explored tiles appear the moment the
+    // player completes a movement tap.
+    [self.gameView setNeedsDisplay];
 }
 
 - (void)useAction {
@@ -2318,6 +2324,25 @@ static const void *kBREndCardNavigateAfterSubmitKey    = &kBREndCardNavigateAfte
     [self presentViewController:picker animated:NO completion:nil];
 }
 
+/// Starts the same Custom Workshop available from the New Game card, but
+/// preloads a photo selected in EZ Attachments. The workshop itself asks the
+/// player whether the image belongs to the character or background slot.
+- (void)showCustomWorkshopWithInitialImage:(UIImage *)image {
+    BRCustomGameCreatorViewController *workshop =
+        [[BRCustomGameCreatorViewController alloc] init];
+    workshop.initialWorkshopImage = image;
+
+    __weak typeof(self) weakSelf = self;
+    workshop.onPlayRequested = ^(BRGameRecord *record) {
+        [weakSelf loadGameRecord:record];
+    };
+
+    UINavigationController *navWrapper =
+        [[UINavigationController alloc] initWithRootViewController:workshop];
+    navWrapper.modalPresentationStyle = UIModalPresentationFullScreen;
+    [self presentViewController:navWrapper animated:YES completion:nil];
+}
+
 /// "Go back" for this view controller itself, used when the picker is closed
 /// with no selection. Handles both ways BrainRotViewController might have
 /// been shown:
@@ -2448,6 +2473,20 @@ static const void *kBREndCardNavigateAfterSubmitKey    = &kBREndCardNavigateAfte
     [self.inventory removeAllObjects];
     [self setGameInputEnabled:NO];
 
+    // Do not let old normal/boss timers or an old boss overlay affect the
+    // newly loading game.
+    [self.tickTimer invalidate];
+    self.tickTimer = nil;
+    [self.bossFightTimer invalidate];
+    self.bossFightTimer = nil;
+    [self.bossComboWindowTimer invalidate];
+    self.bossComboWindowTimer = nil;
+    self.bossFightActive = NO;
+    self.isPaused = NO;
+    self.pauseBtn.selected = NO;
+    [self.bossFightOverlay removeFromSuperview];
+    self.bossFightOverlay = nil;
+
     // Tear down previous run
     [self.levelEndCardView removeFromSuperview];
     self.levelEndCardView       = nil;
@@ -2524,26 +2563,25 @@ static const void *kBREndCardNavigateAfterSubmitKey    = &kBREndCardNavigateAfte
         // Snapshot everything needed for Play Again (same world, zero API cost)
         self.savedRunAssets = assetDict;
 
-        // Only persist to the library for subscribers — saving is a membership perk.
-        // Non-members can play the game they just generated but it won't appear
-        // in the picker on their next session.
-        if (![self userHasMembership]) return; // skip save for non-members
-
-        __weak typeof(self) weakSelfForSave = self;
-        [[BRGameLibrary shared]
-            saveGameWithThemeTitle:themeTitle
-                           premise:levelDesc
-                              hint:hint
-                             items:items
-                           enemies:enemies
-                              seed:self.savedRunSeed
-                  backgroundImage:bgImage
-                       playerImage:playerImg
-                        enemyImage:enemyImg
-                        completion:^(BRGameRecord *savedRecord) {
-            __strong typeof(weakSelfForSave) strongSelfForSave = weakSelfForSave;
-            strongSelfForSave.currentGameRecord = savedRecord;
-        }];
+        // Saving remains a membership feature. Do not return for
+        // non-members: the universal "Tap To Begin" setup below must still run.
+        if ([self userHasMembership]) {
+            __weak typeof(self) weakSelfForSave = self;
+            [[BRGameLibrary shared]
+                saveGameWithThemeTitle:themeTitle
+                               premise:levelDesc
+                                  hint:hint
+                                 items:items
+                               enemies:enemies
+                                  seed:self.savedRunSeed
+                      backgroundImage:bgImage
+                           playerImage:playerImg
+                            enemyImage:enemyImg
+                            completion:^(BRGameRecord *savedRecord) {
+                __strong typeof(weakSelfForSave) strongSelfForSave = weakSelfForSave;
+                strongSelfForSave.currentGameRecord = savedRecord;
+            }];
+        }
 
         // Phase 3: reveal begin button, let player tap when ready.
         // weakSelf breaks the retain cycle: self → beginButtonAction (property)
@@ -2854,17 +2892,14 @@ static const void *kBREndCardNavigateAfterSubmitKey    = &kBREndCardNavigateAfte
         "  items: array of 4 short thematic item names (under 20 chars each)\n"
         "  enemies: array of 2 short enemy names\n"
         "  vulnerableHint: 1 short sentence hinting which item is best for breaking walls\n"
-        "  backgroundPrompt: DALL-E image prompt for the reference maze image provided. "
-        "The reference shows the EXACT maze layout: white/light = walkable floor path, "
-        "black/dark = impassable wall, blue dot = player start, bright green = exit goal. "
-        "You MUST match this exact corridor structure — every white path in the reference "
-        "must appear as a VISUALLY BRIGHT, clearly traversable area in your image. "
-        "Every dark wall area must appear as a DARKER, visually dense obstacle area. "
-        "The contrast between paths (bright/open) and walls (dark/dense) is critical. "
-        "Style the paths as thematic terrain (dirt trails, marble corridors, neon streets). "
-        "Style walls as dense thematic obstacles (hedges, stone walls, buildings, jungle). "
-        "Top-down view, game-art style. NO characters or text. "
-        "CRITICAL: preserve the maze layout exactly — players navigate by visual contrast.\n"
+        "  backgroundPrompt: DALL-E prompt for a SINGLE seamless top-down GAME FLOOR texture. "
+        "This is NOT a maze image. Do NOT draw corridors, maze walls, paths, rooms, doors, "
+        "grid lines, borders, text, characters, vehicles, or a visible destination. "
+        "Create an evenly readable overhead terrain surface matching the theme, such as grass, "
+        "marble, candy floor, alien carpet, moon dust, kitchen tiles, or neon pavement. "
+        "Keep detail distributed across the entire square but leave enough visual calm for game markers. "
+        "The app constructs all maze walls itself from individual image pieces, so this must be "
+        "a floor/world background only. Top-down game-art style, square composition, no text.\n"
         "  spriteSheetPrompt: DALL-E prompt for a single 1024x1024 image. "
         "TOP HALF: hero character only, centered, full body, white background, bold cartoon outlines. "
         "Thin white dividing line across center. "
@@ -2904,12 +2939,10 @@ static const void *kBREndCardNavigateAfterSubmitKey    = &kBREndCardNavigateAfte
             });
         }
 
-        // Render a B&W maze template from the current model topology.
-        // This is passed to the background image call as a reference image so the
-        // AI produces an image whose bright/dark regions match our known-good maze,
-        // instead of inventing a layout that may be unnavigable.
-        NSData *mazeTemplateData = [self renderMazeTemplateImageData];
-        self.savedMazeTemplateImageData = mazeTemplateData;
+        // Generate a seamless floor/world texture only. BRGameView builds
+        // the authoritative maze from individual wall image pieces, so generated
+        // AI art can no longer invent corridors that disagree with the model.
+        self.savedMazeTemplateImageData = nil;
 
         // Generate background + sprite sheet in parallel
         dispatch_group_t imageGroup      = dispatch_group_create();
@@ -2919,7 +2952,7 @@ static const void *kBREndCardNavigateAfterSubmitKey    = &kBREndCardNavigateAfte
         dispatch_group_enter(imageGroup);
         [self generateImageWithPrompt:bgPrompt
                           transparent:NO
-                    referenceImageData:mazeTemplateData
+                    referenceImageData:nil
                             completion:^(UIImage *img) {
             backgroundImg = img;
             dispatch_group_leave(imageGroup);
@@ -3109,7 +3142,10 @@ static const void *kBREndCardNavigateAfterSubmitKey    = &kBREndCardNavigateAfte
 #pragma mark - Enemy Image Views
 
 - (void)refreshEnemyImageViews {
-    if (!self.enemyImage || !self.model) return;
+    // Enemy positions must remain synchronized with the model even if the
+    // generated enemy sprite failed to load. BRGameView can still draw its
+    // fallback enemy indicator and moveEnemiesStep still needs these positions.
+    if (!self.model) return;
 
     // ── Build the ground-truth set of live enemy tile keys ────────────────────
     NSMutableDictionary<NSString *, NSValue *> *liveEnemies = [NSMutableDictionary dictionary];
@@ -3141,32 +3177,34 @@ static const void *kBREndCardNavigateAfterSubmitKey    = &kBREndCardNavigateAfte
         NSInteger row = [parts[1] integerValue];
 
         CGRect tileFrame = [self tileFrameForCol:col row:row];
-        BOOL   onScreen  = !CGRectIsEmpty(tileFrame);
+        BOOL onScreen = !CGRectIsEmpty(tileFrame);
 
         UIImageView *enemyView = self.enemyImageViews[key];
 
-        if (!enemyView) {
-            // Create the view regardless of on/off-screen status
-            enemyView                  = [[UIImageView alloc] initWithImage:self.enemyImage];
-            enemyView.contentMode      = UIViewContentModeScaleAspectFill;
-            enemyView.clipsToBounds    = YES;
+        // If enemy art is missing, do not create an empty UIImageView. The
+        // model remains active and BRGameView draws the fallback indicator.
+        if (!enemyView && self.enemyImage) {
+            enemyView = [[UIImageView alloc] initWithImage:self.enemyImage];
+            enemyView.contentMode = UIViewContentModeScaleAspectFill;
+            enemyView.clipsToBounds = YES;
             enemyView.layer.borderColor = [UIColor systemRedColor].CGColor;
             enemyView.layer.borderWidth = 1.5;
             [self.view insertSubview:enemyView aboveSubview:self.gameView];
             self.enemyImageViews[key] = enemyView;
         }
 
-        if (onScreen) {
-            CGFloat inset    = tileFrame.size.width * 0.12;
-            CGRect  frame    = CGRectInset(tileFrame, inset, inset);
-            // Only update frame when not mid-animation (moveEnemiesStep animates
-            // the slide; we don't want refreshEnemyImageViews to snap it back)
+        if (onScreen && enemyView) {
+            CGFloat inset = tileFrame.size.width * 0.12;
+            CGRect frame = CGRectInset(tileFrame, inset, inset);
+
+            // Do not snap an enemy back to its old location while the movement
+            // animation is still in progress.
             if (!enemyView.layer.animationKeys.count) {
-                enemyView.frame              = frame;
+                enemyView.frame = frame;
                 enemyView.layer.cornerRadius = frame.size.width / 2.0;
             }
             enemyView.hidden = NO;
-        } else {
+        } else if (enemyView) {
             enemyView.hidden = YES;
         }
     }
@@ -3990,7 +4028,9 @@ static const void *kBREndCardNavigateAfterSubmitKey    = &kBREndCardNavigateAfte
     // call stack as viewDidAppear:, which iOS handles correctly.
     if (!_hasPresentedInitialFlow) {
         _hasPresentedInitialFlow = YES;
-        if ([self userHasMembership]) {
+        if (self.initialWorkshopImage) {
+            [self showCustomWorkshopWithInitialImage:self.initialWorkshopImage];
+        } else if ([self userHasMembership]) {
             [self showGamePicker];
         } else {
             [self startNewRun];

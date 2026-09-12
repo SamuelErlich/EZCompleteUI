@@ -276,7 +276,11 @@ static const NSInteger kTriageUncertainTurnFetch = 3;
         NSMutableArray<NSString *> *valid = [NSMutableArray array];
         for (id obj in (NSArray *)attachments) {
             if ([obj isKindOfClass:[NSString class]] && [(NSString *)obj length] > 0) {
-                [valid addObject:obj];
+                // Thread JSON from an iCloud/iTunes restore may contain the
+                // Documents container UUID from the old install.  Prefer the
+                // current copy with the same UUID-prefixed filename.
+                NSString *resolved = EZAttachmentPath(obj);
+                [valid addObject:resolved ?: obj];
             }
         }
         thread.attachmentPaths = [valid copy];
@@ -284,7 +288,9 @@ static const NSInteger kTriageUncertainTurnFetch = 3;
 
     // ── optional media paths ──────────────────────────────────────────────────
     id imagePath = dict[@"lastImageLocalPath"] ?: dict[@"lastImagePath"];
-    if ([imagePath isKindOfClass:[NSString class]]) thread.lastImageLocalPath = imagePath;
+    if ([imagePath isKindOfClass:[NSString class]]) {
+        thread.lastImageLocalPath = EZAttachmentPath(imagePath) ?: imagePath;
+    }
 
     id videoPath = dict[@"lastVideoLocalPath"] ?: dict[@"lastVideoPath"];
     if ([videoPath isKindOfClass:[NSString class]]) thread.lastVideoLocalPath = videoPath;
@@ -1255,17 +1261,17 @@ NSString *EZThreadSearchMemory(NSString *searchQuery, NSString *jwtToken) {
         @"EXAMPLE A — when one entry matches:\n"
         @"Query: \"EZKeyVault\"\n"
         @"Entries:\n"
-        @"[2026-03-20 09:00:00] [chatKey=2026-03-20T08:59:00] User asked about migrating API keys to EZKeyVault in helpers.m\n"
-        @"[2026-03-19 14:00:00] [chatKey=2026-03-19T13:59:00] User asked how to center a UILabel\n"
+        @"[2026-03-20 09:00:00] User asked about migrating API keys to EZKeyVault in helpers.m\n"
+        @"[2026-03-19 14:00:00] User asked how to center a UILabel\n"
         @"Correct output:\n"
-        @"[2026-03-20 09:00:00] [chatKey=2026-03-20T08:59:00] User asked about migrating API keys to EZKeyVault in helpers.m\n\n"
+        @"[2026-03-20 09:00:00] User asked about migrating API keys to EZKeyVault in helpers.m\n\n"
         //
         // ── EXAMPLE B: no match → 0 ─────────────────────────────────────────
         // The most common failure is returning unrelated entries instead of 0.
         @"EXAMPLE B — when nothing matches:\n"
         @"Query: \"Sora video generation\"\n"
         @"Entries:\n"
-        @"[2026-03-18 10:00:00] [chatKey=2026-03-18T09:59:00] User asked about centering a UILabel\n"
+        @"[2026-03-18 10:00:00] User asked about centering a UILabel\n"
         @"Correct output:\n"
         @"0\n\n"
         //
@@ -1488,6 +1494,13 @@ BOOL EZThreadDelete(NSString *threadID) {
 
 // Returns the character length of a turn's text content.
 // Used to estimate token cost (length/4 ≈ tokens).
+static BOOL _isUIOnlyTurn(NSDictionary *turn) {
+    if (![turn isKindOfClass:[NSDictionary class]]) return YES;
+    if ([turn[@"_uiOnly"] boolValue]) return YES;
+    NSString *role = _safeString(turn[@"role"]);
+    return [role hasPrefix:@"_ui_"];
+}
+
 static NSInteger _turnLength(NSDictionary *turn) {
     return _messageTextFromContent(turn[@"content"]).length;
 }
@@ -1577,7 +1590,11 @@ static NSArray<NSDictionary *> *_bestTurnWindowForQuery(EZChatThread *thread,
                                                          NSString *query,
                                                          NSInteger tokenBudget) {
     if (!thread || thread.chatContext.count == 0) return nil;
-    NSArray<NSDictionary *> *turns = thread.chatContext;
+    NSArray<NSDictionary *> *turns = [thread.chatContext filteredArrayUsingPredicate:
+        [NSPredicate predicateWithBlock:^BOOL(NSDictionary *turn, NSDictionary *bindings) {
+            return !_isUIOnlyTurn(turn);
+        }]];
+    if (turns.count == 0) return nil;
     NSInteger bestIndex = NSNotFound;
     NSInteger bestScore = 0;
 
@@ -1633,7 +1650,11 @@ NSArray<NSDictionary *> * _Nullable EZThreadLoadContext(NSString *threadID, NSIn
     if (!thread || thread.chatContext.count == 0) return nil;
 
     NSInteger characterBudget    = tokenBudget * 4;
-    NSArray<NSDictionary *> *allTurns = thread.chatContext;
+    NSArray<NSDictionary *> *allTurns = [thread.chatContext filteredArrayUsingPredicate:
+        [NSPredicate predicateWithBlock:^BOOL(NSDictionary *turn, NSDictionary *bindings) {
+            return !_isUIOnlyTurn(turn);
+        }]];
+    if (allTurns.count == 0) return nil;
     NSUInteger totalTurns        = allTurns.count;
 
     // Step 1: Lock in the 4 most recent turns unconditionally.
@@ -1941,6 +1962,7 @@ static NSString *_formatRecentTurns(NSString *chatKey, NSInteger turnCount) {
 
     for (NSInteger i = start; i < (NSInteger)allTurns.count; i++) {
         NSDictionary *turn = allTurns[(NSUInteger)i];
+        if (_isUIOnlyTurn(turn)) continue;
         NSString *role = _safeString(turn[@"role"]);
         NSString *text = _messageTextFromContent(turn[@"content"]);
         // Truncate long turns to keep the re-eval payload under ~2000 tokens. this was 300 updated 4-17
@@ -2783,7 +2805,14 @@ NSString * _Nullable EZAttachmentSave(NSData *data, NSString *fileName) {
 // function rather than storing and reusing the full path long-term.
 NSString * _Nullable EZAttachmentPath(NSString *savedFileName) {
     if (savedFileName.length == 0) return nil;
-    NSString *filePath = [_attachmentDirectory() stringByAppendingPathComponent:savedFileName];
+    // Accept both the modern filename form and older absolute paths.  The
+    // latter are not portable because iOS changes an app's Documents
+    // container UUID when restoring an app backup.
+    if ([[NSFileManager defaultManager] fileExistsAtPath:savedFileName]) {
+        return savedFileName;
+    }
+    NSString *filePath = [_attachmentDirectory()
+                          stringByAppendingPathComponent:savedFileName.lastPathComponent];
     return [[NSFileManager defaultManager] fileExistsAtPath:filePath] ? filePath : nil;
 }
 

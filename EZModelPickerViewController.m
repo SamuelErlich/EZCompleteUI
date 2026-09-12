@@ -37,7 +37,8 @@
 
 static NSDictionary<NSString *, NSString *> *EZModelLabels(void) {
     return @{
-        @"gpt-5.6-sol":          @"💬 Chat + 👁 Vision ⭐",
+        @"gpt-6-astra":          @"💬 Chat + 👁 Vision ⭐ newest",
+        @"gpt-5.6-sol":          @"💬 Chat + 👁 Vision",
         @"gpt-5.6-terra":        @"💬 Chat + 👁 Vision (balanced)",
         @"gpt-5.6-luna":         @"💬 Chat + 👁 Vision (fast/cheap)",
         @"gpt-5-pro":            @"💬 Chat + 👁 Vision",
@@ -54,22 +55,21 @@ static NSDictionary<NSString *, NSString *> *EZModelLabels(void) {
         @"gpt-image-1-mini":     @"🖼 Image gen (fast/cheap)",
         @"chatgpt-image-latest": @"🖼 ChatGPT image (latest)",
         @"dall-e-3":             @"🖼 Image gen only (legacy)",
-        @"sora-2":               @"🎬 Video gen (4/8/12/16s)",
-        @"sora-2-pro":           @"🎬 Video gen HQ (5/10/15/20s)",
+       // @"sora-2":               @"🎬 Video gen (4/8/12/16s)",
+       // @"sora-2-pro":           @"🎬 Video gen HQ (5/10/15/20s)",
         @"whisper-1":            @"🎙 Audio transcription only",
     };
 }
 
 static NSArray<NSString *> *EZModelSectionTitles(void) {
-    return @[@"GPT-5 Reasoning", @"GPT-4 Chat", @"Image Generation", @"Video", @"Audio"];
+    return @[@"Frontier Reasoning", @"GPT-4 Chat", @"Image Generation", @"Audio Transcription"];
 }
 
 static NSArray<NSArray<NSString *> *> *EZModelSections(void) {
     return @[
-        @[@"gpt-5.6-sol", @"gpt-5.6-terra", @"gpt-5.6-luna", @"gpt-5-pro", @"gpt-5", @"gpt-5-mini"],
+        @[@"gpt-6-astra", @"gpt-5.6-sol", @"gpt-5.6-terra", @"gpt-5.6-luna", @"gpt-5-pro", @"gpt-5", @"gpt-5-mini"],
         @[@"gpt-4o", @"gpt-4o-mini", @"gpt-4-turbo", @"gpt-4", @"gpt-3.5-turbo"],
         @[@"gpt-image-2", @"gpt-image-1.5", @"gpt-image-1", @"gpt-image-1-mini", @"chatgpt-image-latest", @"dall-e-3"],
-        @[@"sora-2", @"sora-2-pro"],
         @[@"whisper-1"],
     ];
 }

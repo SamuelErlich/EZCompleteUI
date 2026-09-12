@@ -317,6 +317,8 @@
 // in viewDidDisappear) to avoid leaking file handles in the background.
 @property (nonatomic, strong) dispatch_source_t memoryFileWatchSource;
 
+- (NSArray<NSString *> *)resolvedAttachmentPathsForMemory:(NSDictionary *)memory;
+
 @end
 
 @implementation MemoriesViewController
@@ -519,10 +521,26 @@ static NSString * const kEmptyCellID = @"EZMemoryEmptyCell";
 
 // ── Thumbnails ────────────────────────────────────────────────────────────────
 
+// Memory JSON predates portable attachment references and can contain a full
+// Documents path from an older app container.  EZAttachmentPath accepts both
+// forms and repairs the path by its UUID-prefixed filename when possible.
+- (NSArray<NSString *> *)resolvedAttachmentPathsForMemory:(NSDictionary *)memory {
+    id rawPaths = memory[@"attachmentPaths"];
+    if (![rawPaths isKindOfClass:[NSArray class]]) return @[];
+
+    NSMutableArray<NSString *> *resolved = [NSMutableArray array];
+    for (id rawPath in (NSArray *)rawPaths) {
+        if (![rawPath isKindOfClass:[NSString class]]) continue;
+        NSString *path = EZAttachmentPath(rawPath);
+        if (path.length > 0) [resolved addObject:path];
+    }
+    return [resolved copy];
+}
+
 - (void)generateThumbnailsIfNeeded {
     for (NSUInteger i = 0; i < self.memories.count; i++) {
-        NSArray *paths = self.memories[i][@"attachmentPaths"];
-        if (![paths isKindOfClass:[NSArray class]] || paths.count == 0) continue;
+        NSArray<NSString *> *paths = [self resolvedAttachmentPathsForMemory:self.memories[i]];
+        if (paths.count == 0) continue;
         if (self.thumbCache[@(i)]) continue;
 
         NSURL *fileURL = [NSURL fileURLWithPath:paths.firstObject];
@@ -541,7 +559,11 @@ static NSString * const kEmptyCellID = @"EZMemoryEmptyCell";
                             QLThumbnailRepresentationType type,
                             NSError *error) {
             UIImage *img = thumb.UIImage;
-            if (!img || error) return;
+            // Quick Look uses the filename extension to infer type. Older
+            // image memories may have JPEG/WebP bytes saved with a .png name,
+            // so fall back to UIKit's data-based image decoder for them.
+            if (!img) img = [UIImage imageWithContentsOfFile:fileURL.path];
+            if (!img) return;
         dispatch_async(dispatch_get_main_queue(), ^{
             __strong typeof(weakSelf) strongSelf = weakSelf;
             if (!strongSelf) return;
@@ -779,13 +801,12 @@ didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
 
 - (void)cellDidTapAttachmentAtIndex:(NSUInteger)index {
     if (index >= self.memories.count) return;
-    NSArray *paths = self.memories[index][@"attachmentPaths"];
-    if (![paths isKindOfClass:[NSArray class]] || paths.count == 0) return;
-    NSString *filePath = paths.firstObject;
-    if (![[NSFileManager defaultManager] fileExistsAtPath:filePath]) {
+    NSArray<NSString *> *paths = [self resolvedAttachmentPathsForMemory:self.memories[index]];
+    if (paths.count == 0) {
         [self showToast:@"⚠️ Attachment file not found"];
         return;
     }
+    NSString *filePath = paths.firstObject;
     self.previewURL = [NSURL fileURLWithPath:filePath];
     QLPreviewController *ql = [[QLPreviewController alloc] init];
     ql.dataSource = self;

@@ -1,5 +1,329 @@
 // ViewController.m
-// EZCompleteUI v7.9
+// EZCompleteUI v9.2
+//
+// Changes from v9.1:
+//   - FIXED the root cause of "estimated cost shows high quality regardless
+//     of what was selected": the entitlement pre-check for images was
+//     calling EZEntitlementManager's 5-param checkEntitlementForFeature:,
+//     which never sent quality, size, or is_edit — only the flattened
+//     image_low/medium/high feature string. check-entitlement's own
+//     estimator treats missing quality as "high" (a deliberate conservative
+//     default for genuinely-unknown quality — not meant to fire when the
+//     real value is known and simply never got sent). quality/size were
+//     already being read correctly from NSUserDefaults right above this
+//     call and used to pick the feature tier; they just weren't also being
+//     forwarded as their own fields. Now calls EZEntitlementManager's new
+//     8-param overload with quality/size/isEdit included — see its own
+//     changelog.
+//
+// Changes from v9.0:
+//   - Root-caused and fixed the "unintentional edit mode" bug (made
+//     directly, not through this changelog process — documenting here so
+//     the record stays accurate). Edit mode was sticky in a way disconnected
+//     from whether there was actually anything to edit: the dispatch gate
+//     was a bare `selectedModel isEqualToString:@"gpt-image-1-edit"` check,
+//     so once edit mode was entered, EVERY subsequent message got routed
+//     straight to callImageEdit — including a brand new, unrelated
+//     generation request typed after edit mode had already been left
+//     stale. Two-part fix: the gate now also requires
+//     pendingImagePaths.count > 0, so edit mode only intercepts when
+//     there's a real pending source image; and new
+//     exitImageEditModeIfNeeded snaps selectedModel back to the real
+//     underlying model (via preEditModeModel) once intent routing resolves
+//     to reopen or generate, so the edit-mode UI state can't leak into
+//     later turns after a previous edit completed.
+//   - Added gpt-6-astra (new flagship reasoning model) alongside the
+//     gpt-5.x family in the model list, isGPT5's Responses-API routing,
+//     isHeavyReasoningModel's extended timeout, and modelSupportsVision.
+//   - Complementary fix on my end: hasLocal in the image-intent router was
+//     only checking .length > 0 on lastImageLocalPath, true even for a
+//     stale path whose file no longer exists — which could independently
+//     steer a plain generation into edit mode via the intent classifier
+//     even when selectedModel was never stuck on gpt-image-1-edit. Now
+//     also confirms the file actually exists before treating "there's a
+//     local image" as true. Same root problem as the fix above (edit-mode
+//     state outliving what it's actually pointing at), different code path.
+//
+// Changes from v8.9:
+//   - FIXED: none of the three image completion handlers (DALL-E-3,
+//     gpt-image-1 generate, image edit) ever read json["reason"] on
+//     failure — only json["error"], the terse error code. ez-image
+//     reports whether coins were refunded in "reason" specifically for
+//     this reason (see its own changelog), but since nothing on the
+//     client read it, a timed-out or failed generation just showed
+//     something like "Image generation timed out" with zero indication
+//     of whether the coins came back. All three now append the reason
+//     text when present, same pattern already used for TTS errors.
+//   - IMPORTANT OPEN QUESTION, not resolved this pass: traced the actual
+//     coin charge for image generation back to
+//     [[EZEntitlementManager shared] checkEntitlementForFeature:] — a
+//     class not in context. Its feature tags (image_low/medium/high) are
+//     flat, not model-aware, and check-entitlement's own COIN_COSTS_FLAT
+//     table under those exact keys is calibrated for gpt-image-1.5 only.
+//     A ledger review showed identical 11-coin charges across gpt-image-1,
+//     gpt-image-1.5, gpt-image-1-mini, and gpt-image-1-edit requests all
+//     tagged "image_medium" — consistent with EZEntitlementManager (not
+//     ez-image's own model-aware IMAGE_COST_USD table) being what actually
+//     determines the real charge. If so, the ez-image v1.2 pricing fix may
+//     never be the thing setting the real price in production. Need
+//     EZEntitlementManager.h/.m to confirm rather than guess further.
+//
+// Changes from v8.8:
+//   - Added memory entries for image generation and editing — previously
+//     only chat completions got one (createMemoryFromCompletion was called
+//     from exactly two places, both in the chat flow). Added three more
+//     call sites at each flow's actual save point: downloadAndSaveImage:
+//     (DALL-E-3 — confirmed it has exactly one caller, callDalle3, so this
+//     covers that path without affecting anything else), callGptImage1:,
+//     and callImageEdit:. createMemoryFromCompletion itself isn't defined
+//     in any file I have (must be in helpers.h/.m) — its signature was
+//     inferred from its two existing call sites' consistent usage rather
+//     than guessed at from nothing: prompt, answer, token, threadID,
+//     attachment paths array, completion block. Answer text is synthesized
+//     per flow ("Generated N image(s) for: <prompt>" / "Edited the
+//     attached image per: <prompt>") since there's no natural-language
+//     model answer the way there is for chat.
+//
+// Changes from v8.7:
+//   - FIXED: attached images vanished entirely when a thread was restored.
+//     Root cause: chatHistoryDidSelectThread's restore loop only handled
+//     string content and silently `continue`d past anything else —
+//     "skip vision attachment blobs on restore," per the old comment.
+//     Vision messages (image_url + text blocks) have array content, so
+//     every one was dropped with no trace. Fixed via a new
+//     ez_recoverImagePathsFromVisionContent: the full base64 data survives
+//     in chatContext regardless of how many turns have passed
+//     (sanitizedContextForAPI only ever produces a derived copy, never
+//     mutates self.chatContext itself — confirmed before relying on it),
+//     so this decodes it back into a real local file and restores the
+//     attachment bubble, plus the original question text if there was one
+//     beyond the placeholder. Works retroactively on already-saved
+//     threads, not just future ones.
+//   - FIXED: edit-mode source images had ZERO trace anywhere in
+//     chatContext — the vision-message-adding code only ever ran in the
+//     vision-analysis branch of attachImage:, never the edit-mode branch —
+//     so there was nothing for the fix above to recover for edit
+//     attachments specifically. Moved that code to run unconditionally.
+//     Doesn't change what editing actually does (still goes through
+//     callImageEdit's direct call to ez-image, not chatContext) — this
+//     purely records the attachment for restore/history purposes, reusing
+//     the exact same already-correct _isVisionAttachment merge/prune
+//     mechanism rather than inventing a new one. (A brand new role/marker
+//     type was considered and rejected — confirmed sanitizedContextForAPI
+//     forwards every message's role straight into the real API request
+//     with no allow-list, so an invented role would have gotten sent to
+//     OpenAI and likely rejected.)
+//   - Added a best-effort fallback for edit-mode attachments from BEFORE
+//     this fix, which have no chatContext trace to recover at all:
+//     activeThread.attachmentPaths (a flat, unordered-relative-to-messages
+//     list) surfaces anything not already shown, grouped together with an
+//     honest "exact position couldn't be recovered" label rather than
+//     pretending to place it precisely. Threads saved going forward don't
+//     need this path.
+//   - Added tap-to-expand for attachment bubbles (EZAttachmentPreviewCell
+//     had none). Same technique as the existing long-press-copy feature:
+//     a gesture attached from cellForRowAtIndexPath, resolved to a row via
+//     indexPathForCell: at tap time — no changes needed to that cell
+//     class, whose source isn't in context. Reuses the previewURL/
+//     QLPreviewControllerDataSource plumbing already in this file rather
+//     than building new preview infrastructure.
+//   - Cleaned up a corrupted/duplicated comment line in analyzeFile: found
+//     while working in this area ("Save a copy for
+//     persistataWithContentsOfURL:fileURL];" — a mangled leftover, harmless
+//     since it was a comment, but confusing).
+//   - NOT done this pass: a distinct inline preview for user-uploaded
+//     PDF/CSV files (they still get folded into the prompt text at send
+//     time — there's no separate-bubble mechanism for those today, at send
+//     time or restore). That's a new feature, not a restore bug, and
+//     didn't want to add a third large change in the same pass — flagged
+//     as a follow-up.
+//
+// Changes from v8.6:
+//   - FIXED: after seeing EZCodeBlockCell's actual source, confirmed a real
+//     bug in the v8.6 feature — addMessageSegments tried to read every
+//     [CODE:lang:path] saved file as UTF8 text for display. For a real PDF
+//     that decode fails outright (shows "(code unavailable)"); for RTF it
+//     "succeeds" but returns raw escape-sequence markup, not readable
+//     text — neither useful to show or copy. PDF/RTF paths now show a
+//     friendly description instead of attempting a text decode. CSV is
+//     unaffected — it's genuinely plain text, decodes and displays fine.
+//     EZCodeBlockCell.m updated to match: its Copy button now copies the
+//     real file data (correct UTI) for PDF/RTF instead of copying that
+//     description sentence as text — see its own changelog.
+//
+// Changes from v8.5:
+//   - Added real generated files via fence detection, same mechanism as
+//     code blocks: a model can write a fence with language EZPDF, EZDOCX,
+//     or EZXCEL (optionally with a filename on the fence line, exactly like
+//     the ```python foo.py pattern from v8.5) and get a real generated file
+//     instead of a plain-text snippet.
+//     - EZPDF  -> real, properly paginated PDF (UIGraphicsPDFRenderer +
+//       CoreText; long content correctly flows onto additional pages
+//       instead of being clipped to one).
+//     - EZDOCX -> RTF, not true .docx. True .docx is a ZIP+XML (OOXML)
+//       format iOS has zero built-in support for creating — doing it for
+//       real means hand-rolling a ZIP writer (local headers, central
+//       directory, CRC32) from scratch, which is a substantially bigger
+//       and riskier undertaking than this pass. RTF opens natively in both
+//       Word and Pages and iOS generates it natively via NSAttributedString
+//       — same practical result (a real document the user can open)
+//       without that risk. Decided with the user rather than assumed.
+//     - EZXCEL -> CSV, not true .xlsx, same reasoning (also ZIP+XML).
+//       Opens natively in Excel/Numbers/Sheets.
+//     Extension is always forced to the real format regardless of what the
+//     model or fence-line filename suggests (ez_filename:forcedExtension:)
+//     — a file is never shipped with a misleading extension.
+//     Content convention (needs to go in the system prompt too — not a
+//     file I have in context to edit directly): EZPDF/EZDOCX bodies use a
+//     small markdown subset (# / ## headings, **bold**, blank-line
+//     paragraphs — NOT full markdown, deliberately kept small so it's easy
+//     to document accurately). EZXCEL bodies are pipe-delimited rows
+//     (Name|Age|City) rather than comma-delimited, specifically so the
+//     model never has to get CSV quoting/escaping right itself — this code
+//     does that conversion, including properly quoting fields that contain
+//     a comma, quote, or newline.
+//     Reuses the exact same [CODE:label:path] placeholder /
+//     EZCodeBlockCell rendering pipeline as regular code blocks — no
+//     changes needed there. One caveat worth knowing: I don't have
+//     EZCodeBlockCell's own source, so I can't confirm what its "Copy"
+//     button does for a binary (PDF/RTF/CSV) attachment vs. a text
+//     snippet — if it assumes text content, that's a pre-existing surface
+//     of that class, not something new here.
+//
+// Changes from v8.4:
+//   - FIXED: processReplyWithCodeBlocks's fence regex only tolerated
+//     whitespace between the language token and the newline
+//     (```python\n rendered fine, ```python foo.py\n did not — the whole
+//     match failed, so the code block silently fell back to plain text
+//     instead of an EZCodeBlockCell). Some models annotate fences with a
+//     filename this way. Regex now captures that trailing fence-line text
+//     as its own group instead of requiring it to be empty, and — since an
+//     explicit fence-line filename is a deliberate annotation rather than
+//     a guess — it's checked first, ahead of the existing heuristic that
+//     scans the first two lines of the code body for something that looks
+//     like a filename. That body-scan is unchanged and still runs as the
+//     fallback when the fence line doesn't have one.
+//
+// Changes from v8.3:
+//   - All Sora code commented out (not deleted), per request — user removed
+//     Sora from Settings on their own, and OpenAI's Sora API shutdown
+//     (2026-09-24) makes it dead either way. Kept as comments rather than
+//     deleted since Sora's submit-job/poll-status/download call shape is
+//     close to how most other video-gen APIs work (Runway, Luma Dream
+//     Machine, Kling, Veo) — may be worth adapting the polling/refund
+//     scaffolding if a replacement gets added later, rather than starting
+//     from scratch. Touched: the pendingVideoURL property (lastVideoPrompt
+//     too, though that one turned out to already be dead — never actually
+//     read or written anywhere outside its own declaration), the
+//     viewDidLoad job-resume observer, the sora-2/sora-2-pro model list
+//     entries, the feature-tier detection branch, the send-flow dispatch,
+//     the entire callSora/pollSoraJob/resumePendingSoraJobIfNeeded/
+//     fetchSoraContent/downloadAndShowVideo implementation (wrapped in one
+//     block comment), and the deferred-video-presentation hook in
+//     viewWillAppear. Search this file for "SORA —" to find every spot if
+//     restoring or fully deleting later.
+//   - NOTE: EZModelPickerViewController.m was NOT touched — it has its own
+//     independent hardcoded model list (doesn't read self.models at all,
+//     per the v7 changelog entry on that file) and still shows a Video
+//     section with sora-2/sora-2-pro. Since self.selectedModel can no
+//     longer actually become "sora-*" through normal use (removed from
+//     self.models here), picking that entry would fail rather than
+//     silently misbehave, but it's a stale, misleading option to leave
+//     showing in the UI — worth a follow-up pass on that file too.
+//
+// Changes from v8.2:
+//   - FIXED: the same bug as v8.2's image fix, but for file attachments
+//     (PDF/ePub/text) — asked about directly, turned out to affect them too.
+//     pendingFileContext/pendingFileName were two parallel singular
+//     NSStrings; attaching a second file before sending overwrote both
+//     entirely, silently discarding the first file's extracted text with
+//     no trace. Simpler fix than images needed: file content only gets
+//     folded into the outgoing prompt once, at send time (unlike images,
+//     there's no per-attachment chatContext message to worry about
+//     pruning), so this is just pendingFileContext/pendingFileName →
+//     pendingFiles, one array of {name, content} dicts (rather than two
+//     parallel arrays, which could desync a name with the wrong content),
+//     appended to instead of overwritten, and looped over at send time so
+//     every attached file — not just the last — gets injected.
+//
+// Changes from v8.1:
+//   - FIXED: attaching more than one image before sending only actually
+//     reached the AI with the last one. Two compounding causes:
+//     (1) pendingImagePath was a singular NSString, so each new attachment
+//     silently overwrote the last — now pendingImagePaths, an array.
+//     (2) attachImage: created a brand-new standalone chatContext vision
+//     message per image, and sanitizedContextForAPI deliberately keeps only
+//     the single most recent vision MESSAGE (correct, desirable behavior
+//     for genuinely old attachments left over from an earlier, already-
+//     completed turn — that's what stops every prior image getting
+//     re-sent as base64 on every future turn). With each image in its own
+//     message, that pruning logic had no way to tell "old attachment from
+//     3 turns ago" apart from "second image attached 2 seconds ago in the
+//     same not-yet-sent turn" — it downgraded both to plain text the same
+//     way, keeping only the last. attachImage: now merges an image into
+//     the previous chatContext entry's content array instead of creating a
+//     new message, but only when that previous entry is itself still an
+//     unsent vision attachment — the merge naturally stops the instant the
+//     user sends (which appends a real user-prompt message right after),
+//     so images from an actually-completed earlier turn are never merged
+//     into by mistake. sanitizedContextForAPI itself needed no changes.
+//   - Edit mode (callImageEdit, the AI-intent-detected edit switch, both
+//     gallery-share notification handlers) uses pendingImagePaths.lastObject
+//     — edit mode only supports one source image per OpenAI's edit
+//     endpoint as currently wired up here, so this preserves existing
+//     single-image-edit behavior; extending editing itself to accept
+//     multiple reference images would be a separate, larger change to
+//     ez-image's edit action.
+//   - The "memory" attachment-tracking arrays (attachmentsAtSend,
+//     capturedAttachments) now collect every pending path instead of just
+//     one, via addObjectsFromArray: instead of addObject:.
+//
+// Changes from v8.0:
+//   - Fixed the edit-mode model hardcode flagged (but not fixed) in v8.0.
+//     Added preEditModeModel, set by a new shared
+//     enterImageEditModeFromCurrentSelection helper that now replaces every
+//     place that used to set selectedModel = @"gpt-image-1-edit" directly
+//     (attach-image flow, legacy dall-e-2-edit fallback, AI-intent-detected
+//     edit switch, gallery-share notification handler — the last of these
+//     had a dead conditional that computed whether the prior model was an
+//     image model but never did anything with the result; replaced with
+//     the real logic). preEditModeModel is sticky across a chat-mode
+//     detour (see the helper's own comment) rather than resetting on every
+//     non-edit-capable selection.
+//   - callImageEdit, callGptImage1's edit→generate model conversion, and
+//     the entitlement pre-check's apiModel all now use preEditModeModel
+//     instead of a hardcoded "gpt-image-1" — this is what actually lets
+//     gpt-image-1.5/2/mini edits reach ez-image's now-fixed model handling
+//     (v1.2) instead of silently downgrading at the client before the
+//     request is even built.
+//   - Edit-mode button title is now dynamic ("Model: gpt-image-1.5 (edit
+//     mode)" etc.) instead of a hardcoded "gpt-image-1" label, so it
+//     doesn't lie about which model is actually being used.
+//
+// Changes from v7.9:
+//   - Added a status banner (spinner + cycling text) to all three image
+//     flows (DALL-E-3, gpt-image-1 generate, image edit) so it's clear
+//     generation is still working rather than stuck. Didn't build a new UI
+//     for this — generalized the existing GPT-5 status banner
+//     (showGPT5StatusBanner/hideGPT5StatusBanner), which already had the
+//     spinner/label/timer/cross-dissolve cycling infrastructure, pulling
+//     its hardcoded message array out into statusBannerMessages so any
+//     caller can supply its own set. GPT-5's own banner behavior is
+//     unchanged — showGPT5StatusBanner is now a thin wrapper. New
+//     showImageGenStatusBanner uses the requested phrasing ("Working on
+//     your request…", "Do not leave the page while generating…", etc.).
+//     Banner is shown right before each postToEZFunction call (after all
+//     pre-flight guard clauses, so a validation failure never leaves it
+//     stuck showing) and hidden as the first line of each completion
+//     block, ahead of every branch, so it can't be left up on any exit path.
+//   - Noted but did NOT fix: callImageEdit still hardcodes
+//     model:"gpt-image-1" client-side. ez-image's matching server-side
+//     hardcode is fixed (v1.2), but the client has no real model to send in
+//     the first place — self.selectedModel during edit mode is the literal
+//     string "gpt-image-1-edit", a UI mode flag rather than a real model.
+//     Letting users edit with gpt-image-1.5/2/mini needs a property
+//     remembering which real model was selected before entering edit mode;
+//     flagged in place rather than guessed at.
 //
 // Changes from v7.8:
 //   - Added long-press-to-copy on chat bubbles (both user prompts and AI
@@ -181,6 +505,7 @@
 #import <AVFoundation/AVFoundation.h>
 #import <Speech/Speech.h>
 #import <PDFKit/PDFKit.h>
+#import <CoreText/CoreText.h>
 #import <Photos/Photos.h>
 #import <PhotosUI/PhotosUI.h>
 #import <QuartzCore/QuartzCore.h>
@@ -197,7 +522,7 @@
 #import "MemoriesViewController.h"
 #import "SupportRequestViewController.h"
 #import "BrainRotViewController.h"
-#import "EZInsuranceLandingViewController.h"
+//#import "EZInsuranceLandingViewController.h"
 #import "EZBubbleCell.h"
 #import "EZSystemCell.h"
 #import "EZCodeBlockCell.h"
@@ -257,7 +582,7 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
 @property (nonatomic, strong) UIButton      *cloningButton;
 @property (nonatomic, strong) UIButton      *galleryButton;
 @property (nonatomic, strong) UIButton      *brainRotButton;
-@property (nonatomic, strong) UIButton      *insurancePolicyButton;
+//@property (nonatomic, strong) UIButton      *insurancePolicyButton;
 //@property (nonatomic, strong) UIButton      *textToSpeechButton;
 
 @property (nonatomic, strong) NSLayoutConstraint *containerBottomConstraint;
@@ -279,14 +604,41 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
 
 // Media / file state
 @property (nonatomic, strong) NSURL         *previewURL;
-/// Non-nil when a Sora video completed while the app was backgrounded.
-/// Presented the next time the view becomes visible.
-@property (nonatomic, strong) NSURL         *pendingVideoURL;
-@property (nonatomic, strong) NSString      *pendingFileContext;   // text extracted from file
-@property (nonatomic, strong) NSString      *pendingFileName;
-@property (nonatomic, strong) NSString      *pendingImagePath;     // local path of attached image
+// ── SORA — commented out, not deleted. User removed Sora from Settings;
+// OpenAI's Sora API is also scheduled for shutdown 2026-09-24 regardless.
+// Left intact rather than deleted: Sora's submit-job/poll-status/download
+// pattern is close to how most other video-gen APIs work too (Runway,
+// Luma Dream Machine, Kling, Veo), so this may be worth adapting rather
+// than rewriting from scratch if/when a replacement gets added. ─────────
+// /// Non-nil when a Sora video completed while the app was backgrounded.
+// /// Presented the next time the view becomes visible.
+// @property (nonatomic, strong) NSURL         *pendingVideoURL;
+// ── END SORA ─────────────────────────────────────────────────────────────
+// Every file (PDF/ePub/text) attached since the last send, not yet folded
+// into a sent message. Was two parallel singular NSStrings
+// (pendingFileContext/pendingFileName) — same bug as pendingImagePath had:
+// attaching a second file before sending overwrote the first's extracted
+// text entirely, with no trace it ever existed. Kept as one array of
+// {name, content} dicts rather than two parallel arrays, so there's no way
+// for a name and its content to end up misaligned.
+@property (nonatomic, strong) NSMutableArray<NSDictionary<NSString *, NSString *> *> *pendingFiles;
+// Every image attached since the last send that hasn't been folded into a
+// sent message yet. Was a singular NSString — attaching a second image
+// before sending silently overwrote the first, and separately, each
+// attachment also produced its own standalone chatContext vision message,
+// so sanitizedContextForAPI's "only resend the newest image" pruning (real,
+// desirable behavior for genuinely old attachments from earlier turns) had
+// no way to tell that apart from two images attached in the *same* turn —
+// it kept only the last one either way. Both are fixed together: this is
+// now an array, and attachImage: merges same-turn attachments into one
+// chatContext message instead of creating a new one each time.
+@property (nonatomic, strong) NSMutableArray<NSString *> *pendingImagePaths;
 @property (nonatomic, strong) NSString      *lastImagePrompt;      // last DALL-E prompt (for follow-ups)
-@property (nonatomic, strong) NSString      *lastVideoPrompt;      // last Sora prompt (for memory indexing)
+// @property (nonatomic, strong) NSString      *lastVideoPrompt;      // last Sora prompt (for memory indexing)
+// ^ SORA — commented out with the rest below. Note: grepping the rest of this
+// file, this property was never actually read or written anywhere outside
+// its own declaration — looks like it was already dead before Sora removal,
+// not something this comment-out created.
 @property (nonatomic, strong) NSString      *lastImageLocalPath;   // local path of last generated image
 
 // TTS / audio
@@ -311,6 +663,13 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
 @property (nonatomic, strong) UIActivityIndicatorView *statusBannerSpinner;
 @property (nonatomic, strong) NSTimer       *statusBannerTimer;
 @property (nonatomic, assign) NSInteger      statusBannerPhase;
+@property (nonatomic, strong) NSArray<NSString *> *statusBannerMessages;
+// Remembers which real image model (gpt-image-1/-1-mini/-1.5/-2/
+// chatgpt-image-latest) was selected before switching into edit mode, since
+// self.selectedModel becomes the literal string "gpt-image-1-edit" (a UI
+// mode flag) while editing — there'd otherwise be no way to know which real
+// model to actually send. Set only by enterImageEditModeFromCurrentSelection.
+@property (nonatomic, strong) NSString *preEditModeModel;
 - (void)setupKeyboardObservers;
 
 // History drawer (slide-in panel from left)
@@ -338,17 +697,23 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
 - (void)classifyImageIntent:(NSString *)prompt
               hasLocalImage:(BOOL)hasLocalImage
                  completion:(void(^)(NSString *intent))completion;
-- (void)callSora:(NSString *)prompt;
+// - (void)callSora:(NSString *)prompt;   // SORA — see comment block near its implementation
 - (BOOL)modelSupportsVision:(NSString *)model;
+- (NSArray<NSString *> *)ez_recoverImagePathsFromVisionContent:(NSArray *)contentBlocks;
 - (void)showGPT5StatusBanner;
 - (void)hideGPT5StatusBanner;
+- (void)showStatusBannerWithMessages:(NSArray<NSString *> *)messages;
+- (void)hideStatusBanner;
+- (void)showImageGenStatusBanner;
+- (void)enterImageEditModeFromCurrentSelection;
+- (void)exitImageEditModeIfNeeded;
 - (void)handleAPIError:(NSString *)msg;
 - (void)checkReplyForLocalFilePaths:(NSString *)reply;
 - (NSArray *)sanitizedContextForAPI:(NSArray *)context
                   modelSupportsVision:(BOOL)supportsVision
                       useResponsesAPI:(BOOL)useResponsesAPI;
 - (void)downloadAndSaveImage:(NSString *)urlString purpose:(NSString *)purpose;
-- (void)downloadAndShowVideo:(NSString *)urlString;
+// - (void)downloadAndShowVideo:(NSString *)urlString;   // SORA — see the big commented block
 - (void)appendImageGridToChat:(NSArray<NSString *> *)imagePaths
                        prompt:(NSString *)prompt
                       isError:(BOOL)isError
@@ -384,9 +749,12 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
     [self setupKeyboardObservers];
     [self setupDictation];
     [self requestSpeechPermissionsIfNeeded];
-    [[NSNotificationCenter defaultCenter] addObserver:self
-        selector:@selector(resumePendingSoraJobIfNeeded)
-        name:@"EZAppDidBecomeActive" object:nil];
+    // SORA — commented out with the rest of the Sora code (see the big block
+    // near callSora's implementation). Was: resume polling a Sora job that
+    // was still in flight when the app was last backgrounded/killed.
+    // [[NSNotificationCenter defaultCenter] addObserver:self
+    //     selector:@selector(resumePendingSoraJobIfNeeded)
+    //     name:@"EZAppDidBecomeActive" object:nil];
     [[NSNotificationCenter defaultCenter] addObserver:self
         selector:@selector(handleOpenChatThread:)
         name:@"EZOpenChatThread" object:nil];
@@ -413,7 +781,8 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
     // which takes this array as-is.
     self.models = @[
            // ── Chat / Reasoning ──────────────────────────────────────────────
-           @"gpt-5.6-sol", @"gpt-5.6-terra", @"gpt-5.6-luna", // current flagship family
+           @"gpt-6-astra", // newest flagship reasoning model
+           @"gpt-5.6-sol", @"gpt-5.6-terra", @"gpt-5.6-luna",
            @"gpt-5-pro", @"gpt-5", @"gpt-5-mini",
            @"gpt-4o", @"gpt-4o-mini", @"gpt-4-turbo", @"gpt-4",
            @"gpt-3.5-turbo",
@@ -425,14 +794,18 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
            @"chatgpt-image-latest", // always points to current ChatGPT image model
            @"dall-e-3",             // generation only (legacy)
         // ── Video ─────────────────────────────────────────────────────────
-        // NOTE: OpenAI has the Sora API itself scheduled for shutdown
-        // 2026-09-24. Both entries below need a removal/fallback plan before
-        // then — see the standalone Sora conversation we agreed to have.
-        @"sora-2", @"sora-2-pro",
+        // SORA — commented out, not deleted. User removed Sora from Settings;
+        // OpenAI's Sora API is also scheduled for shutdown 2026-09-24
+        // regardless. See the big commented block near callSora's old
+        // implementation for the full story on why this stayed as a comment
+        // instead of getting deleted outright.
+        // @"sora-2", @"sora-2-pro",
         // ── Audio ─────────────────────────────────────────────────────────
         @"whisper-1"
     ];
     self.chatContext        = [NSMutableArray array];
+    self.pendingImagePaths  = [NSMutableArray array];
+    self.pendingFiles       = [NSMutableArray array];
     self.displayMessages    = [NSMutableArray array];
     self.speechSynthesizer = [[AVSpeechSynthesizer alloc] init];
     self.selectedModel     = [[NSUserDefaults standardUserDefaults] stringForKey:@"selectedModel"]
@@ -568,9 +941,8 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
     self.lastImageLocalPath = thread.lastImageLocalPath;
     self.lastUserPrompt     = nil;
     self.lastAIResponse     = nil;
-    self.pendingFileContext = nil;
-    self.pendingFileName    = nil;
-    self.pendingImagePath   = nil;
+    [self.pendingFiles removeAllObjects];
+    [self.pendingImagePaths removeAllObjects];
 
     [self.modelButton setTitle:[NSString stringWithFormat:@"Model: %@", self.selectedModel]
                       forState:UIControlStateNormal];
@@ -580,7 +952,61 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
         NSString *role    = msg[@"role"] ?: @"";
         id        content = msg[@"content"];
         NSString *text    = [content isKindOfClass:[NSString class]] ? content : nil;
-        if (!text) continue; // skip vision attachment blobs on restore
+
+        // Image-generation results are UI-only timeline events.  Keeping them
+        // in the thread (rather than a separate UserDefaults side cache) is
+        // what preserves their exact position among chat messages.
+        if ([role isEqualToString:@"_ui_imagegrid"]) {
+            id rawPaths = msg[@"imagePaths"];
+            NSMutableArray<NSString *> *validPaths = [NSMutableArray array];
+            if ([rawPaths isKindOfClass:[NSArray class]]) {
+                for (id rawPath in (NSArray *)rawPaths) {
+                    if (![rawPath isKindOfClass:[NSString class]]) continue;
+                    NSString *path = EZAttachmentPath(rawPath);
+                    if (path.length > 0) [validPaths addObject:path];
+                }
+            }
+            BOOL isError = [msg[@"isError"] boolValue];
+            if (validPaths.count > 0 || isError) {
+                NSMutableDictionary *entry = [@{
+                    @"role": @"imagegrid",
+                    @"imagePaths": [validPaths copy],
+                    @"prompt": msg[@"prompt"] ?: @"",
+                    @"isError": @(isError),
+                } mutableCopy];
+                if (msg[@"errorText"]) entry[@"errorText"] = msg[@"errorText"];
+                [self.displayMessages addObject:[entry copy]];
+            }
+            continue;
+        }
+
+        if (!text && [content isKindOfClass:[NSArray class]] && [role isEqualToString:@"user"]) {
+            // Vision attachment (image_url + text blocks) — previously
+            // skipped entirely on restore ("skip vision attachment blobs"),
+            // which is why attached images vanished on reload. The full
+            // base64 data survives here regardless of how many turns have
+            // passed (see ez_recoverImagePathsFromVisionContent's own
+            // comment on why), so every attachment in the thread is
+            // recoverable, not just the most recent one.
+            NSArray<NSString *> *recovered =
+                [self ez_recoverImagePathsFromVisionContent:(NSArray *)content];
+            for (NSString *path in recovered) [self appendAttachmentBubble:path];
+
+            // If there was a real question alongside the image (not just
+            // the "[image attached — await user question]" placeholder),
+            // show it as a normal bubble right after, same as it looked
+            // originally.
+            for (NSDictionary *block in (NSArray *)content) {
+                NSString *blockText = block[@"text"];
+                if (blockText.length > 0 &&
+                    ![blockText isEqualToString:@"[image attached — await user question]"]) {
+                    [self appendToChat:[NSString stringWithFormat:@"You: %@", blockText]];
+                    break;
+                }
+            }
+            continue;
+        }
+        if (!text) continue;
 
         if ([role isEqualToString:@"user"]) {
             if ([text hasPrefix:@"[Memories with possible relevance:]"]) {
@@ -601,8 +1027,51 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
         }
     }
 
-    [self appendToChat:[NSString stringWithFormat:@"[System: Thread \"%@\" restored ✓]", thread.title]];
+    // Restore only old, side-cache image grids now. Newer grids above came
+    // from their ordered thread events. Doing this before the attachment
+    // fallback lets the fallback avoid duplicating generated output as a lone
+    // attachment bubble.
     [self restoreImageGridCellsForThread:thread.threadID];
+
+    // Best-effort fallback for edit-mode attachments from BEFORE this fix —
+    // those never got added to chatContext at all (see
+    // enterImageEditModeFromCurrentSelection / attachImage:'s history), so
+    // there's nothing to recover above. attachmentPaths is the only trace
+    // that exists for them. This can't know exactly where in the
+    // conversation each one belonged — attachmentPaths is a flat,
+    // unordered-relative-to-messages list — so anything not already shown
+    // above gets surfaced together near the top with an honest label
+    // rather than pretending to place it precisely. Threads saved after
+    // this fix won't need this path — edit-mode attachments now get a real
+    // chatContext entry same as any other attachment.
+    NSMutableSet<NSString *> *alreadyShown = [NSMutableSet set];
+    for (NSDictionary *m in self.displayMessages) {
+        if ([m[@"role"] isEqualToString:@"attachment"]) {
+            [alreadyShown addObject:[m[@"imagePath"] lastPathComponent] ?: @""];
+        } else if ([m[@"role"] isEqualToString:@"imagegrid"]) {
+            for (NSString *path in m[@"imagePaths"] ?: @[]) {
+                [alreadyShown addObject:path.lastPathComponent ?: @""];
+            }
+        }
+    }
+    NSMutableArray<NSString *> *unaccountedFor = [NSMutableArray array];
+    for (NSString *path in self.activeThread.attachmentPaths) {
+        NSString *ext = [path.pathExtension lowercaseString];
+        BOOL isImage = [ext isEqualToString:@"jpg"] || [ext isEqualToString:@"jpeg"] || [ext isEqualToString:@"png"];
+        NSString *resolvedPath = EZAttachmentPath(path);
+        if (isImage && ![alreadyShown containsObject:path.lastPathComponent]
+                    && resolvedPath.length > 0) {
+            [unaccountedFor addObject:resolvedPath];
+        }
+    }
+    if (unaccountedFor.count > 0) {
+        [self appendToChat:[NSString stringWithFormat:
+            @"[System: %lu older attachment(s) restored — exact position in the "
+            @"conversation couldn't be recovered]", (unsigned long)unaccountedFor.count]];
+        for (NSString *path in unaccountedFor) [self appendAttachmentBubble:path];
+    }
+
+    [self appendToChat:[NSString stringWithFormat:@"[System: Thread \"%@\" restored ✓]", thread.title]];
     [self scrollChatToBottom];
     [self updateThreadTitleLabel];
     EZLogf(EZLogLevelInfo, @"THREAD", @"Restored: %@ (%lu turns)",
@@ -829,7 +1298,7 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
 
     self.textToSpeechButton = [self _iconButton:@"play.circle.fill" tint:nil action:@selector(openTTS)];
 
-    self.insurancePolicyButton = [self _iconButton:@"lock.shield.fill" tint:nil action:@selector(openInsurancePolicy)];
+   // self.insurancePolicyButton = [self _iconButton:@"lock.shield.fill" tint:nil action:@selector(openInsurancePolicy)];
 
     
     self.memoriesButton   = [self _iconButton:@"memory" tint:nil
@@ -862,7 +1331,7 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
         self.addChatButton, self.historyButton, self.clipboardButton,
         self.speakButton, self.webSearchButton, self.coinPotView,
         self.renameButton, self.clearButton, self.memoriesButton, self.cloningButton, self.supportRequestButton,
-        self.textToSpeechButton, self.galleryButton, self.insurancePolicyButton
+        self.textToSpeechButton, self.galleryButton, //sel.insurancePolicyButton
     ]];
     topStack.distribution = UIStackViewDistributionEqualSpacing;
     topStack.alignment    = UIStackViewAlignmentCenter;
@@ -1650,8 +2119,9 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
         ? [[name stringByDeletingPathExtension] stringByAppendingPathExtension:@"jpeg"]
         : name;
     NSString *localPath = EZAttachmentSave(imageData, saveName);
-    self.pendingImagePath = localPath ?: fileURL.path;
-    [self appendAttachmentBubble:self.pendingImagePath];
+    NSString *thisPath  = localPath ?: fileURL.path;
+    [self.pendingImagePaths addObject:thisPath];
+    [self appendAttachmentBubble:thisPath];
 
     if (localPath) {
         NSMutableArray *att = [self.activeThread.attachmentPaths mutableCopy];
@@ -1665,8 +2135,7 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
 
     if (inImageGenMode) {
         // Switch to image edit mode — gpt-image-1 handles both gen and edit
-        self.selectedModel = @"gpt-image-1-edit";
-        [self.modelButton setTitle:@"Model: gpt-image-1 (edit mode)" forState:UIControlStateNormal];
+        [self enterImageEditModeFromCurrentSelection];
         [self appendToChat:[NSString stringWithFormat:
             @"[System: Image %@ attached — switched to image edit mode. "
             @"Type a prompt describing your edits.]", saveName]];
@@ -1686,17 +2155,60 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
             [self appendToChat:[NSString stringWithFormat:
                 @"[System: Image %@ attached. Type a prompt to analyze or describe it.]", saveName]];
         }
+    }
 
-        // Add vision message to context — use base64 data URL
-        // NOTE: this message is marked so we can strip it after first use
-        // to avoid re-sending huge base64 blobs on every subsequent turn
-        NSString *base64  = [imageData base64EncodedStringWithOptions:0];
-        NSString *dataURL = [NSString stringWithFormat:@"data:%@;base64,%@", mime, base64];
+    // Add vision message to context — use base64 data URL. Runs regardless
+    // of inImageGenMode: this used to live only in the vision-analysis else
+    // branch above, which meant an edit-mode source image had zero trace
+    // anywhere in chatContext and could never be restored after reloading
+    // the thread — see chatHistoryDidSelectThread's fallback comment for
+    // how already-broken threads from before this fix are handled. This
+    // doesn't change what editing actually does: callImageEdit sends the
+    // image to ez-image directly over its own HTTP call, not through
+    // chatContext/ez-chat, so recording it here is purely for restore/
+    // history purposes. If the user later sends a normal chat message,
+    // sanitizedContextForAPI's existing "only resend the newest image"
+    // logic treats this like any other recent attachment — reasonable,
+    // since the model having context on what image was being edited if
+    // asked about it later isn't a bug.
+    // NOTE: this message is marked so we can strip it after first use
+    // to avoid re-sending huge base64 blobs on every subsequent turn
+    NSString *base64  = [imageData base64EncodedStringWithOptions:0];
+    NSString *dataURL = [NSString stringWithFormat:@"data:%@;base64,%@", mime, base64];
+    NSDictionary *newImageBlock = @{@"type": @"image_url", @"image_url": @{@"url": dataURL}};
+
+    // If the previous chatContext entry is ALSO a still-pending (unsent)
+    // vision attachment, merge this image into it as an additional block
+    // instead of creating a separate message. This is what actually
+    // fixes multi-image attach: sanitizedContextForAPI only preserves
+    // the single most recent vision MESSAGE (correct, desirable
+    // behavior for genuinely old attachments left over from an earlier,
+    // already-completed turn — that's what stops every prior image
+    // getting re-sent as base64 on every future turn), so two images
+    // attached in the same not-yet-sent turn need to live in ONE
+    // combined message, or the older one silently loses its image data.
+    // A vision message stops being "the previous entry" the instant the
+    // user sends (which appends a real user-prompt message right after
+    // it — see the fullPrompt append below), so this only ever merges
+    // attachments from the same pending turn, never a leftover image
+    // from an already-completed exchange.
+    NSDictionary *lastMsg = self.chatContext.lastObject;
+    if ([lastMsg[@"_isVisionAttachment"] boolValue]) {
+        NSMutableArray *mergedBlocks = [lastMsg[@"content"] mutableCopy] ?: [NSMutableArray array];
+        // Insert before the trailing placeholder text block so the
+        // placeholder stays last no matter how many images accumulate.
+        NSUInteger insertAt = mergedBlocks.count > 0 ? mergedBlocks.count - 1 : 0;
+        [mergedBlocks insertObject:newImageBlock atIndex:insertAt];
+        NSMutableDictionary *mergedMsg = [lastMsg mutableCopy];
+        mergedMsg[@"content"] = [mergedBlocks copy];
+        [self.chatContext removeLastObject];
+        [self.chatContext addObject:[mergedMsg copy]];
+    } else {
         NSDictionary *visionMsg = @{
             @"role":     @"user",
             @"content":  @[
-                @{@"type": @"image_url", @"image_url": @{@"url": dataURL}},
-                @{@"type": @"text",      @"text": @"[image attached — await user question]"}
+                newImageBlock,
+                @{@"type": @"text", @"text": @"[image attached — await user question]"}
             ],
             @"_isVisionAttachment": @YES   // internal flag — stripped before API call
         };
@@ -1719,8 +2231,6 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
 
     // Save a copy for persistence
     NSData *fileData = [NSData dataWithContentsOfURL:fileURL];
-                    
-    // Save a copy for persistataWithContentsOfURL:fileURL];
     if (fileData) {
         NSString *savedPath = EZAttachmentSave(fileData, name);
         if (savedPath) {
@@ -1755,8 +2265,7 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
         }
          */
         dispatch_async(dispatch_get_main_queue(), ^{
-            self.pendingFileContext = extractedText;
-            self.pendingFileName    = name;
+            [self.pendingFiles addObject:@{@"name": name, @"content": extractedText}];
             [self appendToChat:[NSString stringWithFormat:
                 @"[System: %@ ready (%lu chars). Ask me anything about it.]",
                 name, (unsigned long)extractedText.length]];
@@ -2152,9 +2661,10 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     if ([self.selectedModel isEqualToString:@"dall-e-3"]) {
         feature = EZFeatureDalle3Standard;
     }
-    if ([self.selectedModel hasPrefix:@"sora-"]) {
-        feature = EZFeatureSora10s;
-    }
+    // SORA — commented out with the rest of the Sora code.
+    // if ([self.selectedModel hasPrefix:@"sora-"]) {
+    //     feature = EZFeatureSora10s;
+    // }
 
     // ── Entitlement check moved to callChatCompletions where we know the actual
     // token count from the assembled payload. For image/sora models we still
@@ -2201,7 +2711,7 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
 
         BOOL isEdit = [self.selectedModel isEqualToString:@"gpt-image-1-edit"] ||
                       [self.selectedModel isEqualToString:@"dall-e-2-edit"];
-        NSString *apiModel = isEdit ? @"gpt-image-1" : self.selectedModel;
+        NSString *apiModel = isEdit ? (self.preEditModeModel ?: @"gpt-image-1") : self.selectedModel;
 
         EZLogf(EZLogLevelInfo, @"COINS",
                @"Image cost: feature=%@ n=%ld size=%@ sizeMultiplier=%.2f quantity=%ld isEdit=%d",
@@ -2211,6 +2721,9 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
                                                          quantity:quantity
                                                            prompt:text
                                                             model:apiModel
+                                                          quality:quality
+                                                             size:size
+                                                           isEdit:isEdit
                                                        completion:^(BOOL allowed,
                                                                     NSInteger balance,
                                                                     NSString *reason) {
@@ -2276,14 +2789,19 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
 
     self.lastUserPrompt = text;
 
-    // Inject pending file context
+    // Inject pending file context — every file attached since the last
+    // send, not just the most recent one (previously pendingFileContext/
+    // pendingFileName were singular, so a second attached file silently
+    // discarded the first's extracted text entirely).
     NSString *fullPrompt = text;
-    if (self.pendingFileContext.length > 0) {
-        fullPrompt = [NSString stringWithFormat:
-            @"[Attached file: %@]\n\n%@\n\n[User question]: %@",
-            self.pendingFileName, self.pendingFileContext, text];
-        self.pendingFileContext = nil;
-        self.pendingFileName    = nil;
+    if (self.pendingFiles.count > 0) {
+        NSMutableString *filesBlock = [NSMutableString string];
+        for (NSDictionary<NSString *, NSString *> *file in self.pendingFiles) {
+            [filesBlock appendFormat:@"[Attached file: %@]\n\n%@\n\n",
+                file[@"name"], file[@"content"]];
+        }
+        fullPrompt = [NSString stringWithFormat:@"%@[User question]: %@", filesBlock, text];
+        [self.pendingFiles removeAllObjects];
         [self appendToChat:@"[System: File context injected ✓]"];
     }
 
@@ -2296,18 +2814,22 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
         [self appendToChat:@"[System: Whisper is for audio transcription only — switched to gpt-4o for chat]"];
     }
 
-    // ── Image edit mode (gpt-image-1 with attached image) ────────────────────
-    if ([self.selectedModel isEqualToString:@"gpt-image-1-edit"]) {
-        [self callImageEdit:text imagePath:self.pendingImagePath ?: self.lastImageLocalPath];
-        self.pendingImagePath = nil;
+    // ── Explicit image edit (a newly attached source image) ──────────────────
+    // Edit mode remains visible after a completed edit, but it must not force
+    // every later prompt into edit. Without a pending source image, let the
+    // image-intent router below choose generate, edit, or reopen instead.
+    if ([self.selectedModel isEqualToString:@"gpt-image-1-edit"] &&
+        self.pendingImagePaths.count > 0) {
+        [self callImageEdit:text imagePath:self.pendingImagePaths.lastObject ?: self.lastImageLocalPath];
+        [self.pendingImagePaths removeAllObjects];
         return;
     }
 
     // ── Legacy dall-e-2-edit fallback ────────────────────────────────────────
     if ([self.selectedModel isEqualToString:@"dall-e-2-edit"]) {
-        self.selectedModel = @"gpt-image-1-edit";
-        [self callImageEdit:text imagePath:self.pendingImagePath ?: self.lastImageLocalPath];
-        self.pendingImagePath = nil;
+        [self enterImageEditModeFromCurrentSelection];
+        [self callImageEdit:text imagePath:self.pendingImagePaths.lastObject ?: self.lastImageLocalPath];
+        [self.pendingImagePaths removeAllObjects];
         return;
     }
 
@@ -2323,26 +2845,37 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
                 self.lastImageLocalPath = persisted;
             }
         }
-        BOOL hasLocal = self.lastImageLocalPath.length > 0;
+        // Was just checking .length > 0 — true for a stale path from
+        // earlier in the session whose underlying file no longer exists
+        // (cache cleanup, app restart, etc.). Complementary to the
+        // pendingImagePaths-gated edit dispatch and exitImageEditModeIfNeeded
+        // above/below: those stop a sticky edit-mode UI state from
+        // hijacking an unrelated message; this stops a stale-but-non-empty
+        // path from making hasLocal falsely true in the intent router
+        // itself, which could independently steer a plain generation into
+        // edit mode via the classifier even when selectedModel was never
+        // stuck on gpt-image-1-edit to begin with.
+        BOOL hasLocal = self.lastImageLocalPath.length > 0 &&
+            [[NSFileManager defaultManager] fileExistsAtPath:self.lastImageLocalPath];
 
         [self classifyImageIntent:text hasLocalImage:hasLocal
                        completion:^(NSString *intent) {
             self.sendButton.enabled = YES;
             if ([intent isEqualToString:@"reopen"] && hasLocal) {
+                [self exitImageEditModeIfNeeded];
                 EZLogf(EZLogLevelInfo, @"IMAGE", @"Intent=reopen → %@",
                        self.lastImageLocalPath.lastPathComponent);
                 [self appendToChat:@"[System: Reopening last image ✓]"];
                 [self offerToOpenLocalFile:self.lastImageLocalPath];
             } else if ([intent isEqualToString:@"edit"] && hasLocal) {
                 EZLogf(EZLogLevelInfo, @"IMAGE", @"Intent=edit → switching to edit mode");
-                self.selectedModel = @"gpt-image-1-edit";
-                [self.modelButton setTitle:@"Model: gpt-image-1 (edit mode)"
-                                  forState:UIControlStateNormal];
-                NSString *editPath = self.pendingImagePath ?: self.lastImageLocalPath;
-                self.pendingImagePath = nil;
+                [self enterImageEditModeFromCurrentSelection];
+                NSString *editPath = self.pendingImagePaths.lastObject ?: self.lastImageLocalPath;
+                [self.pendingImagePaths removeAllObjects];
                 [self callImageEdit:text imagePath:editPath];
             } else {
                 EZLogf(EZLogLevelInfo, @"IMAGE", @"Intent=generate");
+                [self exitImageEditModeIfNeeded];
                 if ([self isGptImage1Family:self.selectedModel] ||
                     [self.selectedModel isEqualToString:@"gpt-image-1-edit"]) {
                     [self callGptImage1:text];
@@ -2373,10 +2906,12 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     }
 
     // ── Sora ──────────────────────────────────────────────────────────────────
-    if ([self.selectedModel hasPrefix:@"sora-"]) {
-        [self callSora:fullPrompt];
-        return;
-    }
+    // SORA — commented out with the rest of the Sora code (see the big block
+    // near callSora's old implementation).
+    // if ([self.selectedModel hasPrefix:@"sora-"]) {
+    //     [self callSora:fullPrompt];
+    //     return;
+    // }
 
     // ── Chat / reasoning models ───────────────────────────────────────────────
     [self fetchRelevantMemories:text completion:^(NSString *memories) {
@@ -2397,10 +2932,10 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
                 EZLogf(EZLogLevelInfo, @"SEND", @"Tier 1 direct answer displayed");
 
                 NSMutableArray *attachmentsAtSend = [NSMutableArray array];
-                if (self.pendingImagePath.length > 0) {
-                    [attachmentsAtSend addObject:self.pendingImagePath];
+                if (self.pendingImagePaths.count > 0) {
+                    [attachmentsAtSend addObjectsFromArray:self.pendingImagePaths];
                 }
-                self.pendingImagePath = nil;
+                [self.pendingImagePaths removeAllObjects];
 
                 createMemoryFromCompletion(text, answer, jwtToken,
                                            self.activeThread.threadID,
@@ -2569,13 +3104,14 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
 - (void)callChatCompletions {
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
 
-    // isGPT5 covers all real gpt-5.x API model strings via prefix.
+    // GPT-5.x models and GPT-6 Astra use the Responses API.
     // "gpt-5-pro" is a ChatGPT subscription tier name, not an API model string —
     // sending it to the API returns a model-not-found error. Remove it from
     // any model picker. Real API strings: gpt-5, gpt-5-mini, gpt-5.4, gpt-5.4-mini,
     // gpt-5.4-nano, gpt-5.5, gpt-5.6-sol, gpt-5.6-terra, gpt-5.6-luna. All are
     // correctly matched by hasPrefix:@"gpt-5".
-    BOOL isGPT5 = [self.selectedModel hasPrefix:@"gpt-5"];
+    BOOL isGPT5 = [self.selectedModel hasPrefix:@"gpt-5"] ||
+                  [self.selectedModel isEqualToString:@"gpt-6-astra"];
     // Web search works on gpt-5.x (via Responses API), gpt-4.1.x, and listed gpt-4o models.
     // Prefix checks cover all sub-variants without needing to enumerate each.
     BOOL modelSupportsWebSearch = isGPT5
@@ -2665,8 +3201,8 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     NSString *capturedPrompt      = self.lastUserPrompt;
     NSString *capturedThreadID    = self.activeThread.threadID;
     NSMutableArray *capturedAttachments = [NSMutableArray array];
-    if (self.pendingImagePath.length > 0) [capturedAttachments addObject:self.pendingImagePath];
-    self.pendingImagePath = nil;
+    if (self.pendingImagePaths.count > 0) [capturedAttachments addObjectsFromArray:self.pendingImagePaths];
+    [self.pendingImagePaths removeAllObjects];
 
     if (isGPT5) { dispatch_async(dispatch_get_main_queue(), ^{ [self showGPT5StatusBanner]; }); }
 
@@ -2694,7 +3230,8 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     NSURL *ezURL = [NSURL URLWithString:@"https://spuoimtqofhbdzosrbng.supabase.co/functions/v1/ez-chat"];
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:ezURL];
     request.HTTPMethod = @"POST";
-    BOOL isHeavyReasoningModel = [self.selectedModel isEqualToString:@"gpt-5.6-sol"];
+    BOOL isHeavyReasoningModel = [self.selectedModel isEqualToString:@"gpt-5.6-sol"] ||
+                                  [self.selectedModel isEqualToString:@"gpt-6-astra"];
     if ((isGPT5 && useWebSearch) || isHeavyReasoningModel) request.timeoutInterval = 240;
     else if (isGPT5)                                        request.timeoutInterval = 180;
     else                                                     request.timeoutInterval = 90;
@@ -2789,12 +3326,20 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     };
 
     NSString *savedPrompt = prompt;
+    [self showImageGenStatusBanner];
     [self postToEZFunction:@"ez-image" token:token body:body
                 completion:^(NSDictionary *json, NSError *error) {
+        [self hideStatusBanner];
         if (error) { [self handleAPIError:error.localizedDescription]; return; }
         id errObj = json[@"error"];
         if (errObj && ![errObj isKindOfClass:[NSNull class]]) {
-            [self handleAPIError:[errObj isKindOfClass:[NSString class]] ? errObj : @"DALL-E error"];
+            NSString *errMsg = [errObj isKindOfClass:[NSString class]] ? errObj : @"DALL-E error";
+            // ez-image includes a human-readable "reason" alongside the
+            // error code specifically for cases like timeout/refund — show
+            // it when present, since "DALL-E error" alone doesn't tell the
+            // user whether their coins came back.
+            NSString *reason = json[@"reason"];
+            [self handleAPIError:reason.length ? [NSString stringWithFormat:@"%@ %@", errMsg, reason] : errMsg];
             return;
         }
         NSArray *images = json[@"images"];
@@ -2828,8 +3373,9 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     NSString *imgQuality = [d stringForKey:@"imgQuality"]    ?: @"auto";
     NSString *imgFormat  = [d stringForKey:@"imgFormat"]     ?: @"png";
     NSString *imgBg      = [d stringForKey:@"imgBackground"] ?: @"auto";
+    NSString *imgExtension = [imgFormat isEqualToString:@"jpeg"] ? @"jpg" : imgFormat;
     NSString *imgModel   = self.selectedModel;
-    if ([imgModel isEqualToString:@"gpt-image-1-edit"]) imgModel = @"gpt-image-1";
+    if ([imgModel isEqualToString:@"gpt-image-1-edit"]) imgModel = self.preEditModeModel ?: @"gpt-image-1";
     NSInteger imgN = [d integerForKey:@"imgVariations"];
     if (imgN < 1 || imgN > 4) imgN = 1;
 
@@ -2845,15 +3391,22 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     } mutableCopy];
 
     NSString *savedPrompt = prompt;
+    [self showImageGenStatusBanner];
     [self postToEZFunction:@"ez-image" token:token body:body
                 completion:^(NSDictionary *json, NSError *error) {
+        [self hideStatusBanner];
         if (error) { [self handleAPIError:error.localizedDescription]; return; }
         id errObj = json[@"error"];
         if (errObj && ![errObj isKindOfClass:[NSNull class]]) {
             NSString *errMsg = [errObj isKindOfClass:[NSString class]] ? errObj : @"Image error";
-            [self handleAPIError:errMsg];
+            // See DALL-E-3's error path above for why this matters — ez-image
+            // reports whether coins were refunded in "reason", which was
+            // never being shown to the user for image generation failures.
+            NSString *reason = json[@"reason"];
+            NSString *fullMsg = reason.length ? [NSString stringWithFormat:@"%@ %@", errMsg, reason] : errMsg;
+            [self handleAPIError:fullMsg];
             dispatch_async(dispatch_get_main_queue(), ^{
-                [self appendImageGridToChat:@[] prompt:savedPrompt isError:YES errorText:errMsg];
+                [self appendImageGridToChat:@[] prompt:savedPrompt isError:YES errorText:fullMsg];
             });
             return;
         }
@@ -2879,8 +3432,8 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
             if (!signedURL.length) continue;
             NSData *imgData = [NSData dataWithContentsOfURL:[NSURL URLWithString:signedURL]];
             if (!imgData) continue;
-            NSString *fname = [NSString stringWithFormat:@"gptimage_%lu.png",
-                               (unsigned long)savedPaths.count + 1];
+            NSString *fname = [NSString stringWithFormat:@"gptimage_%lu.%@",
+                               (unsigned long)savedPaths.count + 1, imgExtension];
             NSString *path = EZAttachmentSave(imgData, fname);
             if (path) [savedPaths addObject:path];
         }
@@ -2896,6 +3449,17 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
                 self.activeThread.attachmentPaths = [att copy];
                 [self saveActiveThread];
                 [self persistImagePath:firstPath prompt:savedPrompt];
+
+                // Was previously missing entirely — see the DALL-E-3 note
+                // in downloadAndSaveImage: for the same fix on that path.
+                NSString *answer = [NSString stringWithFormat:
+                    @"Generated %lu image(s) for: %@", (unsigned long)savedPaths.count, savedPrompt];
+                createMemoryFromCompletion(savedPrompt ?: @"", answer, token,
+                                           self.activeThread.threadID, [savedPaths copy],
+                ^(NSString *entry) {
+                    if (entry) EZLogf(EZLogLevelInfo, @"MEMORY", @"Saved (image gen): %lu chars",
+                                      (unsigned long)entry.length);
+                });
             }
             if (savedPaths.count > 0) {
                 [self appendImageGridToChat:[savedPaths copy]
@@ -2941,6 +3505,7 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     NSString *editFmt  = [d stringForKey:@"imgFormat"]      ?: @"png";
     NSString *editBg   = [d stringForKey:@"imgBackground"]  ?: @"auto";
     NSString *editMod  = [d stringForKey:@"imgModeration"]  ?: @"low";
+    NSString *editExtension = [editFmt isEqualToString:@"jpeg"] ? @"jpg" : editFmt;
     NSInteger editN    = [d integerForKey:@"imgVariations"];
     if (editN < 1 || editN > 4) editN = 1;
 
@@ -2948,7 +3513,10 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
 
     NSDictionary *body = @{
         @"action":        @"edit",
-        @"model":         @"gpt-image-1",
+        // Was hardcoded to gpt-image-1 regardless of what the user picked —
+        // now sends whatever enterImageEditModeFromCurrentSelection
+        // remembered as the real model active before edit mode started.
+        @"model":         self.preEditModeModel ?: @"gpt-image-1",
         @"prompt":        prompt,
         @"image_b64":     b64Image,
         @"n":             @(editN),
@@ -2959,15 +3527,20 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
         @"moderation":    editMod,
     };
 
+    [self showImageGenStatusBanner];
     [self postToEZFunction:@"ez-image" token:token body:body
                 completion:^(NSDictionary *json, NSError *error) {
+        [self hideStatusBanner];
         if (error) { [self handleAPIError:error.localizedDescription]; return; }
         id errObj = json[@"error"];
         if (errObj && ![errObj isKindOfClass:[NSNull class]]) {
             NSString *errMsg = [errObj isKindOfClass:[NSString class]] ? errObj : @"Image edit error";
-            [self handleAPIError:errMsg];
+            // See DALL-E-3's error path above for why this matters.
+            NSString *reason = json[@"reason"];
+            NSString *fullMsg = reason.length ? [NSString stringWithFormat:@"%@ %@", errMsg, reason] : errMsg;
+            [self handleAPIError:fullMsg];
             dispatch_async(dispatch_get_main_queue(), ^{
-                [self appendImageGridToChat:@[] prompt:prompt isError:YES errorText:errMsg];
+                [self appendImageGridToChat:@[] prompt:prompt isError:YES errorText:fullMsg];
             });
             return;
         }
@@ -2992,8 +3565,8 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
             if (!signedURL.length) continue;
             NSData *imgData = [NSData dataWithContentsOfURL:[NSURL URLWithString:signedURL]];
             if (!imgData) continue;
-            NSString *fname = [NSString stringWithFormat:@"edit_%lu.png",
-                               (unsigned long)savedPaths.count + 1];
+            NSString *fname = [NSString stringWithFormat:@"edit_%lu.%@",
+                               (unsigned long)savedPaths.count + 1, editExtension];
             NSString *path = EZAttachmentSave(imgData, fname);
             if (path) [savedPaths addObject:path];
         }
@@ -3002,7 +3575,9 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
         dispatch_async(dispatch_get_main_queue(), ^{
             self.lastImagePrompt = prompt;
             self.selectedModel   = @"gpt-image-1-edit";
-            [self.modelButton setTitle:@"Model: gpt-image-1 (edit mode)" forState:UIControlStateNormal];
+            [self.modelButton setTitle:[NSString stringWithFormat:@"Model: %@ (edit mode)",
+                                         self.preEditModeModel ?: @"gpt-image-1"]
+                              forState:UIControlStateNormal];
             [self appendToChat:@"[System: Edit complete — still in edit mode. Attach a new image or type another edit prompt.]"];
             if (firstPath) {
                 self.lastImageLocalPath = firstPath;
@@ -3012,6 +3587,17 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
                 self.activeThread.attachmentPaths = [att copy];
                 [self saveActiveThread];
                 [self persistImagePath:firstPath prompt:prompt];
+
+                // Was previously missing entirely, same as generation —
+                // see the DALL-E-3 note in downloadAndSaveImage:.
+                NSString *answer = [NSString stringWithFormat:
+                    @"Edited the attached image per: %@", prompt];
+                createMemoryFromCompletion(prompt ?: @"", answer, token,
+                                           self.activeThread.threadID, [savedPaths copy],
+                ^(NSString *entry) {
+                    if (entry) EZLogf(EZLogLevelInfo, @"MEMORY", @"Saved (image edit): %lu chars",
+                                      (unsigned long)entry.length);
+                });
             }
             if (savedPaths.count > 0) {
                 [self appendImageGridToChat:[savedPaths copy] prompt:prompt isError:NO errorText:nil];
@@ -3023,6 +3609,28 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
         });
     }];
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SORA — commented out, not deleted, per request. User removed Sora from
+   Settings on their own; OpenAI's Sora API is also scheduled for shutdown
+   2026-09-24 regardless, so this needed to come out either way.
+
+   Kept as a block comment rather than deleted because Sora's call shape —
+   submit a prompt as an async job, poll a status endpoint until it's ready,
+   download the finished asset — is close to how most other video-gen APIs
+   work too (Runway, Luma Dream Machine, Kling, Veo via Vertex/Gemini). The
+   exact endpoints/field names below are Sora-specific and would need real
+   rewriting for a different provider, but the polling loop shape, the
+   backgrounded-job-resume pattern, and the refund-on-failure handling may
+   be worth adapting rather than rebuilding from scratch if/when a
+   replacement video API gets added.
+
+   To fully remove instead of just disabling: this comment block, its
+   forward declarations (downloadAndShowVideo: above, and the earlier
+   callSora:/property/model-list/dispatch spots — search this file for
+   "SORA —" to find all of them), and the pendingVideoURL/lastVideoPrompt
+   properties can all come out together.
+   ═══════════════════════════════════════════════════════════════════════════
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MARK: - Sora Text-to-Video (always async job)
@@ -3265,6 +3873,7 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
         });
     }] resume];
 }
+   ═══════ END SORA ══════════════════════════════════════════════════════ */
 
 - (void)downloadAndSaveImage:(NSString *)urlString purpose:(NSString *)purpose {
     [[[NSURLSession sharedSession] downloadTaskWithURL:[NSURL URLWithString:urlString]
@@ -3293,6 +3902,25 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
                 self.activeThread.attachmentPaths = [att copy];
                 [self saveActiveThread];
                 [self persistImagePath:savedPath prompt:self.lastImagePrompt];
+
+                // Image generations previously got no memory entry at all —
+                // only chat completions did (see the two other
+                // createMemoryFromCompletion call sites in this file).
+                // Only one caller of this method (callDalle3), so this
+                // covers DALL-E-3 generations specifically; gpt-image-1
+                // generation and editing get their own calls at their own
+                // save points below, since they don't route through here.
+                NSString *token = [EZAuthManager shared].accessToken;
+                if (token) {
+                    NSString *answer = [NSString stringWithFormat:
+                        @"Generated an image for: %@", self.lastImagePrompt ?: @""];
+                    createMemoryFromCompletion(self.lastImagePrompt ?: @"", answer, token,
+                                               self.activeThread.threadID, @[savedPath],
+                    ^(NSString *entry) {
+                        if (entry) EZLogf(EZLogLevelInfo, @"MEMORY", @"Saved (image gen): %lu chars",
+                                          (unsigned long)entry.length);
+                    });
+                }
             }
             self.previewURL = tmp;
             QLPreviewController *ql = [[QLPreviewController alloc] init];
@@ -3369,10 +3997,53 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     return [model hasPrefix:@"gpt-image-"] || [model isEqualToString:@"chatgpt-image-latest"];
 }
 
+// Call this at every point that switches selectedModel to the
+// "gpt-image-1-edit" mode flag, instead of setting selectedModel/modelButton
+// directly — it's what makes callImageEdit/callGptImage1 actually use the
+// model the user had picked instead of always falling back to gpt-image-1.
+//
+// preEditModeModel is sticky: it only gets overwritten when the CURRENT
+// selection is a real edit-capable model. If the user switches to a chat
+// model (or a non-edit-capable one like dall-e-3) and then attaches an
+// image without picking an image model again first, whatever was last
+// remembered carries over rather than resetting — e.g. "picked
+// gpt-image-1.5 for editing, switched to gpt-5 to chat, attached another
+// image" still edits with gpt-image-1.5. Falls back to gpt-image-1 only the
+// first time this is ever called with nothing remembered yet.
+- (void)enterImageEditModeFromCurrentSelection {
+    static NSSet<NSString *> *editCapableModels;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        editCapableModels = [NSSet setWithObjects:
+            @"gpt-image-1", @"gpt-image-1-mini", @"gpt-image-1.5",
+            @"gpt-image-2", @"chatgpt-image-latest", nil];
+    });
+    if ([editCapableModels containsObject:self.selectedModel]) {
+        self.preEditModeModel = self.selectedModel;
+    } else if (self.preEditModeModel.length == 0) {
+        self.preEditModeModel = @"gpt-image-1"; // sensible default, matches old hardcoded behavior
+    }
+    self.selectedModel = @"gpt-image-1-edit";
+    [self.modelButton setTitle:[NSString stringWithFormat:@"Model: %@ (edit mode)", self.preEditModeModel]
+                      forState:UIControlStateNormal];
+}
+
+// Return to the real image model once intent routing chose a non-edit action.
+// This prevents the edit-mode UI state from leaking into later generations or
+// image reopens after a previous edit has completed.
+- (void)exitImageEditModeIfNeeded {
+    if (![self.selectedModel isEqualToString:@"gpt-image-1-edit"]) return;
+
+    NSString *model = self.preEditModeModel.length ? self.preEditModeModel : @"gpt-image-1";
+    self.selectedModel = model;
+    [self.modelButton setTitle:[NSString stringWithFormat:@"Model: %@", model]
+                      forState:UIControlStateNormal];
+}
+
 - (BOOL)modelSupportsVision:(NSString *)model {
     // gpt-5.x and gpt-4.1.x all support vision via the Responses API.
     // Prefix checks cover all variants (gpt-5, gpt-5.1-mini, gpt-4.1, gpt-4.1-mini, etc.)
-    if ([model hasPrefix:@"gpt-5"])   return YES;
+    if ([model hasPrefix:@"gpt-5"] || [model isEqualToString:@"gpt-6-astra"]) return YES;
     if ([model hasPrefix:@"gpt-4.1"]) return YES;
     if ([model hasPrefix:@"o3"])      return YES;
     if ([model hasPrefix:@"o4"])      return YES;
@@ -3380,6 +4051,62 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
         @"gpt-4o", @"gpt-4o-mini", @"gpt-4-turbo", @"gpt-4",
         @"gpt-image-1", nil];
     return [visionModels containsObject:model];
+}
+
+/// Decodes the base64 data URLs in a vision message's content array back
+/// into real local files, for restoring attachment bubbles when a thread
+/// loads. The full base64 data survives in chatContext/thread persistence
+/// (sanitizedContextForAPI only ever produces a derived copy for the
+/// outgoing request — self.chatContext itself is never mutated, so this
+/// works retroactively for any already-saved thread, not just future ones).
+/// Returns the recovered local paths in order; images that fail to decode
+/// are skipped rather than aborting the whole message's recovery.
+- (NSArray<NSString *> *)ez_recoverImagePathsFromVisionContent:(NSArray *)contentBlocks {
+    NSMutableArray<NSString *> *paths = [NSMutableArray array];
+    for (NSDictionary *block in contentBlocks) {
+        NSString *type = block[@"type"];
+        if (![type isEqualToString:@"image_url"] && ![type isEqualToString:@"input_image"]) continue;
+        id imageValue = block[@"image_url"];
+        NSString *dataURL = [imageValue isKindOfClass:[NSDictionary class]] ? imageValue[@"url"]
+            : [imageValue isKindOfClass:[NSString class]] ? imageValue : nil;
+        // Responses API's persisted form can hold raw base64 + media type.
+        if (!dataURL.length && [block[@"data"] isKindOfClass:[NSString class]]) {
+            dataURL = [NSString stringWithFormat:@"data:%@;base64,%@",
+                       block[@"media_type"] ?: @"image/jpeg", block[@"data"]];
+        }
+        if (![dataURL hasPrefix:@"data:"]) continue; // skip real http(s) URLs, nothing to recover
+
+        NSRange base64Marker = [dataURL rangeOfString:@";base64,"];
+        if (base64Marker.location == NSNotFound) continue;
+        NSString *mime = [[dataURL substringWithRange:NSMakeRange(5, base64Marker.location - 5)]
+                           stringByReplacingOccurrencesOfString:@"image/" withString:@""];
+        NSString *base64 = [dataURL substringFromIndex:base64Marker.location + base64Marker.length];
+        NSData *imageData = [[NSData alloc] initWithBase64EncodedString:base64 options:0];
+        if (!imageData) continue;
+
+        // Reuse the original attachment file when it is available.  Apart from
+        // avoiding needless copies, this lets the legacy attachment fallback
+        // recognize that the image was already restored.
+        NSString *matchingPath = nil;
+        for (NSString *candidate in self.activeThread.attachmentPaths) {
+            NSString *resolved = EZAttachmentPath(candidate);
+            NSData *candidateData = resolved.length ? [NSData dataWithContentsOfFile:resolved] : nil;
+            if (candidateData && [candidateData isEqualToData:imageData]) {
+                matchingPath = resolved;
+                break;
+            }
+        }
+        if (matchingPath) {
+            [paths addObject:matchingPath];
+            continue;
+        }
+
+        NSString *ext = mime.length > 0 ? mime : @"jpg";
+        NSString *name = [NSString stringWithFormat:@"restored_%@.%@", [NSUUID UUID].UUIDString, ext];
+        NSString *savedPath = EZAttachmentSave(imageData, name);
+        if (savedPath) [paths addObject:savedPath];
+    }
+    return [paths copy];
 }
 
 - (NSArray *)sanitizedContextForAPI:(NSArray *)context
@@ -3420,6 +4147,10 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     for (NSUInteger i = 0; i < context.count; i++) {
 
         NSDictionary *msg = context[i];
+
+        // Ordered image-grid records are for reconstruction of the local UI;
+        // they are not chat turns and must never be sent to an API model.
+        if ([msg[@"_uiOnly"] boolValue]) continue;
 
         // Strip internal metadata keys
         NSMutableDictionary *clean =
@@ -3735,9 +4466,8 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     self.lastUserPrompt     = nil;
     self.lastImagePrompt    = nil;
     self.lastImageLocalPath = nil;
-    self.pendingFileContext = nil;
-    self.pendingFileName    = nil;
-    self.pendingImagePath   = nil;
+    [self.pendingFiles removeAllObjects];
+    [self.pendingImagePaths removeAllObjects];
     [self startNewThread];
     [self updateThreadTitleLabel];
 }
@@ -3981,6 +4711,191 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     return ext;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// MARK: - Real generated files (EZPDF / EZDOCX / EZXCEL fences)
+// ─────────────────────────────────────────────────────────────────────────────
+// Same detection mechanism as code blocks (processReplyWithCodeBlocks below) —
+// a fence whose language is EZPDF/EZDOCX/EZXCEL, optionally with a filename
+// on the fence line exactly like ```python foo.py — but instead of saving the
+// raw fenced text as a plain-text snippet, this actually generates a real
+// file: a genuine PDF, an RTF (opens natively in Word/Pages — true .docx is a
+// ZIP+XML format iOS has no built-in support for; RTF gets the same practical
+// result — a real document the user can open — without hand-rolling a ZIP
+// writer), and a real CSV (same reasoning vs. true .xlsx). Extension is
+// always forced to the real format regardless of what the model or fence
+// filename suggests, so a file is never shipped with a misleading extension.
+//
+// Content conventions (also needs to go in the system prompt so models know
+// to write in this shape):
+//   EZPDF / EZDOCX body — a small markdown subset, not full markdown:
+//     # Heading            -> large bold line
+//     ## Subheading        -> medium bold line
+//     **bold text**        -> inline bold
+//     blank line           -> paragraph break
+//     anything else        -> plain body text
+//   EZXCEL body — one row per line, fields separated by | (pipe), not comma:
+//     Name|Age|City
+//     Ana|29|Boston
+//     (Pipe instead of comma specifically so the model doesn't have to worry
+//     about CSV quoting/escaping — this code handles proper CSV escaping,
+//     including commas or quotes WITHIN a field, when converting.)
+
+/// Parses the small markdown subset documented above into an NSAttributedString.
+/// Deliberately not a general markdown parser — keeping the supported syntax
+/// small is what makes it easy to document accurately and easy to keep
+/// correct. Extend the supported syntax deliberately, not accidentally.
+- (NSAttributedString *)ez_attributedStringFromSimpleMarkdown:(NSString *)markdown {
+    NSMutableAttributedString *result = [[NSMutableAttributedString alloc] init];
+    UIFont *bodyFont     = [UIFont systemFontOfSize:12];
+    UIFont *boldBodyFont = [UIFont boldSystemFontOfSize:12];
+    UIFont *h1Font       = [UIFont boldSystemFontOfSize:20];
+    UIFont *h2Font       = [UIFont boldSystemFontOfSize:16];
+
+    NSArray<NSString *> *lines = [markdown componentsSeparatedByString:@"\n"];
+    for (NSUInteger lineIdx = 0; lineIdx < lines.count; lineIdx++) {
+        NSString *line = lines[lineIdx];
+        UIFont *lineFont = bodyFont;
+        UIFont *lineBoldFont = boldBodyFont;
+        if ([line hasPrefix:@"## "]) {
+            lineFont = h2Font; lineBoldFont = h2Font;
+            line = [line substringFromIndex:3];
+        } else if ([line hasPrefix:@"# "]) {
+            lineFont = h1Font; lineBoldFont = h1Font;
+            line = [line substringFromIndex:2];
+        }
+
+        // Toggle bold on each **-delimited segment — a simple state machine,
+        // not a real inline-markdown parser. Odd-indexed segments (1st, 3rd,
+        // ...) are the text BETWEEN pairs of ** markers.
+        NSArray<NSString *> *segments = [line componentsSeparatedByString:@"**"];
+        for (NSUInteger i = 0; i < segments.count; i++) {
+            BOOL isBold = (i % 2) == 1;
+            NSDictionary *attrs = @{ NSFontAttributeName: isBold ? lineBoldFont : lineFont };
+            [result appendAttributedString:
+                [[NSAttributedString alloc] initWithString:segments[i] attributes:attrs]];
+        }
+        if (lineIdx < lines.count - 1) {
+            [result appendAttributedString:[[NSAttributedString alloc] initWithString:@"\n"
+                attributes:@{NSFontAttributeName: bodyFont}]];
+        }
+    }
+    return [result copy];
+}
+
+/// Renders the markdown subset to a real, properly paginated PDF. Draws with
+/// CoreText directly rather than relying on UIGraphicsPDFRenderer's own
+/// layout, specifically so long content correctly flows onto additional
+/// pages instead of being silently clipped to one page.
+- (NSData *)ez_pdfDataFromSimpleMarkdown:(NSString *)markdown {
+    NSAttributedString *attrString = [self ez_attributedStringFromSimpleMarkdown:markdown];
+    if (attrString.length == 0) return nil;
+
+    CGRect pageBounds = CGRectMake(0, 0, 612, 792); // US Letter @ 72dpi
+    UIEdgeInsets margins = UIEdgeInsetsMake(54, 54, 54, 54); // 0.75in margins
+    CGRect textBounds = UIEdgeInsetsInsetRect(pageBounds, margins);
+
+    UIGraphicsPDFRendererFormat *format = [[UIGraphicsPDFRendererFormat alloc] init];
+    UIGraphicsPDFRenderer *renderer = [[UIGraphicsPDFRenderer alloc] initWithBounds:pageBounds
+                                                                              format:format];
+
+    CTFramesetterRef framesetter =
+        CTFramesetterCreateWithAttributedString((CFAttributedStringRef)attrString);
+
+    NSData *pdfData = [renderer PDFDataWithActions:^(UIGraphicsPDFRendererContext *context) {
+        CFIndex totalLength = (CFIndex)attrString.length;
+        CFRange currentRange = CFRangeMake(0, 0);
+        // Safety cap — a pathological input shouldn't be able to hang here
+        // or produce an unbounded-size file.
+        NSInteger pagesDrawn = 0, maxPages = 500;
+
+        while (currentRange.location < totalLength && pagesDrawn < maxPages) {
+            [context beginPage];
+            CGMutablePathRef path = CGPathCreateMutable();
+            CGPathAddRect(path, NULL, textBounds);
+            CTFrameRef frame = CTFramesetterCreateFrame(framesetter, currentRange, path, NULL);
+
+            CGContextRef ctx = context.CGContext;
+            CGContextSaveGState(ctx);
+            // CoreText's coordinate space is flipped relative to UIKit's —
+            // without this, text draws upside down / off the bottom of the page.
+            CGContextTranslateCTM(ctx, 0, pageBounds.size.height);
+            CGContextScaleCTM(ctx, 1.0, -1.0);
+            CTFrameDraw(frame, ctx);
+            CGContextRestoreGState(ctx);
+
+            CFRange visibleRange = CTFrameGetVisibleStringRange(frame);
+            CFRelease(frame);
+            CGPathRelease(path);
+
+            if (visibleRange.length == 0) break; // nothing more fit — avoid an infinite loop
+            currentRange = CFRangeMake(visibleRange.location + visibleRange.length, 0);
+            pagesDrawn++;
+        }
+    }];
+    CFRelease(framesetter);
+    return pdfData;
+}
+
+/// Renders the markdown subset to RTF data via NSAttributedString's built-in
+/// RTF export — genuinely native, no hand-rolled format handling needed.
+- (NSData *)ez_rtfDataFromSimpleMarkdown:(NSString *)markdown {
+    NSAttributedString *attrString = [self ez_attributedStringFromSimpleMarkdown:markdown];
+    if (attrString.length == 0) return nil;
+    NSError *err = nil;
+    NSData *rtfData = [attrString
+        dataFromRange:NSMakeRange(0, attrString.length)
+   documentAttributes:@{NSDocumentTypeDocumentAttribute: NSRTFTextDocumentType}
+                error:&err];
+    if (err) {
+        EZLogf(EZLogLevelError, @"EZDOCX", @"RTF generation failed: %@", err);
+        return nil;
+    }
+    return rtfData;
+}
+
+/// Converts pipe-delimited rows into a real, properly escaped CSV. The model
+/// writes plain pipe-separated fields (see the content convention comment
+/// above) specifically so it never has to get CSV quoting/escaping right
+/// itself — this does that part, including quoting fields that themselves
+/// contain a comma, a quote, or a newline, per the CSV spec.
+- (NSData *)ez_csvDataFromPipeDelimitedRows:(NSString *)pipeContent {
+    NSArray<NSString *> *lines = [pipeContent componentsSeparatedByString:@"\n"];
+    NSMutableString *csv = [NSMutableString string];
+    NSCharacterSet *ws = [NSCharacterSet whitespaceCharacterSet];
+
+    for (NSString *rawLine in lines) {
+        NSString *line = [rawLine stringByTrimmingCharactersInSet:ws];
+        if (line.length == 0) continue; // skip blank lines rather than emit an empty CSV row
+
+        NSArray<NSString *> *fields = [line componentsSeparatedByString:@"|"];
+        NSMutableArray<NSString *> *escaped = [NSMutableArray arrayWithCapacity:fields.count];
+        for (NSString *rawField in fields) {
+            NSString *field = [rawField stringByTrimmingCharactersInSet:ws];
+            BOOL needsQuoting = [field containsString:@","] || [field containsString:@"\""]
+                              || [field containsString:@"\n"];
+            if (needsQuoting) {
+                NSString *doubled = [field stringByReplacingOccurrencesOfString:@"\"" withString:@"\"\""];
+                field = [NSString stringWithFormat:@"\"%@\"", doubled];
+            }
+            [escaped addObject:field];
+        }
+        [csv appendString:[escaped componentsJoinedByString:@","]];
+        [csv appendString:@"\r\n"]; // CRLF per the CSV spec (RFC 4180)
+    }
+    if (csv.length == 0) return nil;
+    return [csv dataUsingEncoding:NSUTF8StringEncoding];
+}
+
+/// Forces path to end in the given extension regardless of what it currently
+/// has — used so a model- or fence-line-suggested filename (which might say
+/// "report.docx" even though this code generates RTF, not true DOCX) never
+/// results in a file shipped with a misleading extension.
+- (NSString *)ez_filename:(NSString *)suggested forcedExtension:(NSString *)ext {
+    NSString *base = suggested.length > 0 ? suggested.stringByDeletingPathExtension : @"document";
+    if (base.length == 0) base = @"document";
+    return [base stringByAppendingPathExtension:ext];
+}
+
 - (NSString *)processReplyWithCodeBlocks:(NSString *)reply
                             savedPaths:(NSMutableArray<NSString *> *)savedPaths {
     return [self processReplyWithCodeBlocks:reply savedPaths:savedPaths isRestore:NO];
@@ -3990,8 +4905,15 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
                             savedPaths:(NSMutableArray<NSString *> *)savedPaths
                              isRestore:(BOOL)isRestore {
     NSError *regexErr;
+    // Group 1: language token (```python). Group 2: anything else on that
+    // same fence line — a filename annotation (```python foo.py), which the
+    // old pattern couldn't handle at all: it only tolerated whitespace
+    // between the language token and the newline, so a fence line with a
+    // trailing filename failed the WHOLE match, silently skipping the code
+    // block entirely instead of rendering it. Group 3: the code body itself
+    // (was group 2 in the old 2-group pattern — shifted down by one).
     NSRegularExpression *codeBlockRegex = [NSRegularExpression
-        regularExpressionWithPattern:@"```([a-zA-Z0-9+#._-]*)[ \\t]*\\n([\\s\\S]+?)\\n[ \\t]*```"
+        regularExpressionWithPattern:@"```([a-zA-Z0-9+#._-]*)[ \\t]*([^\\n]*)\\n([\\s\\S]+?)\\n[ \\t]*```"
                              options:0
                                error:&regexErr];
     if (regexErr || !codeBlockRegex) return reply;
@@ -4006,22 +4928,91 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
 
     for (NSTextCheckingResult *match in matches) {
         NSRange langRange = [match rangeAtIndex:1];
-        NSRange codeRange = [match rangeAtIndex:2];
+        NSRange fenceInfoRange = [match rangeAtIndex:2];
+        NSRange codeRange = [match rangeAtIndex:3];
         if (langRange.location == NSNotFound || codeRange.location == NSNotFound) continue;
 
         NSString *lang = [reply substringWithRange:langRange];
+        NSString *fenceInfo = fenceInfoRange.location != NSNotFound
+            ? [[reply substringWithRange:fenceInfoRange] stringByTrimmingCharactersInSet:
+                [NSCharacterSet whitespaceCharacterSet]]
+            : @"";
         NSString *code = [reply substringWithRange:codeRange];
 
         if (code.length < 5) continue;
 
-        NSString *detectedName = nil;
-        NSArray<NSString *> *firstLines = [[code componentsSeparatedByString:@"\n"]
-                                           subarrayWithRange:NSMakeRange(0, MIN(2, [[code componentsSeparatedByString:@"\n"] count]))];
+        // ── Real generated files (EZPDF / EZDOCX / EZXCEL) ─────────────────
+        // Checked before the generic code-snippet path below — these
+        // languages produce an actual PDF/RTF/CSV instead of saving the
+        // fenced text as a plain-text snippet. See the comment block above
+        // ez_attributedStringFromSimpleMarkdown for the full design and the
+        // content convention the system prompt needs to teach the model.
+        NSString *langUpper = [lang uppercaseString];
+        if ([langUpper isEqualToString:@"EZPDF"] ||
+            [langUpper isEqualToString:@"EZDOCX"] ||
+            [langUpper isEqualToString:@"EZXCEL"]) {
+
+            NSData *fileData = nil;
+            NSString *realExt = nil;
+            NSString *cellLabel = nil;
+            if ([langUpper isEqualToString:@"EZPDF"]) {
+                fileData = [self ez_pdfDataFromSimpleMarkdown:code];
+                realExt = @"pdf"; cellLabel = @"PDF";
+            } else if ([langUpper isEqualToString:@"EZDOCX"]) {
+                fileData = [self ez_rtfDataFromSimpleMarkdown:code];
+                realExt = @"rtf"; cellLabel = @"RTF";
+            } else {
+                fileData = [self ez_csvDataFromPipeDelimitedRows:code];
+                realExt = @"csv"; cellLabel = @"CSV";
+            }
+
+            if (!fileData) {
+                // Generation failed (e.g. empty/unparseable content) — leave
+                // the original fence in the reply untouched rather than
+                // silently dropping it, so at minimum the raw text survives.
+                continue;
+            }
+
+            NSString *fileName = [self ez_filename:fenceInfo forcedExtension:realExt];
+            NSString *savedPath = EZAttachmentSave(fileData, fileName);
+            if (savedPath) {
+                NSMutableArray *att = [self.activeThread.attachmentPaths mutableCopy];
+                if (![att containsObject:savedPath]) [att addObject:savedPath];
+                self.activeThread.attachmentPaths = [att copy];
+                if (!isRestore) [savedPaths addObject:savedPath];
+                EZLogf(EZLogLevelInfo, @"EZFILE", @"Generated %@: %@", cellLabel, savedPath);
+            }
+
+            NSString *filePlaceholder = savedPath
+                ? [NSString stringWithFormat:@"\n[CODE:%@:%@]\n", cellLabel, savedPath]
+                : [NSString stringWithFormat:@"\n[System: Failed to save generated %@]\n", cellLabel];
+
+            NSRange fileOriginalRange = [match range];
+            NSRange fileAdjustedRange = NSMakeRange(
+                (NSUInteger)((NSInteger)fileOriginalRange.location + offset),
+                fileOriginalRange.length);
+            [processed replaceCharactersInRange:fileAdjustedRange withString:filePlaceholder];
+            offset += (NSInteger)filePlaceholder.length - (NSInteger)fileOriginalRange.length;
+            continue;
+        }
+
         NSError *fnErr;
         NSRegularExpression *fnRegex = [NSRegularExpression
             regularExpressionWithPattern:@"[\\w.+-]+\\.(?:m|h|mm|swift|py|js|ts|sh|bash|rb|go|rs|kt|java|c|cpp|cxx|cs|html|css|json|xml|yaml|yml|sql|md|txt|mk|makefile|gradle|plist|entitlements|pbxproj)"
                                  options:NSRegularExpressionCaseInsensitive error:&fnErr];
-        if (!fnErr) {
+
+        // A filename right on the fence line (```python foo.py) is a
+        // deliberate annotation, not a heuristic guess — check it first and
+        // prefer it over scanning the code body's first two lines below.
+        NSString *detectedName = nil;
+        if (!fnErr && fenceInfo.length > 0) {
+            NSTextCheckingResult *fenceNameMatch = [fnRegex firstMatchInString:fenceInfo
+                options:0 range:NSMakeRange(0, fenceInfo.length)];
+            if (fenceNameMatch) detectedName = [fenceInfo substringWithRange:fenceNameMatch.range];
+        }
+        NSArray<NSString *> *firstLines = [[code componentsSeparatedByString:@"\n"]
+                                           subarrayWithRange:NSMakeRange(0, MIN(2, [[code componentsSeparatedByString:@"\n"] count]))];
+        if (!fnErr && detectedName.length == 0) {
             for (NSString *line in firstLines) {
                 NSRange lineRange = NSMakeRange(0, line.length);
                 NSTextCheckingResult *fnMatch = [fnRegex firstMatchInString:line options:0 range:lineRange];
@@ -4154,8 +5145,24 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
         if (r1.location != NSNotFound) {
             lang = [text substringWithRange:r1];
             savedPath = [text substringWithRange:r2];
-            code = [NSString stringWithContentsOfFile:savedPath
-                                             encoding:NSUTF8StringEncoding error:nil];
+            NSString *pathExt = [savedPath.pathExtension lowercaseString];
+            if ([pathExt isEqualToString:@"pdf"] || [pathExt isEqualToString:@"rtf"]) {
+                // These come from EZPDF/EZDOCX fences (see
+                // processReplyWithCodeBlocks) — real generated binary/rich-
+                // text files, not plain-text snippets. Reading a PDF as
+                // UTF8 fails outright (returns nil below); RTF "succeeds"
+                // but returns raw escape-sequence markup, not the readable
+                // document text — neither is useful to show in the code
+                // view or copy as text. Show a friendly description
+                // instead; EZCodeBlockCell's Copy button separately knows
+                // to copy the actual file data for these two extensions
+                // rather than this description string (see its _copyTapped).
+                NSString *kind = [pathExt isEqualToString:@"pdf"] ? @"PDF" : @"Word document (RTF)";
+                code = [NSString stringWithFormat:@"📄 %@ generated — use Share to open or send it.", kind];
+            } else {
+                code = [NSString stringWithContentsOfFile:savedPath
+                                                 encoding:NSUTF8StringEncoding error:nil];
+            }
         } else if (r3.location != NSNotFound) {
             lang = [text substringWithRange:r3];
             code = r4.location != NSNotFound ? [text substringWithRange:r4] : @"";
@@ -4213,6 +5220,22 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     [self.displayMessages addObject:[entry copy]];
     [self reloadAndScrollTable];
 
+    // Persist the visual event in the same ordered thread timeline as its
+    // prompt/result. UserDefaults remains only as a backwards-compatible
+    // recovery path for threads created before this change.
+    if (self.activeThread) {
+        NSMutableDictionary *timelineEvent = [@{
+            @"role": @"_ui_imagegrid",
+            @"imagePaths": imagePaths ?: @[],
+            @"prompt": prompt ?: @"",
+            @"isError": @(isError),
+            @"_uiOnly": @YES,
+        } mutableCopy];
+        if (errorText) timelineEvent[@"errorText"] = errorText;
+        [self.chatContext addObject:[timelineEvent copy]];
+        [self saveActiveThread];
+    }
+
     // Persist image cells keyed by threadID so they survive restore
     [self persistImageGridCells];
 }
@@ -4240,11 +5263,24 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     if (![saved isKindOfClass:[NSArray class]]) return;
     for (NSDictionary *cell in saved) {
         if (![cell[@"role"] isEqualToString:@"imagegrid"]) continue;
+        // Do not append a side-cache duplicate of a grid already restored
+        // from the thread timeline.
+        NSArray *candidatePaths = cell[@"imagePaths"] ?: @[];
+        BOOL alreadyRestored = NO;
+        for (NSDictionary *shown in self.displayMessages) {
+            if (![shown[@"role"] isEqualToString:@"imagegrid"]) continue;
+            if ([shown[@"imagePaths"] isEqualToArray:candidatePaths]) {
+                alreadyRestored = YES;
+                break;
+            }
+        }
+        if (alreadyRestored) continue;
         // Only restore cells whose images still exist on disk
-        NSArray<NSString *> *paths = cell[@"imagePaths"] ?: @[];
+        NSArray<NSString *> *paths = candidatePaths;
         NSMutableArray *validPaths = [NSMutableArray array];
         for (NSString *p in paths) {
-            if ([[NSFileManager defaultManager] fileExistsAtPath:p]) [validPaths addObject:p];
+            NSString *resolved = EZAttachmentPath(p);
+            if (resolved.length > 0) [validPaths addObject:resolved];
         }
         if (validPaths.count == 0 && ![cell[@"isError"] boolValue]) continue;
         NSMutableDictionary *entry = [cell mutableCopy];
@@ -4314,6 +5350,7 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
         EZAttachmentPreviewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"EZAttachment"
                                                                         forIndexPath:indexPath];
         [cell configureWithImagePath:msg[@"imagePath"] ?: @""];
+        [self ez_attachTapToExpandToCellIfNeeded:cell];
         return cell;
     }
 
@@ -4394,19 +5431,60 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     }];
 }
 
+// ── Tap-to-expand for attachment bubbles ────────────────────────────────────
+// EZAttachmentPreviewCell (source not in context, like EZBubbleCell earlier)
+// had no tap handling at all — added here the same way as the copy
+// interaction above: attach a gesture from cellForRowAtIndexPath, resolve
+// which row it's actually showing at tap time via indexPathForCell:, rather
+// than needing anything from the cell class's own internals. Reuses the
+// previewURL/QLPreviewControllerDataSource plumbing that already exists in
+// this file for Sora and other file previews — no new preview
+// infrastructure needed.
+- (void)ez_attachTapToExpandToCellIfNeeded:(UITableViewCell *)cell {
+    for (UIGestureRecognizer *existing in cell.contentView.gestureRecognizers) {
+        if ([existing isKindOfClass:[UITapGestureRecognizer class]]) return;
+    }
+    UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc]
+        initWithTarget:self action:@selector(_attachmentBubbleTapped:)];
+    cell.contentView.userInteractionEnabled = YES;
+    [cell.contentView addGestureRecognizer:tap];
+}
+
+- (void)_attachmentBubbleTapped:(UITapGestureRecognizer *)gesture {
+    UIView *walker = gesture.view;
+    while (walker && ![walker isKindOfClass:[UITableViewCell class]]) {
+        walker = walker.superview;
+    }
+    UITableViewCell *cell = (UITableViewCell *)walker;
+    if (!cell) return;
+
+    NSIndexPath *indexPath = [self.chatTableView indexPathForCell:cell];
+    if (!indexPath || (NSUInteger)indexPath.row >= self.displayMessages.count) return;
+
+    NSString *imagePath = self.displayMessages[(NSUInteger)indexPath.row][@"imagePath"];
+    if (!imagePath.length || ![[NSFileManager defaultManager] fileExistsAtPath:imagePath]) return;
+
+    self.previewURL = [NSURL fileURLWithPath:imagePath];
+    QLPreviewController *ql = [[QLPreviewController alloc] init];
+    ql.dataSource = self;
+    [self presentViewController:ql animated:YES completion:nil];
+}
+
 
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
     [self updateCoinBalanceDisplay];
-    if (self.pendingVideoURL) {
-        NSURL *url           = self.pendingVideoURL;
-        self.pendingVideoURL = nil;
-        self.previewURL      = url;
-        QLPreviewController *ql = [[QLPreviewController alloc] init];
-        ql.dataSource = self;
-        [self presentViewController:ql animated:YES completion:nil];
-        EZLog(EZLogLevelInfo, @"SORA", @"Deferred Sora video presented on viewWillAppear");
-    }
+    // SORA — commented out with the rest of the Sora code (see the big
+    // commented block earlier in this file).
+    // if (self.pendingVideoURL) {
+    //     NSURL *url           = self.pendingVideoURL;
+    //     self.pendingVideoURL = nil;
+    //     self.previewURL      = url;
+    //     QLPreviewController *ql = [[QLPreviewController alloc] init];
+    //     ql.dataSource = self;
+    //     [self presentViewController:ql animated:YES completion:nil];
+    //     EZLog(EZLogLevelInfo, @"SORA", @"Deferred Sora video presented on viewWillAppear");
+    // }
 }
 
 // ── One-time terms acceptance check ─────────────────────────────────────────
@@ -4460,22 +5538,50 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
 // appendToOldChat: implemented above as a wrapper around appendToChat:
 
 - (void)showGPT5StatusBanner {
+    [self showStatusBannerWithMessages:@[
+        @"GPT-5 is thinking…", @"Processing your request…",
+        @"Still working — GPT-5 can take up to 3 min", @"Reasoning through your prompt…",
+        @"Almost there — complex requests take longer", @"Hang tight, GPT-5 is thorough",
+        @"Working hard on your answer…",
+    ]];
+}
+- (void)hideGPT5StatusBanner {
+    [self hideStatusBanner];
+}
+
+- (void)showImageGenStatusBanner {
+    [self showStatusBannerWithMessages:@[
+        @"Working on your request…",
+        @"Do not leave the page while generating",
+        @"Still generating — this can take a moment",
+        @"Almost done…",
+    ]];
+}
+
+// ── Generic status banner — shared by GPT-5's long-reasoning wait and image
+// generation/editing. Same UIView/spinner/timer either way; only the
+// message set (statusBannerMessages) changes, cycled by tickStatusBanner.
+// Was GPT-5-only until image generation needed the identical spinner +
+// cycling-text UX — rather than build a second parallel banner, this pulled
+// the message array out of tickStatusBanner into a property so any caller
+// can supply its own set. showGPT5StatusBanner/hideGPT5StatusBanner above
+// are now thin wrappers kept for their existing call sites; behavior for
+// GPT-5 is unchanged.
+- (void)showStatusBannerWithMessages:(NSArray<NSString *> *)messages {
+    self.statusBannerMessages = messages.count ? messages : @[@"Working…"];
     self.statusBannerPhase = 0; [self.statusBannerSpinner startAnimating]; [self tickStatusBanner];
     self.statusBannerTimer = [NSTimer scheduledTimerWithTimeInterval:4.0 target:self
         selector:@selector(tickStatusBanner) userInfo:nil repeats:YES];
     [[NSRunLoop mainRunLoop] addTimer:self.statusBannerTimer forMode:NSRunLoopCommonModes];
     [UIView animateWithDuration:0.3 animations:^{ self.statusBannerView.alpha = 1.0; }];
 }
-- (void)hideGPT5StatusBanner {
+- (void)hideStatusBanner {
     [self.statusBannerTimer invalidate]; self.statusBannerTimer = nil;
     [UIView animateWithDuration:0.3 animations:^{ self.statusBannerView.alpha = 0.0; }
      completion:^(BOOL _) { [self.statusBannerSpinner stopAnimating]; }];
 }
 - (void)tickStatusBanner {
-    NSArray<NSString *> *m = @[@"GPT-5 is thinking…",@"Processing your request…",
-        @"Still working — GPT-5 can take up to 3 min",@"Reasoning through your prompt…",
-        @"Almost there — complex requests take longer",@"Hang tight, GPT-5 is thorough",
-        @"Working hard on your answer…"];
+    NSArray<NSString *> *m = self.statusBannerMessages.count ? self.statusBannerMessages : @[@"Working…"];
     [UIView transitionWithView:self.statusBannerLabel duration:0.4
         options:UIViewAnimationOptionTransitionCrossDissolve
         animations:^{ self.statusBannerLabel.text = m[self.statusBannerPhase % m.count]; } completion:nil];
@@ -4543,13 +5649,13 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
         initWithRootViewController:[[SupportRequestViewController alloc] init]];
     [self presentViewController:nav animated:YES completion:nil];
 }
-
+/*
 - (void)openInsurancePolicy {
     UINavigationController *nav = [[UINavigationController alloc]
         initWithRootViewController:[[EZInsuranceLandingViewController alloc] init]];
     [self presentViewController:nav animated:YES completion:nil];
 }
-
+*/
 - (void)openMemories {
     if (self.drawerOpen) {
         [self closeDrawer];
@@ -4666,7 +5772,7 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     UIImage *image = notification.userInfo[@"image"];
     if (!image) return;
 
-    // Save the image into EZAttachments so pendingImagePath works normally
+    // Save the image into EZAttachments so pendingImagePaths works normally
     NSString *dir  = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject
                       stringByAppendingPathComponent:@"EZAttachments"];
     [[NSFileManager defaultManager] createDirectoryAtPath:dir
@@ -4674,10 +5780,16 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     NSString *filename = [NSString stringWithFormat:@"gallery_ask_%@.jpg",
                           [NSUUID UUID].UUIDString];
     NSString *path = [dir stringByAppendingPathComponent:filename];
-    [UIImageJPEGRepresentation(image, 0.92) writeToFile:path atomically:YES];
+    if (![UIImageJPEGRepresentation(image, 0.92) writeToFile:path atomically:YES]) {
+        [self appendToChat:@"[Error: Could not save Gallery image]"];
+        return;
+    }
 
-    self.pendingImagePath = path;
-    [self appendToChat:@"[Image attached from Gallery — type your question below]"];
+    // Use the normal attachment pipeline. It creates the thumbnail bubble and
+    // records a base64 vision block in chatContext; merely adding a path to
+    // pendingImagePaths made the UI claim an image was attached while the
+    // actual chat request contained no image at all.
+    [self attachImage:[NSURL fileURLWithPath:path]];
     [self.messageTextField becomeFirstResponder];
 }
 
@@ -4694,22 +5806,26 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     NSString *filename = [NSString stringWithFormat:@"gallery_edit_%@.jpg",
                           [NSUUID UUID].UUIDString];
     NSString *path = [dir stringByAppendingPathComponent:filename];
-    [UIImageJPEGRepresentation(image, 0.92) writeToFile:path atomically:YES];
-
-    self.pendingImagePath = path;
-
-    // Switch to edit mode — gpt-image-1-edit takes the direct path (line 1765)
-    // which correctly uses pendingImagePath. Do NOT use a generation model here
-    // or the intent classifier will be called and will ignore pendingImagePath.
-    NSArray *imageModels = @[@"gpt-image-1.5", @"gpt-image-1", @"chatgpt-image-latest"];
-    if (![imageModels containsObject:self.selectedModel]) {
-        // wasn't on an image model at all — switch to edit mode directly
+    if (![UIImageJPEGRepresentation(image, 0.92) writeToFile:path atomically:YES]) {
+        [self appendToChat:@"[Error: Could not save Gallery image]"];
+        return;
     }
-    self.selectedModel = @"gpt-image-1-edit";
-    [self.modelButton setTitle:@"Model: gpt-image-1 (edit mode)"
-                      forState:UIControlStateNormal];
 
-    [self appendToChat:@"[Image attached from Gallery — ready to edit]"];
+    // Keep edit attachments on the same complete path as ordinary image
+    // attachments, including the visible bubble and the model-readable vision
+    // message. callImageEdit still uses pendingImagePaths.lastObject below.
+    [self attachImage:[NSURL fileURLWithPath:path]];
+
+    // Switch to edit mode — gpt-image-1-edit takes the direct path (see the
+    // "Image edit mode" dispatch in the send flow above) which uses
+    // pendingImagePaths.lastObject. Do NOT use a generation model here or
+    // the intent classifier will be called and will ignore pendingImagePaths.
+    // (Was previously a dead conditional here that computed whether
+    // selectedModel was an image model but never did anything with the
+    // result — enterImageEditModeFromCurrentSelection replaces it with the
+    // real logic: remember selectedModel if it's edit-capable, else default.)
+    [self enterImageEditModeFromCurrentSelection];
+
     self.messageTextField.text = @"Edit this image: ";
     [self.messageTextField becomeFirstResponder];
     // Move cursor to end
