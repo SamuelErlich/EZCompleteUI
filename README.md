@@ -13,6 +13,7 @@ The current release is **7.0.7** and targets iOS 15.0 and later.
 - Image generation and editing with configurable size, quality, output format, background, and moderation settings where supported.
 - File and vision workflows for images, PDFs, ePub, text, HTML, RTF, CSV, and JSON files.
 - Apple speech dictation, Whisper transcription, Apple text-to-speech, ElevenLabs text-to-speech, and ElevenLabs voice-clone management.
+- Text to Speech library where all your TTS generations live.  You can replay or export them, re-order them, and even edit the audio files, maximizing volume, adding effects like reverb and echo, and you can combine multiple files into one.
 - Web search toggle with an optional location hint.
 - BrainRot custom-game creation, saved games, game library/picker, and community/admin game tools.
 - In-app Terms, Privacy, Refund, and Support/Feedback screens.
