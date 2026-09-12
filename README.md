@@ -34,9 +34,10 @@ The picker is the source of truth for models exposed by the app.
 
 1. Sign in and accept the in-app terms.
 2. Add coins or manage your subscription from Settings or the coin balance control.
-3. Choose a model from the model button.
-4. Send a prompt, or attach an image/file with the attachment control.
-5. Use the history drawer to restore chats and the Memories view to search or edit retained summaries.
+3. Choose a model from the model button. 
+4. When generaring or editing an image, check the image settings (little button that appears next to the model picker when an image model is active).  You can set the number of variations to generate, image quality, moderation level, background and file type.
+5. Send a prompt, or attach an image/file with the attachment control.
+6. Use the history drawer to restore chats and the Memories view to search or edit retained summaries.
 
 Image attachments are stored locally and reconstructed in their original thread position when the thread is restored. Generated and edited images are also kept in the photo gallery.
 
@@ -101,6 +102,13 @@ EZCompleteUI/
 **A feature says there are not enough coins**
 
 Open the coin store, add coins or manage the subscription, then retry. The user usage ledger shows credits and deductions.
+
+**API Error: The token is invalid**
+Close the app and reopen it, or sign out and sign back in from settings.
+
+**The network request timed out. **
+Check your network connection, cellular signal, etc.  Check for auto-retry attempts, then try again if needed, 
+
 
 **Dictation is unavailable**
 
