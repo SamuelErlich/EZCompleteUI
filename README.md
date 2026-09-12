@@ -6,8 +6,8 @@ The current release is **7.0.7** and targets iOS 15.0 and later.
 
 ## What it includes
 
-- Authenticated, coin-based access with a coin store, balance display, user usage ledger, and admin cost ledger.
-- Persistent chats with local thread restore, inline image attachments, generated-image grids, code blocks, and Quick Look previews.
+- Authenticated, coin-based access with a coin store, balance display, user usage ledger.
+- Persistent chats with local thread restore, inline image attachments, generated-image grids, code blocks, and Quick Look previews, as well as shareable file creations including pdf, csv, rtf, with inline previews.
 - AI memory: conversations are summarized, searchable, editable, and can retain attachment references.
 - Image gallery: view generated images, ask about an image, edit it with AI, share or delete it, or pass it into the custom game workflow.
 - Image generation and editing with configurable size, quality, output format, background, and moderation settings where supported.
@@ -25,7 +25,7 @@ The picker is the source of truth for models exposed by the app.
 | --- | --- |
 | Frontier reasoning | `gpt-6-astra`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5-pro`, `gpt-5`, `gpt-5-mini` |
 | GPT-4 chat | `gpt-4o`, `gpt-4o-mini`, `gpt-4-turbo`, `gpt-4`, `gpt-3.5-turbo` |
-| Image generation | `gpt-image-2`, `gpt-image-1.5`, `gpt-image-1`, `gpt-image-1-mini`, `chatgpt-image-latest`, `dall-e-3` |
+| Image generation | `gpt-image-2`, `gpt-image-1.5`, `gpt-image-1`, `gpt-image-1-mini` |
 | Audio transcription | `whisper-1` |
 
 `gpt-6-astra` is shown as the newest frontier model. The GPT-5.6 variants are presented as full, balanced, and fast/cheap choices. Image models can generate new images; the `gpt-image-*` family also supports the app’s attachment-driven editing flow. `whisper-1` is transcription-only and is not used as a chat model.
@@ -52,7 +52,7 @@ The app keeps its local working data in the app Documents directory:
 | `ezui_system.log` | System diagnostic log |
 | `ezui_helper.log` | Helper/routing diagnostic log |
 
-Authenticated requests, entitlement checks, billing, and usage logging are handled through the project’s Supabase edge functions. API costs and coin deductions are recorded in the appropriate usage ledgers.
+Authenticated requests, entitlement checks, billing, and usage logging are handled through the project’s Supabase edge functions. All coin deductions annd credits are recorded in a detailed usage ledger, accessible from the coin store. 
 
 ## Building from source
 
@@ -98,13 +98,9 @@ EZCompleteUI/
 
 ## Troubleshooting
 
-**Images or attachments are blank after restoring a chat**
-
-Open the thread again after updating. Current builds resolve attachment filenames against the local attachment store and restore generated-image events from the ordered thread timeline. Files that no longer exist on the device cannot be recreated locally.
-
 **A feature says there are not enough coins**
 
-Open the coin store, add coins or manage the subscription, then retry. The user usage ledger shows credits and deductions; administrators can use the admin ledger for API cost and cost-basis detail.
+Open the coin store, add coins or manage the subscription, then retry. The user usage ledger shows credits and deductions.
 
 **Dictation is unavailable**
 
