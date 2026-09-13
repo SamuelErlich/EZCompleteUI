@@ -1,0 +1,21 @@
+/* EZModelPickerViewController localization */
+
+"EZModelPicker.Title" = "选择模型";
+
+"EZModelSection.FrontierReasoning" = "前沿推理";
+"EZModelSection.GPT4Chat" = "GPT-4 对话";
+"EZModelSection.ImageGeneration" = "图像生成";
+"EZModelSection.AudioTranscription" = "音频转录";
+
+"EZModelLabel.ChatVisionNewest" = "💬 对话 + 👁 视觉 ⭐ 最新";
+"EZModelLabel.ChatVision" = "💬 对话 + 👁 视觉";
+"EZModelLabel.ChatVisionBalanced" = "💬 对话 + 👁 视觉（均衡）";
+"EZModelLabel.ChatVisionFastCheap" = "💬 对话 + 👁 视觉（快速/低成本）";
+"EZModelLabel.ChatOnly" = "💬 仅对话";
+"EZModelLabel.ImageGenNewestFast" = "🖼 图像生成（最新、快速）— 低/中/高/超高/最高";
+"EZModelLabel.ImageGenEditPrecision" = "🖼 图像生成 + ✏️ 编辑（精确）— 低/中/高/超高/最高";
+"EZModelLabel.ImageGenEdit" = "🖼 图像生成 + ✏️ 编辑 — 低/中/高";
+"EZModelLabel.ImageGen" = "🖼 图像生成";
+"EZModelLabel.ImageGenFastCheap" = "🖼 图像生成（快速/低成本）";
+"EZModelLabel.ChatGPTImageLatest" = "🖼 ChatGPT 图像（最新）";
+"EZModelLabel.AudioTranscriptionOnly" = "🎙 仅音频转录";

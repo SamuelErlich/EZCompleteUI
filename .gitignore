@@ -1,6 +1,8 @@
 .DS_Store
 .deb
 .ipa
+*.ipa
+*.zip
 .theos
 .bak
 *.bak*
@@ -15,6 +17,12 @@ EZKeyVault.m
 * copy*
 *previous*
 *Previous*
+/ViewControllerprev.m
+/ViewControllerWithBrainRot.m
+/EZCoinPotView.h alias
+/files/
+/files 2/
+/patch.py
 EZAuthManager.m
 EZEntitlementManager.m
 /supabase/

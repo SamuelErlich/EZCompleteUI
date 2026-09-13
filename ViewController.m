@@ -1,5 +1,37 @@
 // ViewController.m
-// EZCompleteUI v9.2
+// EZCompleteUI v9.3
+//
+// Changes from v9.2:
+//   - Added gpt-image-2, gpt-image-2.5-flare, gpt-image-2.5-sunburst to
+//     self.models and the edit-capable-models set. No changes needed to
+//     isGptImage1Family — its hasPrefix:@"gpt-image-" check already
+//     covered all three automatically.
+//   - Removed dall-e-3 entirely (product decision — the gpt-image family
+//     now covers everything it did): every isEqualToString:@"dall-e-3"
+//     special case removed (inImageGenMode, isChatModel, isImageModel,
+//     imageSettingsButton visibility, the feature-classification block),
+//     callDalle3 and its sole caller downloadAndSaveImage:purpose: deleted
+//     outright (not commented out, unlike Sora — this is a deliberate
+//     product removal, not an external forced shutdown, so there's no
+//     "adapt this scaffolding later" reason to keep it). Kept
+//     downloadAndSaveImage:'s QLPreviewControllerDataSource methods
+//     (numberOfPreviewItemsInPreviewController:/previewItemAtIndex:) —
+//     those are shared, generic infrastructure other features still use,
+//     not DALL-E-3-specific despite living in the same method before.
+//   - The generate-intent dispatch used to diverge: gpt-image-family models
+//     went straight to callGptImage1 with no memory context, while the
+//     (now-removed) dall-e-3 fallback got prior-image-prompt context
+//     prepended first via callDalle3. Both paths now reach callGptImage1
+//     — applying memory context to only one of two paths doing the same
+//     thing no longer made sense, so consolidated to always apply it.
+//   - NOT done — flagged, not fixed: xhigh/max quality tiers (new on the
+//     2.5 pair) are fully wired up server-side (ez-image v1.4,
+//     check-entitlement v1.5) and in EZEntitlementManager's pre-flight
+//     forwarding, but there's no hardcoded quality-options list anywhere
+//     in this file — the actual quality picker UI must live in
+//     EZImageSettingsViewController, which isn't in context. That file
+//     needs its own update to make xhigh/max selectable; the backend
+//     already supports them regardless.
 //
 // Changes from v9.1:
 //   - FIXED the root cause of "estimated cost shows high quality regardless
@@ -582,7 +614,7 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
 @property (nonatomic, strong) UIButton      *cloningButton;
 @property (nonatomic, strong) UIButton      *galleryButton;
 @property (nonatomic, strong) UIButton      *brainRotButton;
-//@property (nonatomic, strong) UIButton      *insurancePolicyButton;
+@property (nonatomic, strong) UIButton      *insurancePolicyButton;
 //@property (nonatomic, strong) UIButton      *textToSpeechButton;
 
 @property (nonatomic, strong) NSLayoutConstraint *containerBottomConstraint;
@@ -712,7 +744,6 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
 - (NSArray *)sanitizedContextForAPI:(NSArray *)context
                   modelSupportsVision:(BOOL)supportsVision
                       useResponsesAPI:(BOOL)useResponsesAPI;
-- (void)downloadAndSaveImage:(NSString *)urlString purpose:(NSString *)purpose;
 // - (void)downloadAndShowVideo:(NSString *)urlString;   // SORA — see the big commented block
 - (void)appendImageGridToChat:(NSArray<NSString *> *)imagePaths
                        prompt:(NSString *)prompt
@@ -787,12 +818,13 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
            @"gpt-4o", @"gpt-4o-mini", @"gpt-4-turbo", @"gpt-4",
            @"gpt-3.5-turbo",
            // ── Image Generation & Edit ───────────────────────────────────────
-           @"gpt-image-2",          // newest image model
+           @"gpt-image-2.5-flare",    // newest, fastest — low/medium/high/xhigh/max
+           @"gpt-image-2.5-sunburst", // precision editing — low/medium/high/xhigh/max
+           @"gpt-image-2",          // low/medium/high only
            @"gpt-image-1.5",
            @"gpt-image-1",          // generation + edit
            @"gpt-image-1-mini",     // faster/cheaper image generation
            @"chatgpt-image-latest", // always points to current ChatGPT image model
-           @"dall-e-3",             // generation only (legacy)
         // ── Video ─────────────────────────────────────────────────────────
         // SORA — commented out, not deleted. User removed Sora from Settings;
         // OpenAI's Sora API is also scheduled for shutdown 2026-09-24
@@ -1298,7 +1330,7 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
 
     self.textToSpeechButton = [self _iconButton:@"play.circle.fill" tint:nil action:@selector(openTTS)];
 
-   // self.insurancePolicyButton = [self _iconButton:@"lock.shield.fill" tint:nil action:@selector(openInsurancePolicy)];
+    self.insurancePolicyButton = [self _iconButton:@"lock.shield.fill" tint:nil action:@selector(openInsurancePolicy)];
 
     
     self.memoriesButton   = [self _iconButton:@"memory" tint:nil
@@ -1331,7 +1363,7 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
         self.addChatButton, self.historyButton, self.clipboardButton,
         self.speakButton, self.webSearchButton, self.coinPotView,
         self.renameButton, self.clearButton, self.memoriesButton, self.cloningButton, self.supportRequestButton,
-        self.textToSpeechButton, self.galleryButton, //sel.insurancePolicyButton
+        self.textToSpeechButton, self.galleryButton, self.insurancePolicyButton
     ]];
     topStack.distribution = UIStackViewDistributionEqualSpacing;
     topStack.alignment    = UIStackViewAlignmentCenter;
@@ -2130,8 +2162,7 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     }
 
     // ── Route based on selected model ─────────────────────────────────────────
-    BOOL inImageGenMode = [self isGptImage1Family:self.selectedModel] ||
-                          [self.selectedModel isEqualToString:@"dall-e-3"];
+    BOOL inImageGenMode = [self isGptImage1Family:self.selectedModel];
 
     if (inImageGenMode) {
         // Switch to image edit mode — gpt-image-1 handles both gen and edit
@@ -2658,9 +2689,6 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
         [self.selectedModel isEqualToString:@"dall-e-2-edit"]) {
         feature = EZFeatureImageMedium;
     }
-    if ([self.selectedModel isEqualToString:@"dall-e-3"]) {
-        feature = EZFeatureDalle3Standard;
-    }
     // SORA — commented out with the rest of the Sora code.
     // if ([self.selectedModel hasPrefix:@"sora-"]) {
     //     feature = EZFeatureSora10s;
@@ -2670,7 +2698,6 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     // token count from the assembled payload. For image/sora models we still
     // gate here since those don't go through callChatCompletions.
     BOOL isChatModel = ![self isGptImage1Family:self.selectedModel]
-        && ![self.selectedModel isEqualToString:@"dall-e-3"]
         && ![self.selectedModel isEqualToString:@"dall-e-2-edit"]
         && ![self.selectedModel isEqualToString:@"gpt-image-1-edit"]
         && ![self.selectedModel hasPrefix:@"sora-"];
@@ -2834,8 +2861,7 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     }
 
     // ── Image model intent check ──────────────────────────────────────────────
-    BOOL isImageModel = [self isGptImage1Family:self.selectedModel] ||
-                        [self.selectedModel isEqualToString:@"dall-e-3"];
+    BOOL isImageModel = [self isGptImage1Family:self.selectedModel];
     if (isImageModel) {
         if (!self.lastImageLocalPath.length) {
             NSString *persisted = [[NSUserDefaults standardUserDefaults]
@@ -2876,29 +2902,33 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
             } else {
                 EZLogf(EZLogLevelInfo, @"IMAGE", @"Intent=generate");
                 [self exitImageEditModeIfNeeded];
-                if ([self isGptImage1Family:self.selectedModel] ||
-                    [self.selectedModel isEqualToString:@"gpt-image-1-edit"]) {
-                    [self callGptImage1:text];
+                // Both branches used to diverge here: gpt-image-family
+                // models went straight to callGptImage1 with no memory
+                // context, while anything else (previously dall-e-3, now
+                // removed and unreachable) got the prior-image-prompt
+                // context prepended first via callDalle3. With dall-e-3
+                // gone, every image model reaches this branch and goes to
+                // callGptImage1 — applying memory context to only one of
+                // two paths that do the same thing no longer made sense,
+                // so this now always applies it.
+                if (self.lastImagePrompt.length > 0) {
+                    [self fetchRelevantMemories:text
+                                    completion:^(NSString *memories) {
+                        analyzePromptForContext(text, memories, jwtToken,
+                                               self.activeThread.threadID,
+                        ^(EZContextResult *result) {
+                            NSString *finalPrompt = text;
+                            if (result.tier >= EZRoutingTierMemory) {
+                                finalPrompt = [NSString stringWithFormat:
+                                    @"Previous image prompt was: \"%@\". Now create: %@",
+                                    self.lastImagePrompt, text];
+                                [self appendToChat:@"[System: Previous image context included ✓]"];
+                            }
+                            [self callGptImage1:finalPrompt];
+                        });
+                    }];
                 } else {
-                    if (self.lastImagePrompt.length > 0) {
-                        [self fetchRelevantMemories:text
-                                        completion:^(NSString *memories) {
-                            analyzePromptForContext(text, memories, jwtToken,
-                                                   self.activeThread.threadID,
-                            ^(EZContextResult *result) {
-                                NSString *finalPrompt = text;
-                                if (result.tier >= EZRoutingTierMemory) {
-                                    finalPrompt = [NSString stringWithFormat:
-                                        @"Previous image prompt was: \"%@\". Now create: %@",
-                                        self.lastImagePrompt, text];
-                                    [self appendToChat:@"[System: Previous image context included ✓]"];
-                                }
-                                [self callDalle3:finalPrompt];
-                            });
-                        }];
-                    } else {
-                        [self callDalle3:text];
-                    }
+                    [self callGptImage1:text];
                 }
             }
         }];
@@ -3309,54 +3339,6 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
-- (void)callDalle3:(NSString *)prompt {
-    [self appendToChat:@"[System: Generating Image...]"];
-    EZLog(EZLogLevelInfo, @"DALLE", @"Sending DALL-E 3 request via ez-image");
-
-    NSString *token = [EZAuthManager shared].accessToken;
-    if (!token) { [self handleAPIError:@"Not signed in"]; return; }
-
-    NSDictionary *body = @{
-        @"action":  @"generate",
-        @"model":   @"dall-e-3",
-        @"prompt":  prompt,
-        @"n":       @1,
-        @"size":    @"1024x1024",
-        @"quality": @"standard",
-    };
-
-    NSString *savedPrompt = prompt;
-    [self showImageGenStatusBanner];
-    [self postToEZFunction:@"ez-image" token:token body:body
-                completion:^(NSDictionary *json, NSError *error) {
-        [self hideStatusBanner];
-        if (error) { [self handleAPIError:error.localizedDescription]; return; }
-        id errObj = json[@"error"];
-        if (errObj && ![errObj isKindOfClass:[NSNull class]]) {
-            NSString *errMsg = [errObj isKindOfClass:[NSString class]] ? errObj : @"DALL-E error";
-            // ez-image includes a human-readable "reason" alongside the
-            // error code specifically for cases like timeout/refund — show
-            // it when present, since "DALL-E error" alone doesn't tell the
-            // user whether their coins came back.
-            NSString *reason = json[@"reason"];
-            [self handleAPIError:reason.length ? [NSString stringWithFormat:@"%@ %@", errMsg, reason] : errMsg];
-            return;
-        }
-        NSArray *images = json[@"images"];
-        if (!images.count) { [self handleAPIError:@"No image in response"]; return; }
-
-        // Update balance
-        id balanceObj = json[@"balance"];
-        if (balanceObj && ![balanceObj isKindOfClass:[NSNull class]])
-            [[EZEntitlementManager shared] applyKnownBalance:[balanceObj integerValue]];
-
-        // Download from signed URL and save
-        NSString *signedURL = images[0][@"url"];
-        dispatch_async(dispatch_get_main_queue(), ^{ self.lastImagePrompt = savedPrompt; });
-        [self downloadAndSaveImage:signedURL purpose:@"dalle"];
-    }];
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // MARK: - gpt-image-1 Text-to-Image Generation
 // ─────────────────────────────────────────────────────────────────────────────
@@ -3399,9 +3381,9 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
         id errObj = json[@"error"];
         if (errObj && ![errObj isKindOfClass:[NSNull class]]) {
             NSString *errMsg = [errObj isKindOfClass:[NSString class]] ? errObj : @"Image error";
-            // See DALL-E-3's error path above for why this matters — ez-image
-            // reports whether coins were refunded in "reason", which was
-            // never being shown to the user for image generation failures.
+            // ez-image reports whether coins were refunded in "reason",
+            // which was never being shown to the user for image
+            // generation failures until this fix.
             NSString *reason = json[@"reason"];
             NSString *fullMsg = reason.length ? [NSString stringWithFormat:@"%@ %@", errMsg, reason] : errMsg;
             [self handleAPIError:fullMsg];
@@ -3450,8 +3432,9 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
                 [self saveActiveThread];
                 [self persistImagePath:firstPath prompt:savedPrompt];
 
-                // Was previously missing entirely — see the DALL-E-3 note
-                // in downloadAndSaveImage: for the same fix on that path.
+                // Was previously missing entirely — image generation memory
+                // entries (this and the edit-mode one below) were only ever
+                // wired to DALL-E-3's now-removed download path.
                 NSString *answer = [NSString stringWithFormat:
                     @"Generated %lu image(s) for: %@", (unsigned long)savedPaths.count, savedPrompt];
                 createMemoryFromCompletion(savedPrompt ?: @"", answer, token,
@@ -3535,7 +3518,8 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
         id errObj = json[@"error"];
         if (errObj && ![errObj isKindOfClass:[NSNull class]]) {
             NSString *errMsg = [errObj isKindOfClass:[NSString class]] ? errObj : @"Image edit error";
-            // See DALL-E-3's error path above for why this matters.
+            // See the generation error path's comment above (callGptImage1)
+            // for why this matters.
             NSString *reason = json[@"reason"];
             NSString *fullMsg = reason.length ? [NSString stringWithFormat:@"%@ %@", errMsg, reason] : errMsg;
             [self handleAPIError:fullMsg];
@@ -3589,7 +3573,8 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
                 [self persistImagePath:firstPath prompt:prompt];
 
                 // Was previously missing entirely, same as generation —
-                // see the DALL-E-3 note in downloadAndSaveImage:.
+                // see the comment above the other createMemoryFromCompletion
+                // call site in this file.
                 NSString *answer = [NSString stringWithFormat:
                     @"Edited the attached image per: %@", prompt];
                 createMemoryFromCompletion(prompt ?: @"", answer, token,
@@ -3875,62 +3860,6 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
 }
    ═══════ END SORA ══════════════════════════════════════════════════════ */
 
-- (void)downloadAndSaveImage:(NSString *)urlString purpose:(NSString *)purpose {
-    [[[NSURLSession sharedSession] downloadTaskWithURL:[NSURL URLWithString:urlString]
-        completionHandler:^(NSURL *location, NSURLResponse *resp, NSError *err) {
-        if (!location) {
-            EZLogf(EZLogLevelError, @"IMAGE", @"Download failed: %@", err.localizedDescription);
-            [self handleAPIError:@"Image download failed"]; return;
-        }
-        NSString *tmpName = [NSString stringWithFormat:@"%@_gen.png", purpose];
-        NSURL *tmp = [NSURL fileURLWithPath:
-            [NSTemporaryDirectory() stringByAppendingPathComponent:tmpName]];
-        [[NSFileManager defaultManager] removeItemAtURL:tmp error:nil];
-        [[NSFileManager defaultManager] copyItemAtURL:location toURL:tmp error:nil];
-
-        NSData *imgData = [NSData dataWithContentsOfURL:tmp];
-        NSString *savedPath = imgData ? EZAttachmentSave(imgData, tmpName) : nil;
-
-        EZLogf(EZLogLevelInfo, @"IMAGE", @"Image saved: %@", savedPath ?: @"(temp only)");
-
-        dispatch_async(dispatch_get_main_queue(), ^{
-            if (savedPath) {
-                self.lastImageLocalPath = savedPath;
-                self.activeThread.lastImageLocalPath = savedPath;
-                NSMutableArray *att = [self.activeThread.attachmentPaths mutableCopy];
-                [att addObject:savedPath];
-                self.activeThread.attachmentPaths = [att copy];
-                [self saveActiveThread];
-                [self persistImagePath:savedPath prompt:self.lastImagePrompt];
-
-                // Image generations previously got no memory entry at all —
-                // only chat completions did (see the two other
-                // createMemoryFromCompletion call sites in this file).
-                // Only one caller of this method (callDalle3), so this
-                // covers DALL-E-3 generations specifically; gpt-image-1
-                // generation and editing get their own calls at their own
-                // save points below, since they don't route through here.
-                NSString *token = [EZAuthManager shared].accessToken;
-                if (token) {
-                    NSString *answer = [NSString stringWithFormat:
-                        @"Generated an image for: %@", self.lastImagePrompt ?: @""];
-                    createMemoryFromCompletion(self.lastImagePrompt ?: @"", answer, token,
-                                               self.activeThread.threadID, @[savedPath],
-                    ^(NSString *entry) {
-                        if (entry) EZLogf(EZLogLevelInfo, @"MEMORY", @"Saved (image gen): %lu chars",
-                                          (unsigned long)entry.length);
-                    });
-                }
-            }
-            self.previewURL = tmp;
-            QLPreviewController *ql = [[QLPreviewController alloc] init];
-            ql.dataSource = self;
-            [self presentViewController:ql animated:YES completion:nil];
-            if (savedPath.length) dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(0.7*NSEC_PER_SEC)),dispatch_get_main_queue(),^{[self offerSaveToPhotos:savedPath];});
-        });
-    }] resume];
-}
-
 - (NSInteger)numberOfPreviewItemsInPreviewController:(QLPreviewController *)c { return 1; }
 - (id<QLPreviewItem>)previewController:(QLPreviewController *)c previewItemAtIndex:(NSInteger)i {
     return self.previewURL;
@@ -4004,7 +3933,7 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
 //
 // preEditModeModel is sticky: it only gets overwritten when the CURRENT
 // selection is a real edit-capable model. If the user switches to a chat
-// model (or a non-edit-capable one like dall-e-3) and then attaches an
+// model (or any future non-edit-capable image model) and then attaches an
 // image without picking an image model again first, whatever was last
 // remembered carries over rather than resetting — e.g. "picked
 // gpt-image-1.5 for editing, switched to gpt-5 to chat, attached another
@@ -4016,7 +3945,8 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     dispatch_once(&onceToken, ^{
         editCapableModels = [NSSet setWithObjects:
             @"gpt-image-1", @"gpt-image-1-mini", @"gpt-image-1.5",
-            @"gpt-image-2", @"chatgpt-image-latest", nil];
+            @"gpt-image-2", @"gpt-image-2.5-flare", @"gpt-image-2.5-sunburst",
+            @"chatgpt-image-latest", nil];
     });
     if ([editCapableModels containsObject:self.selectedModel]) {
         self.preEditModeModel = self.selectedModel;
@@ -4503,8 +4433,7 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
         [ws.modelButton setTitle:[NSString stringWithFormat:@"Model: %@", model]
                         forState:UIControlStateNormal];
         [[NSUserDefaults standardUserDefaults] setObject:model forKey:@"selectedModel"];
-        ws.imageSettingsButton.hidden = !([ws isGptImage1Family:model] ||
-                                          [model isEqualToString:@"dall-e-3"]);
+        ws.imageSettingsButton.hidden = ![ws isGptImage1Family:model];
         EZLogf(EZLogLevelInfo, @"APP", @"Model → %@", model);
     };
     UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:picker];

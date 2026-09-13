@@ -30,6 +30,8 @@
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #import "helpers.h"
 #import "EZAuthManager.h"
+#import "EZEntitlementManager.h"
+#import "EZCoinStoreViewController.h"
 
 static NSString * const kMyVoicesDefaultsKey    = @"ELMyClonedVoices";
 static NSString * const kEZElevenLabsURL         =
@@ -93,6 +95,7 @@ static NSString * const kEZElevenLabsURL         =
 // ---- State ----
 @property (nonatomic, copy) NSString *createdPVCVoiceID;
 @property (nonatomic) BOOL hasShownQuickLookForCurrentFile;
+@property (nonatomic) BOOL isCheckingCloneSubscription;
 
 @end
 
@@ -880,6 +883,32 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     return [EZAuthManager shared].accessToken;
 }
 
+- (BOOL)hasActiveSubscription {
+    EZEntitlementManager *entitlements = [EZEntitlementManager shared];
+    return entitlements.currentTier.length > 0 &&
+           [entitlements.currentStatus isEqualToString:@"active"];
+}
+
+- (void)showSubscriptionRequiredAlert {
+    UIAlertController *alert = [UIAlertController
+        alertControllerWithTitle:@"Subscription Required"
+                         message:@"Voice cloning is available with an active EZComplete subscription. Subscribe to create a cloned voice."
+                  preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Not Now"
+                                              style:UIAlertActionStyleCancel
+                                            handler:nil]];
+    __weak typeof(self) weakSelf = self;
+    [alert addAction:[UIAlertAction actionWithTitle:@"View Plans"
+                                              style:UIAlertActionStyleDefault
+                                            handler:^(__unused UIAlertAction *action) {
+        __strong typeof(weakSelf) self = weakSelf;
+        if (!self) return;
+        [self.navigationController pushViewController:[[EZCoinStoreViewController alloc] init]
+                                             animated:YES];
+    }]];
+    [self presentViewControllerSafely:alert animated:YES retryCount:3];
+}
+
 - (void)uploadClone:(id)sender {
     if (!self.recordedFileURL) {
         [self showAlert:@"No Recording"
@@ -899,6 +928,36 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
                 message:@"Sign in to your EZComplete account to clone voices."];
         return;
     }
+
+    if (self.isCheckingCloneSubscription) return;
+    self.isCheckingCloneSubscription = YES;
+    self.uploadButton.enabled = NO;
+
+    // Refresh instead of trusting a cached plan, then fail closed if the
+    // current subscription cannot be verified. This check never spends coins.
+    __weak typeof(self) weakSelf = self;
+    [[EZEntitlementManager shared] refreshSubscriptionStatusWithCompletion:
+        ^(BOOL refreshed, __unused NSInteger balance) {
+            __strong typeof(weakSelf) self = weakSelf;
+            if (!self) return;
+            self.isCheckingCloneSubscription = NO;
+            self.uploadButton.enabled = (self.recordedFileURL != nil);
+
+            if (!refreshed) {
+                [self showAlert:@"Subscription Check Unavailable"
+                        message:@"We couldn't verify your subscription. Please try again before cloning a voice."];
+                return;
+            }
+            if (![self hasActiveSubscription]) {
+                EZLog(EZLogLevelInfo, @"CLONE", @"Blocked voice clone: no active subscription");
+                [self showSubscriptionRequiredAlert];
+                return;
+            }
+            [self submitCloneWithName:name jwt:jwt];
+        }];
+}
+
+- (void)submitCloneWithName:(NSString *)name jwt:(NSString *)jwt {
 
     // PVC is currently disabled — segment index 1 is greyed out in buildUI.
     // If somehow triggered, route it to the server which will return 403 plan_required.

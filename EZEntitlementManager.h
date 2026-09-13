@@ -124,6 +124,11 @@ typedef NS_ENUM(NSInteger, EZFeature) {
 /// Read-only balance refresh — no coin deduction.
 - (void)refreshBalanceWithCompletion:(void(^)(NSInteger balance))completion;
 
+/// Refreshes subscription state without deducting coins. `refreshed` is NO
+/// when the server could not confirm the user's current tier and status.
+- (void)refreshSubscriptionStatusWithCompletion:(void(^)(BOOL refreshed,
+                                                         NSInteger balance))completion;
+
 @end
 
 NS_ASSUME_NONNULL_END

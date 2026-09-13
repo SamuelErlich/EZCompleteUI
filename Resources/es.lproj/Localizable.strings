@@ -1,0 +1,21 @@
+/* EZModelPickerViewController localization */
+
+"EZModelPicker.Title" = "Seleccionar modelo";
+
+"EZModelSection.FrontierReasoning" = "Razonamiento avanzado";
+"EZModelSection.GPT4Chat" = "Chat GPT-4";
+"EZModelSection.ImageGeneration" = "Generación de imágenes";
+"EZModelSection.AudioTranscription" = "Transcripción de audio";
+
+"EZModelLabel.ChatVisionNewest" = "💬 Chat + 👁 Visión ⭐ más reciente";
+"EZModelLabel.ChatVision" = "💬 Chat + 👁 Visión";
+"EZModelLabel.ChatVisionBalanced" = "💬 Chat + 👁 Visión (equilibrado)";
+"EZModelLabel.ChatVisionFastCheap" = "💬 Chat + 👁 Visión (rápido/económico)";
+"EZModelLabel.ChatOnly" = "💬 Solo chat";
+"EZModelLabel.ImageGenNewestFast" = "🖼 Generación de imágenes (más reciente, rápida) — baja/media/alta/xalta/máxima";
+"EZModelLabel.ImageGenEditPrecision" = "🖼 Generación de imágenes + ✏️ edición (precisión) — baja/media/alta/xalta/máxima";
+"EZModelLabel.ImageGenEdit" = "🖼 Generación de imágenes + ✏️ edición — baja/media/alta";
+"EZModelLabel.ImageGen" = "🖼 Generación de imágenes";
+"EZModelLabel.ImageGenFastCheap" = "🖼 Generación de imágenes (rápida/económica)";
+"EZModelLabel.ChatGPTImageLatest" = "🖼 Imagen de ChatGPT (más reciente)";
+"EZModelLabel.AudioTranscriptionOnly" = "🎙 Solo transcripción de audio";

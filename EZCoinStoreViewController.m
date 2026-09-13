@@ -301,7 +301,7 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
 @property (nonatomic, strong) UIButton  *dailyCoinsButton;       // Floating button top-left
 @property (nonatomic, assign) BOOL       isDailyCoinsAvailable;  // Whether the server says coins can be claimed now
 @property (nonatomic, strong) NSDate    *nextDailyClaimDate;     // ISO date from server; drives the countdown label
-@property (nonatomic, assign) NSInteger  dailyCoinsPendingAmount; // 5 or 10 depending on membership; from server
+@property (nonatomic, assign) NSInteger  dailyCoinsPendingAmount; // 10 or 15 depending on membership; from server
 //@property (nonatomic, strong) NSTimer   *countdownTimer;         // Fires every second to tick the "Next: Xh Ym Xs" label
 @end
 

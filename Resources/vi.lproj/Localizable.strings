@@ -1,0 +1,21 @@
+/* EZModelPickerViewController localization */
+
+"EZModelPicker.Title" = "Chọn mô hình";
+
+"EZModelSection.FrontierReasoning" = "Suy luận tiên tiến";
+"EZModelSection.GPT4Chat" = "Trò chuyện GPT-4";
+"EZModelSection.ImageGeneration" = "Tạo hình ảnh";
+"EZModelSection.AudioTranscription" = "Chuyển âm thanh thành văn bản";
+
+"EZModelLabel.ChatVisionNewest" = "💬 Trò chuyện + 👁 Thị giác ⭐ mới nhất";
+"EZModelLabel.ChatVision" = "💬 Trò chuyện + 👁 Thị giác";
+"EZModelLabel.ChatVisionBalanced" = "💬 Trò chuyện + 👁 Thị giác (cân bằng)";
+"EZModelLabel.ChatVisionFastCheap" = "💬 Trò chuyện + 👁 Thị giác (nhanh/rẻ)";
+"EZModelLabel.ChatOnly" = "💬 Chỉ trò chuyện";
+"EZModelLabel.ImageGenNewestFast" = "🖼 Tạo hình ảnh (mới nhất, nhanh) — thấp/trung bình/cao/rất cao/tối đa";
+"EZModelLabel.ImageGenEditPrecision" = "🖼 Tạo hình ảnh + ✏️ Chỉnh sửa (chính xác) — thấp/trung bình/cao/rất cao/tối đa";
+"EZModelLabel.ImageGenEdit" = "🖼 Tạo hình ảnh + ✏️ Chỉnh sửa — thấp/trung bình/cao";
+"EZModelLabel.ImageGen" = "🖼 Tạo hình ảnh";
+"EZModelLabel.ImageGenFastCheap" = "🖼 Tạo hình ảnh (nhanh/rẻ)";
+"EZModelLabel.ChatGPTImageLatest" = "🖼 Hình ảnh ChatGPT (mới nhất)";
+"EZModelLabel.AudioTranscriptionOnly" = "🎙 Chỉ chuyển âm thanh thành văn bản";

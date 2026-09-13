@@ -1,0 +1,21 @@
+/* EZModelPickerViewController localization */
+
+"EZModelPicker.Title" = "اختر النموذج";
+
+"EZModelSection.FrontierReasoning" = "الاستدلال المتقدم";
+"EZModelSection.GPT4Chat" = "محادثة GPT-4";
+"EZModelSection.ImageGeneration" = "إنشاء الصور";
+"EZModelSection.AudioTranscription" = "تحويل الصوت إلى نص";
+
+"EZModelLabel.ChatVisionNewest" = "💬 محادثة + 👁 رؤية ⭐ الأحدث";
+"EZModelLabel.ChatVision" = "💬 محادثة + 👁 رؤية";
+"EZModelLabel.ChatVisionBalanced" = "💬 محادثة + 👁 رؤية (متوازن)";
+"EZModelLabel.ChatVisionFastCheap" = "💬 محادثة + 👁 رؤية (سريع/اقتصادي)";
+"EZModelLabel.ChatOnly" = "💬 محادثة فقط";
+"EZModelLabel.ImageGenNewestFast" = "🖼 إنشاء صور (الأحدث، سريع) — منخفض/متوسط/عالٍ/عالٍ جدًا/أقصى";
+"EZModelLabel.ImageGenEditPrecision" = "🖼 إنشاء صور + ✏️ تعديل (دقيق) — منخفض/متوسط/عالٍ/عالٍ جدًا/أقصى";
+"EZModelLabel.ImageGenEdit" = "🖼 إنشاء صور + ✏️ تعديل — منخفض/متوسط/عالٍ";
+"EZModelLabel.ImageGen" = "🖼 إنشاء صور";
+"EZModelLabel.ImageGenFastCheap" = "🖼 إنشاء صور (سريع/اقتصادي)";
+"EZModelLabel.ChatGPTImageLatest" = "🖼 صورة ChatGPT (الأحدث)";
+"EZModelLabel.AudioTranscriptionOnly" = "🎙 تحويل الصوت إلى نص فقط";
