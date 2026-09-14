@@ -19,3 +19,59 @@
 "EZModelLabel.ImageGenFastCheap" = "🖼 Génération d’images (rapide/économique)";
 "EZModelLabel.ChatGPTImageLatest" = "🖼 Image ChatGPT (la plus récente)";
 "EZModelLabel.AudioTranscriptionOnly" = "🎙 Transcription audio uniquement";
+
+
+/* TextToSpeechViewController localization */
+
+"EZTTS.Title" = "Synthèse vocale";
+
+"EZTTS.PromptHeader" = "QUE DOIT-IL DIRE ?";
+
+"EZTTS.VoiceHeader" = "VOIX";
+
+"EZTTS.SpeedFormat" = "Vitesse : %.2f×";
+
+"EZTTS.Generate" = "Générer";
+
+"EZTTS.ChooseVoice" = "Choisir une voix…";
+
+"EZTTS.CharactersRemaining" = "%lu caractères restants";
+
+"EZTTS.MissingTextTitle" = "Texte manquant";
+
+"EZTTS.MissingTextMessage" = "Veuillez saisir le texte à synthétiser.";
+
+"EZTTS.ErrorTitle" = "Erreur TTS";
+
+"EZTTS.FailedToSynthesize" = "Échec de la synthèse vocale.";
+
+"EZTTS.NoAudioReturned" = "Aucun audio reçu.";
+
+"EZTTS.PlaybackError" = "Erreur de lecture";
+
+"EZTTS.UnableToPlay" = "Impossible de lire l’audio.";
+
+"EZTTS.NotLoggedIn" = "Vous n’êtes pas connecté.";
+
+"EZTTS.NotAuthorized" = "Non autorisé. Veuillez vous reconnecter.";
+
+"EZTTS.InvalidServerResponse" = "Réponse invalide du serveur.";
+
+"EZTTS.EmptyAudio" = "Audio vide reçu.";
+
+"EZTTS.FailedWavWrap" = "Impossible d’encapsuler le PCM en WAV.";
+
+"EZTTS.InsufficientCoins" = "Vous n’avez pas assez de coins pour cette synthèse.";
+
+"EZTTS.NeedCoins" = "%@ coins nécessaires, vous en avez %@.";
+
+"EZTTS.ServerError" = "Erreur du serveur";
+
+"EZTTS.OK" = "OK";
+
+/* Subscription paywall */
+"EZSubscription.RequiredTitle" = "Abonnement requis";
+"EZSubscription.NotNow" = "Pas maintenant";
+"EZSubscription.ViewPlans" = "Voir les forfaits";
+"EZSubscription.ModelRequiredFormat" = "%@ est disponible avec un abonnement EZComplete actif. Abonnez-vous pour utiliser ce modèle.";
+"EZSubscription.ImageSettingsRequired" = "Les images haute qualité, la sortie PNG et les arrière-plans non opaques nécessitent un abonnement EZComplete actif.";

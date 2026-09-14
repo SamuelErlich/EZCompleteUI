@@ -19,3 +19,59 @@
 "EZModelLabel.ImageGenFastCheap" = "🖼 إنشاء صور (سريع/اقتصادي)";
 "EZModelLabel.ChatGPTImageLatest" = "🖼 صورة ChatGPT (الأحدث)";
 "EZModelLabel.AudioTranscriptionOnly" = "🎙 تحويل الصوت إلى نص فقط";
+
+
+/* TextToSpeechViewController localization */
+
+"EZTTS.Title" = "تحويل النص إلى كلام";
+
+"EZTTS.PromptHeader" = "ماذا يجب أن يقول؟";
+
+"EZTTS.VoiceHeader" = "الصوت";
+
+"EZTTS.SpeedFormat" = "السرعة: %.2f×";
+
+"EZTTS.Generate" = "إنشاء";
+
+"EZTTS.ChooseVoice" = "اختر صوتًا…";
+
+"EZTTS.CharactersRemaining" = "متبقي %lu حرفًا";
+
+"EZTTS.MissingTextTitle" = "النص مفقود";
+
+"EZTTS.MissingTextMessage" = "يرجى إدخال النص المراد تحويله إلى كلام.";
+
+"EZTTS.ErrorTitle" = "خطأ في تحويل النص إلى كلام";
+
+"EZTTS.FailedToSynthesize" = "فشل تحويل النص إلى كلام.";
+
+"EZTTS.NoAudioReturned" = "لم يتم إرجاع أي صوت.";
+
+"EZTTS.PlaybackError" = "خطأ في التشغيل";
+
+"EZTTS.UnableToPlay" = "تعذر تشغيل الصوت.";
+
+"EZTTS.NotLoggedIn" = "لم تسجل الدخول.";
+
+"EZTTS.NotAuthorized" = "غير مصرح. يرجى تسجيل الدخول مرة أخرى.";
+
+"EZTTS.InvalidServerResponse" = "استجابة غير صالحة من الخادم.";
+
+"EZTTS.EmptyAudio" = "تم إرجاع صوت فارغ.";
+
+"EZTTS.FailedWavWrap" = "تعذر تغليف PCM بصيغة WAV.";
+
+"EZTTS.InsufficientCoins" = "ليس لديك ما يكفي من العملات لإجراء عملية التحويل هذه.";
+
+"EZTTS.NeedCoins" = "تحتاج إلى %@ عملة، ولديك %@.";
+
+"EZTTS.ServerError" = "خطأ في الخادم";
+
+"EZTTS.OK" = "موافق";
+
+/* Subscription paywall */
+"EZSubscription.RequiredTitle" = "الاشتراك مطلوب";
+"EZSubscription.NotNow" = "ليس الآن";
+"EZSubscription.ViewPlans" = "عرض الخطط";
+"EZSubscription.ModelRequiredFormat" = "%@ متاح مع اشتراك EZComplete نشط. اشترك لاستخدام هذا النموذج.";
+"EZSubscription.ImageSettingsRequired" = "تتطلب الصور عالية الجودة وإخراج PNG والخلفيات غير المعتمة اشتراك EZComplete نشطًا.";

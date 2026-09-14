@@ -1,0 +1,77 @@
+/* EZModelPickerViewController localization */
+
+"EZModelPicker.Title" = "Select Model";
+
+"EZModelSection.FrontierReasoning" = "Advanced Reasoning";
+"EZModelSection.GPT4Chat" = "GPT-4 Chat";
+"EZModelSection.ImageGeneration" = "Image Generation";
+"EZModelSection.AudioTranscription" = "Audio Transcription";
+
+"EZModelLabel.ChatVisionNewest" = "💬 Chat + 👁 Vision ⭐ Newest";
+"EZModelLabel.ChatVision" = "💬 Chat + 👁 Vision";
+"EZModelLabel.ChatVisionBalanced" = "💬 Chat + 👁 Vision (Balanced)";
+"EZModelLabel.ChatVisionFastCheap" = "💬 Chat + 👁 Vision (Fast/Affordable)";
+"EZModelLabel.ChatOnly" = "💬 Chat Only";
+"EZModelLabel.ImageGenNewestFast" = "🖼 Image Generation (Newest, Fast) — Low/Medium/High/Very High/Maximum";
+"EZModelLabel.ImageGenEditPrecision" = "🖼 Image Generation + ✏️ Editing (Precision) — Low/Medium/High/Very High/Maximum";
+"EZModelLabel.ImageGenEdit" = "🖼 Image Generation + ✏️ Editing — Low/Medium/High";
+"EZModelLabel.ImageGen" = "🖼 Image Generation";
+"EZModelLabel.ImageGenFastCheap" = "🖼 Image Generation (Fast/Affordable)";
+"EZModelLabel.ChatGPTImageLatest" = "🖼 ChatGPT Image (Newest)";
+"EZModelLabel.AudioTranscriptionOnly" = "🎙 Audio Transcription Only";
+
+
+/* TextToSpeechViewController localization */
+
+"EZTTS.Title" = "Text to Speech";
+
+"EZTTS.PromptHeader" = "WHAT SHOULD IT SAY?";
+
+"EZTTS.VoiceHeader" = "VOICE";
+
+"EZTTS.SpeedFormat" = "Speed: %.2f×";
+
+"EZTTS.Generate" = "Generate";
+
+"EZTTS.ChooseVoice" = "Choose a voice…";
+
+"EZTTS.CharactersRemaining" = "%lu characters remaining";
+
+"EZTTS.MissingTextTitle" = "Missing text";
+
+"EZTTS.MissingTextMessage" = "Please enter text to synthesize.";
+
+"EZTTS.ErrorTitle" = "TTS Error";
+
+"EZTTS.FailedToSynthesize" = "Failed to synthesize.";
+
+"EZTTS.NoAudioReturned" = "No audio returned.";
+
+"EZTTS.PlaybackError" = "Playback error";
+
+"EZTTS.UnableToPlay" = "Unable to play audio.";
+
+"EZTTS.NotLoggedIn" = "Not logged in.";
+
+"EZTTS.NotAuthorized" = "Not authorized. Please sign in again.";
+
+"EZTTS.InvalidServerResponse" = "Invalid response from server.";
+
+"EZTTS.EmptyAudio" = "Empty audio returned.";
+
+"EZTTS.FailedWavWrap" = "Failed to wrap PCM into WAV.";
+
+"EZTTS.InsufficientCoins" = "You don't have enough coins for this synthesis.";
+
+"EZTTS.NeedCoins" = "Need %@ coins, you have %@.";
+
+"EZTTS.ServerError" = "Server error";
+
+"EZTTS.OK" = "OK";
+
+/* Subscription paywall */
+"EZSubscription.RequiredTitle" = "Subscription Required";
+"EZSubscription.NotNow" = "Not Now";
+"EZSubscription.ViewPlans" = "View Plans";
+"EZSubscription.ModelRequiredFormat" = "%@ is available with an active EZComplete subscription. Subscribe to use this model.";
+"EZSubscription.ImageSettingsRequired" = "High-quality images, PNG output, and non-opaque backgrounds require an active EZComplete subscription.";

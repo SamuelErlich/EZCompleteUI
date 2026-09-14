@@ -23,3 +23,4 @@ EZCompleteUI_GROUP = mobile
 EZCompleteUI_INSTALL_PATH = /Applications
 
 include $(THEOS_MAKE_PATH)/application.mk
+EZCompleteUI_RESOURCE_DIRS = Resources

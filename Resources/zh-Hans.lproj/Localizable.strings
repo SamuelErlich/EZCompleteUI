@@ -19,3 +19,59 @@
 "EZModelLabel.ImageGenFastCheap" = "🖼 图像生成（快速/低成本）";
 "EZModelLabel.ChatGPTImageLatest" = "🖼 ChatGPT 图像（最新）";
 "EZModelLabel.AudioTranscriptionOnly" = "🎙 仅音频转录";
+
+
+/* TextToSpeechViewController localization */
+
+"EZTTS.Title" = "文字转语音";
+
+"EZTTS.PromptHeader" = "要说什么？";
+
+"EZTTS.VoiceHeader" = "声音";
+
+"EZTTS.SpeedFormat" = "速度：%.2f×";
+
+"EZTTS.Generate" = "生成";
+
+"EZTTS.ChooseVoice" = "选择声音…";
+
+"EZTTS.CharactersRemaining" = "剩余 %lu 个字符";
+
+"EZTTS.MissingTextTitle" = "缺少文本";
+
+"EZTTS.MissingTextMessage" = "请输入要转换为语音的文本。";
+
+"EZTTS.ErrorTitle" = "TTS 错误";
+
+"EZTTS.FailedToSynthesize" = "语音合成失败。";
+
+"EZTTS.NoAudioReturned" = "未返回音频。";
+
+"EZTTS.PlaybackError" = "播放错误";
+
+"EZTTS.UnableToPlay" = "无法播放音频。";
+
+"EZTTS.NotLoggedIn" = "未登录。";
+
+"EZTTS.NotAuthorized" = "未授权。请重新登录。";
+
+"EZTTS.InvalidServerResponse" = "服务器返回的响应无效。";
+
+"EZTTS.EmptyAudio" = "返回的音频为空。";
+
+"EZTTS.FailedWavWrap" = "无法将 PCM 封装为 WAV。";
+
+"EZTTS.InsufficientCoins" = "你的 Coins 不足，无法完成此次合成。";
+
+"EZTTS.NeedCoins" = "需要 %@ Coins，你有 %@。";
+
+"EZTTS.ServerError" = "服务器错误";
+
+"EZTTS.OK" = "确定";
+
+/* Subscription paywall */
+"EZSubscription.RequiredTitle" = "需要订阅";
+"EZSubscription.NotNow" = "暂不";
+"EZSubscription.ViewPlans" = "查看套餐";
+"EZSubscription.ModelRequiredFormat" = "%@ 需要有效的 EZComplete 订阅才能使用。请订阅后使用此模型。";
+"EZSubscription.ImageSettingsRequired" = "高质量图像、PNG 输出和非不透明背景需要有效的 EZComplete 订阅。";

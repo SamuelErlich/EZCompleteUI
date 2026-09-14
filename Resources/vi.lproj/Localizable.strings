@@ -19,3 +19,59 @@
 "EZModelLabel.ImageGenFastCheap" = "🖼 Tạo hình ảnh (nhanh/rẻ)";
 "EZModelLabel.ChatGPTImageLatest" = "🖼 Hình ảnh ChatGPT (mới nhất)";
 "EZModelLabel.AudioTranscriptionOnly" = "🎙 Chỉ chuyển âm thanh thành văn bản";
+
+
+/* TextToSpeechViewController localization */
+
+"EZTTS.Title" = "Chuyển văn bản thành giọng nói";
+
+"EZTTS.PromptHeader" = "NỘI DUNG SẼ ĐƯỢC ĐỌC";
+
+"EZTTS.VoiceHeader" = "GIỌNG NÓI";
+
+"EZTTS.SpeedFormat" = "Tốc độ: %.2f×";
+
+"EZTTS.Generate" = "Tạo";
+
+"EZTTS.ChooseVoice" = "Chọn giọng nói…";
+
+"EZTTS.CharactersRemaining" = "Còn %lu ký tự";
+
+"EZTTS.MissingTextTitle" = "Thiếu văn bản";
+
+"EZTTS.MissingTextMessage" = "Vui lòng nhập văn bản cần chuyển thành giọng nói.";
+
+"EZTTS.ErrorTitle" = "Lỗi TTS";
+
+"EZTTS.FailedToSynthesize" = "Không thể tạo giọng nói.";
+
+"EZTTS.NoAudioReturned" = "Không nhận được âm thanh.";
+
+"EZTTS.PlaybackError" = "Lỗi phát lại";
+
+"EZTTS.UnableToPlay" = "Không thể phát âm thanh.";
+
+"EZTTS.NotLoggedIn" = "Chưa đăng nhập.";
+
+"EZTTS.NotAuthorized" = "Không được phép. Vui lòng đăng nhập lại.";
+
+"EZTTS.InvalidServerResponse" = "Phản hồi từ máy chủ không hợp lệ.";
+
+"EZTTS.EmptyAudio" = "Âm thanh trả về trống.";
+
+"EZTTS.FailedWavWrap" = "Không thể đóng gói PCM thành WAV.";
+
+"EZTTS.InsufficientCoins" = "Bạn không đủ coin để thực hiện lần tổng hợp này.";
+
+"EZTTS.NeedCoins" = "Cần %@ coin, bạn có %@.";
+
+"EZTTS.ServerError" = "Lỗi máy chủ";
+
+"EZTTS.OK" = "OK";
+
+/* Subscription paywall */
+"EZSubscription.RequiredTitle" = "Yêu cầu đăng ký";
+"EZSubscription.NotNow" = "Không phải bây giờ";
+"EZSubscription.ViewPlans" = "Xem các gói";
+"EZSubscription.ModelRequiredFormat" = "%@ chỉ khả dụng với gói đăng ký EZComplete đang hoạt động. Hãy đăng ký để dùng mô hình này.";
+"EZSubscription.ImageSettingsRequired" = "Hình ảnh chất lượng cao, đầu ra PNG và nền không đục yêu cầu gói đăng ký EZComplete đang hoạt động.";
