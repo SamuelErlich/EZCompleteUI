@@ -1,0 +1,139 @@
+/* EZCoinStoreViewController localization */
+
+"EZCoinStore.Title" = "🪙 Cửa hàng xu EZ";
+
+"EZCoinStore.CancelPlan" = "Hủy gói";
+
+"EZCoinStore.Subscribe" = "Đăng ký";
+
+"EZCoinStore.BuyNow" = "Mua ngay";
+
+"EZCoinStore.Badge.Buy1Get1" = "🔥 MUA 1 TẶNG 1";
+
+"EZCoinStore.Promo.SubscriptionBadgeFormat" = "+%ld XU MIỄN PHÍ*";
+
+"EZCoinStore.Promo.SubscriptionFootnote" = "*Xu bổ sung là phần thưởng một lần, không phải tăng thêm hàng tháng.";
+
+"EZCoinStore.Tier.Basic" = "Cơ bản";
+
+"EZCoinStore.Tier.BasicSubtitle" = "400 xu / tháng\nLý tưởng cho nhu cầu sử dụng không thường xuyên";
+
+"EZCoinStore.Tier.BasicPrice" = "$5 / tháng";
+
+"EZCoinStore.Tier.Standard" = "Tiêu chuẩn";
+
+"EZCoinStore.Tier.StandardSubtitle" = "900 xu / tháng\nPhù hợp cho người dùng thường xuyên";
+
+"EZCoinStore.Tier.StandardPrice" = "$10 / tháng";
+
+"EZCoinStore.Badge.Popular" = "PHỔ BIẾN";
+
+"EZCoinStore.Tier.Pro" = "Pro";
+
+"EZCoinStore.Tier.ProSubtitle" = "1.600 xu / tháng\nPhù hợp cho người dùng hằng ngày";
+
+"EZCoinStore.Tier.ProPrice" = "$15 / tháng";
+
+"EZCoinStore.Badge.BestValue" = "GIÁ TRỊ TỐT NHẤT";
+
+"EZCoinStore.Tier.Ultra" = "Ultra";
+
+"EZCoinStore.Tier.UltraSubtitle" = "2.500 xu / tháng\nDành cho người dùng chuyên sâu";
+
+"EZCoinStore.Tier.UltraPrice" = "$20 / tháng";
+
+"EZCoinStore.Badge.Ultra" = "ULTRA";
+
+"EZCoinStore.TopUp.Starter" = "Gói xu khởi đầu";
+
+"EZCoinStore.TopUp.StarterSubtitle" = "400 xu, một lần\nKhông bao giờ hết hạn";
+
+"EZCoinStore.TopUp.Value" = "Gói xu tiết kiệm";
+
+"EZCoinStore.TopUp.ValueSubtitle" = "900 xu, một lần\nKhông bao giờ hết hạn";
+
+"EZCoinStore.Badge.Save10" = "TIẾT KIỆM 10%";
+
+"EZCoinStore.Promo.Headline" = "🔥 MUA 1 TẶNG 1 MIỄN PHÍ 🔥";
+
+"EZCoinStore.Promo.Subtitle" = "Tất cả xu và gói đăng ký – chỉ trong thời gian giới hạn!";
+
+"EZCoinStore.LoadingBalance" = "Đang tải số dư...";
+
+"EZCoinStore.ThisFeature" = "tính năng này";
+
+"EZCoinStore.NotEnoughCoins" = "⚠️ Không đủ xu cho %@. Nạp thêm bên dưới.";
+
+"EZCoinStore.NoActiveSubscription" = "Không có gói đăng ký đang hoạt động";
+
+"EZCoinStore.BalanceFormat" = "🪙 %ld xu   •   %@";
+
+"EZCoinStore.Section.Subscriptions" = "GÓI ĐĂNG KÝ";
+
+"EZCoinStore.Section.OneTimeTopUps" = "NẠP MỘT LẦN";
+
+"EZCoinStore.DailyCoins" = "🎁 Xu hằng ngày";
+
+"EZCoinStore.DailyCoins.FreeFormat" = "🎁 +%ld miễn phí!";
+
+"EZCoinStore.DailyCoins.Free" = "🎁 Xu miễn phí!";
+
+"EZCoinStore.DailyCoins.NextHours" = "🎁 Tiếp theo: %ldg %ldp";
+
+"EZCoinStore.DailyCoins.NextMinutes" = "🎁 Tiếp theo: %ldp %lds";
+
+"EZCoinStore.DailyCoins.NextSeconds" = "🎁 Tiếp theo: %lds";
+
+"EZCoinStore.DailyCoins.Claiming" = "⏳ Đang nhận...";
+
+"EZCoinStore.Alert.NotSignedIn" = "Chưa đăng nhập";
+
+"EZCoinStore.Alert.SignInDailyCoins" = "Vui lòng đăng nhập để nhận xu hằng ngày.";
+
+"EZCoinStore.Alert.NetworkError" = "Lỗi mạng";
+
+"EZCoinStore.Alert.ServerUnreachable" = "Không thể kết nối máy chủ. Vui lòng thử lại.";
+
+"EZCoinStore.Alert.AlreadyClaimed" = "Đã nhận";
+
+"EZCoinStore.Alert.AlreadyClaimedMessage" = "Bạn đã nhận xu miễn phí. Hãy quay lại sau 6 giờ!";
+
+"EZCoinStore.Alert.GenericRetry" = "Đã xảy ra lỗi. Vui lòng thử lại.";
+
+"EZCoinStore.Alert.Error" = "Lỗi";
+
+"EZCoinStore.Ledger" = "Sổ cái";
+
+"EZCoinStore.Alert.NotLoggedIn" = "Chưa đăng nhập";
+
+"EZCoinStore.Alert.SignInFirst" = "Vui lòng đăng nhập trước.";
+
+"EZCoinStore.Alert.CancelSubscription" = "Hủy gói đăng ký?";
+
+"EZCoinStore.Alert.CancelSubscriptionMessage" = "Số xu còn lại sẽ vẫn trong tài khoản của bạn. Không thể hoàn tác.";
+
+"EZCoinStore.KeepPlan" = "Giữ gói";
+
+"EZCoinStore.Alert.Cancelled" = "Đã hủy";
+
+"EZCoinStore.Alert.CancelledMessage" = "Gói đăng ký của bạn đã được hủy. Xu của bạn vẫn còn khả dụng.";
+
+"EZCoinStore.Alert.CancelFailed" = "Không thể hủy gói đăng ký. Vui lòng thử lại.";
+
+"EZCoinStore.Alert.CheckoutStartFailed" = "Không thể bắt đầu thanh toán. Vui lòng thử lại.";
+
+"EZCoinStore.Alert.PurchaseConfirmFailed" = "Không thể xác nhận giao dịch mua. Hãy kiểm tra số dư, xu có thể đã được cộng.";
+
+"EZCoinStore.Alert.PurchaseNotConfirmed" = "Không thể xác nhận giao dịch mua.";
+
+"EZCoinStore.Alert.PurchaseIssue" = "Vấn đề khi mua";
+
+"EZCoinStore.Celebration.CoinsAdded" = "🪙 Đã thêm xu!";
+
+"EZCoinStore.Celebration.AmountFormat" = "+%ld xu";
+
+"EZCoinStore.Celebration.NewBalanceFormat" = "Số dư mới: %ld xu";
+
+"EZCoinStore.Celebration.Sweet" = "Tuyệt!";
+
+"EZCoinStore.OK" = "OK";

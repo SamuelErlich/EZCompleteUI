@@ -109,7 +109,7 @@ static NSString * const kEZElevenLabsURL         =
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.title = @"Voice Cloner";
+    self.title = NSLocalizedString(@"ElevenLabsClone.Title", @"Voice cloning screen title");
     self.view.backgroundColor = [UIColor systemBackgroundColor];
     self.visibleVoiceRowCount = 40;
 
@@ -160,19 +160,19 @@ static NSString * const kEZElevenLabsURL         =
     CGFloat y  = 16.0;
 
     // ---- Voice name ----
-    [self.scrollView addSubview:[self makeSectionLabel:@"VOICE NAME"
+    [self.scrollView addSubview:[self makeSectionLabel:NSLocalizedString(@"ElevenLabsClone.VoiceName", @"Voice name field label")
                                                  frame:CGRectMake(m, y, w, 16)]];
     y += 20;
-    self.nameField = [self makeTextField:@"e.g. MyProVoice"
+    self.nameField = [self makeTextField:NSLocalizedString(@"ElevenLabsClone.VoiceNamePlaceholder", @"Voice name field placeholder")
                                    frame:CGRectMake(m, y, w, 36)];
     [self.scrollView addSubview:self.nameField];
     y += 44;
 
     // ---- Language ----
-    [self.scrollView addSubview:[self makeSectionLabel:@"LANGUAGE CODE"
+    [self.scrollView addSubview:[self makeSectionLabel:NSLocalizedString(@"ElevenLabsClone.LanguageCode", @"Language code field label")
                                                  frame:CGRectMake(m, y, w, 16)]];
     y += 20;
-    self.langField = [self makeTextField:@"e.g. en"
+    self.langField = [self makeTextField:NSLocalizedString(@"ElevenLabsClone.LanguageCodePlaceholder", @"Language code field placeholder")
                                    frame:CGRectMake(m, y, w, 36)];
     self.langField.text = @"en";
     self.langField.autocapitalizationType = UITextAutocapitalizationTypeNone;
@@ -182,7 +182,7 @@ static NSString * const kEZElevenLabsURL         =
 
     // ---- Clone mode ----
     self.modeControl = [[UISegmentedControl alloc]
-                        initWithItems:@[@"Instant (IVC)", @"Professional (PVC)"]];
+                        initWithItems:@[NSLocalizedString(@"ElevenLabsClone.Instant", @"Instant voice cloning mode"), NSLocalizedString(@"ElevenLabsClone.Professional", @"Professional voice cloning mode")]];
     self.modeControl.frame = CGRectMake(m, y, w, 32);
     self.modeControl.selectedSegmentIndex = 0;
     // PVC disabled until Creator plan active — segment stays in UI so
@@ -197,7 +197,7 @@ static NSString * const kEZElevenLabsURL         =
     y += 38;
 
     UILabel *pvcNote = [[UILabel alloc] initWithFrame:CGRectMake(m, y, w, 18)];
-    pvcNote.text = @"⚠️ Professional Voice Clone — Creator plan required (coming soon)";
+    pvcNote.text = NSLocalizedString(@"ElevenLabsClone.ProfessionalNote", @"Professional voice cloning availability note");
     pvcNote.font = [UIFont systemFontOfSize:11];
     pvcNote.textColor = [UIColor secondaryLabelColor];
     [self.scrollView addSubview:pvcNote];
@@ -205,7 +205,7 @@ static NSString * const kEZElevenLabsURL         =
 
     // ---- Noise switch ----
     UILabel *noiseLbl = [[UILabel alloc] initWithFrame:CGRectMake(m, y, w - 60, 24)];
-    noiseLbl.text = @"Remove background noise";
+    noiseLbl.text = NSLocalizedString(@"ElevenLabsClone.RemoveNoise", @"Noise removal switch label");
     noiseLbl.font = [UIFont systemFontOfSize:13];
     [self.scrollView addSubview:noiseLbl];
     self.noiseSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(m + w - 60, y - 4, 60, 32)];
@@ -219,7 +219,7 @@ static NSString * const kEZElevenLabsURL         =
     // ---- Record button ----
     self.recordButton = [UIButton buttonWithType:UIButtonTypeSystem];
     self.recordButton.frame = CGRectMake(m, y, w, 48);
-    [self.recordButton setTitle:@"⏺  Start Recording"
+    [self.recordButton setTitle:NSLocalizedString(@"ElevenLabsClone.StartRecording", @"Start recording button")
                        forState:UIControlStateNormal];
     self.recordButton.titleLabel.font =
         [UIFont systemFontOfSize:16 weight:UIFontWeightSemibold];
@@ -266,7 +266,7 @@ static NSString * const kEZElevenLabsURL         =
         frame:CGRectMake(m, y, btnW, 40) action:@selector(skipBack:)];
     [self.scrollView addSubview:self.skipBackButton];
 
-    self.playButton = [self makeTransportButton:@"▶︎ Play"
+    self.playButton = [self makeTransportButton:NSLocalizedString(@"ElevenLabsClone.Play", @"Play recording button")
         frame:CGRectMake(m + (btnW + gap) * 1, y, btnW, 40)
         action:@selector(playRecording:)];
     [self.scrollView addSubview:self.playButton];
@@ -276,7 +276,7 @@ static NSString * const kEZElevenLabsURL         =
         action:@selector(pausePlayback:)];
     [self.scrollView addSubview:self.pauseButton];
 
-    self.stopButton = [self makeTransportButton:@"⏹ Stop"
+    self.stopButton = [self makeTransportButton:NSLocalizedString(@"ElevenLabsClone.Stop", @"Stop playback button")
         frame:CGRectMake(m + (btnW + gap) * 3, y, btnW, 40)
         action:@selector(stopPlayback:)];
     [self.scrollView addSubview:self.stopButton];
@@ -290,11 +290,11 @@ static NSString * const kEZElevenLabsURL         =
     // ---- Import + Quick Look row ----
     CGFloat halfW = (w - gap) / 2.0;
 
-    self.chooseFileButton = [self makeOutlineButton:@"📂  Import File"
+    self.chooseFileButton = [self makeOutlineButton:NSLocalizedString(@"ElevenLabsClone.ImportFile", @"Import audio file button")
         frame:CGRectMake(m, y, halfW, 44) action:@selector(pickAudioFile:)];
     [self.scrollView addSubview:self.chooseFileButton];
 
-    self.quickLookButton = [self makeOutlineButton:@"🔍  Quick Look"
+    self.quickLookButton = [self makeOutlineButton:NSLocalizedString(@"ElevenLabsClone.QuickLook", @"Preview audio file button")
         frame:CGRectMake(m + halfW + gap, y, halfW, 44) action:@selector(showQuickLook:)];
     self.quickLookButton.enabled = NO;
     [self.scrollView addSubview:self.quickLookButton];
@@ -303,7 +303,7 @@ static NSString * const kEZElevenLabsURL         =
     // ---- Upload button ----
     self.uploadButton = [UIButton buttonWithType:UIButtonTypeSystem];
     self.uploadButton.frame = CGRectMake(m, y, w, 50);
-    [self.uploadButton setTitle:@"Upload & Clone Voice"
+    [self.uploadButton setTitle:NSLocalizedString(@"ElevenLabsClone.UploadClone", @"Upload and clone button")
                        forState:UIControlStateNormal];
     self.uploadButton.titleLabel.font =
         [UIFont systemFontOfSize:16 weight:UIFontWeightSemibold];
@@ -332,13 +332,13 @@ static NSString * const kEZElevenLabsURL         =
 
     // ---- "My Cloned Voices" header ----
     UILabel *voicesHeader = [[UILabel alloc] initWithFrame:CGRectMake(m, y, w - 100, 24)];
-    voicesHeader.text = @"My Cloned Voices";
+    voicesHeader.text = NSLocalizedString(@"ElevenLabsClone.MyVoices", @"Cloned voices section title");
     voicesHeader.font = [UIFont systemFontOfSize:17 weight:UIFontWeightSemibold];
     [self.scrollView addSubview:voicesHeader];
 
     self.refreshVoicesButton = [UIButton buttonWithType:UIButtonTypeSystem];
     self.refreshVoicesButton.frame = CGRectMake(m + w - 90, y, 90, 24);
-    [self.refreshVoicesButton setTitle:@"↻ Refresh"
+    [self.refreshVoicesButton setTitle:NSLocalizedString(@"ElevenLabsClone.Refresh", @"Refresh cloned voices button")
                               forState:UIControlStateNormal];
     self.refreshVoicesButton.titleLabel.font =
         [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
@@ -500,7 +500,7 @@ static NSString * const kEZElevenLabsURL         =
 }
 
 - (void)showAlert:(NSString *)title message:(NSString *)message {
-    NSString *safeTitle = title.length ? title : @"Notice";
+    NSString *safeTitle = title.length ? title : NSLocalizedString(@"ElevenLabsClone.Notice", @"Generic alert title");
     NSString *safeMessage = message.length ? message : @"";
     if (safeMessage.length > 500) {
         safeMessage = [[safeMessage substringToIndex:500] stringByAppendingString:@"..."];
@@ -510,7 +510,7 @@ static NSString * const kEZElevenLabsURL         =
         [UIAlertController alertControllerWithTitle:safeTitle
                                             message:safeMessage
                                      preferredStyle:UIAlertControllerStyleAlert];
-    [ac addAction:[UIAlertAction actionWithTitle:@"OK"
+    [ac addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"ElevenLabsClone.OK", @"Alert confirmation")
                                            style:UIAlertActionStyleDefault
                                          handler:nil]];
     [self presentViewControllerSafely:ac animated:NO retryCount:8];
@@ -533,15 +533,15 @@ static NSString * const kEZElevenLabsURL         =
         [session requestRecordPermission:^(BOOL granted) {
             dispatch_async(dispatch_get_main_queue(), ^{
                 if (granted) [self startRecording];
-                else [self showAlert:@"Microphone Access Denied"
-                             message:@"Enable microphone access in Settings to record."];
+                else [self showAlert:NSLocalizedString(@"ElevenLabsClone.MicrophoneDenied", @"Microphone permission denied alert title")
+                             message:NSLocalizedString(@"ElevenLabsClone.MicrophoneDeniedMessage", @"Microphone permission denied alert message")];
             });
         }];
         return;
     }
     if (session.recordPermission != AVAudioSessionRecordPermissionGranted) {
-        [self showAlert:@"Microphone Access Denied"
-                message:@"Enable microphone access in Settings to record."];
+        [self showAlert:NSLocalizedString(@"ElevenLabsClone.MicrophoneDenied", @"Microphone permission denied alert title")
+                message:NSLocalizedString(@"ElevenLabsClone.MicrophoneDeniedMessage", @"Microphone permission denied alert message")];
         return;
     }
 
@@ -572,15 +572,15 @@ static NSString * const kEZElevenLabsURL         =
                                                 settings:settings
                                                    error:&err];
     if (err || !self.recorder) {
-        [self showAlert:@"Record Error"
-                message:err.localizedDescription ?: @"Could not initialise recorder."];
+        [self showAlert:NSLocalizedString(@"ElevenLabsClone.RecordError", @"Recording error alert title")
+                message:err.localizedDescription ?: NSLocalizedString(@"ElevenLabsClone.RecordInitFailed", @"Recording setup failure")];
         return;
     }
     self.recorder.delegate = self;
     self.recorder.meteringEnabled = YES;
 
     if (![self.recorder prepareToRecord]) {
-        [self showAlert:@"Record Error" message:@"Could not prepare to record."];
+        [self showAlert:NSLocalizedString(@"ElevenLabsClone.RecordError", @"Recording error alert title") message:NSLocalizedString(@"ElevenLabsClone.RecordPrepareFailed", @"Recording preparation failure")];
         return;
     }
 
@@ -592,7 +592,7 @@ static NSString * const kEZElevenLabsURL         =
     [self.waveformView setProgress:0.0 animated:NO];
     self.timerLabel.text = @"00:00";
 
-    [self.recordButton setTitle:@"⏹  Stop Recording" forState:UIControlStateNormal];
+    [self.recordButton setTitle:NSLocalizedString(@"ElevenLabsClone.StopRecording", @"Stop recording button") forState:UIControlStateNormal];
     self.recordButton.backgroundColor = [UIColor systemGrayColor];
     [self setFileActionsEnabled:NO];
 
@@ -605,7 +605,7 @@ static NSString * const kEZElevenLabsURL         =
     [[AVAudioSession sharedInstance] setActive:NO error:nil];
     [self stopMeterTimer];
 
-    [self.recordButton setTitle:@"⏺  Start Recording" forState:UIControlStateNormal];
+    [self.recordButton setTitle:NSLocalizedString(@"ElevenLabsClone.StartRecording", @"Start recording button") forState:UIControlStateNormal];
     self.recordButton.backgroundColor = [UIColor systemRedColor];
 
     if (self.recordedFileURL) {
@@ -630,8 +630,8 @@ static NSString * const kEZElevenLabsURL         =
                              successfully:(BOOL)flag {
     if (!flag) {
         dispatch_async(dispatch_get_main_queue(), ^{
-            [self showAlert:@"Recording Failed"
-                    message:@"The recording was interrupted or failed."];
+            [self showAlert:NSLocalizedString(@"ElevenLabsClone.RecordingFailed", @"Recording failed alert title")
+                    message:NSLocalizedString(@"ElevenLabsClone.RecordingFailedMessage", @"Recording failed alert message")];
         });
     }
 }
@@ -651,8 +651,8 @@ static NSString * const kEZElevenLabsURL         =
     self.player = [[AVAudioPlayer alloc] initWithContentsOfURL:self.recordedFileURL
                                                          error:&err];
     if (err || !self.player) {
-        [self showAlert:@"Playback Error"
-                message:err.localizedDescription ?: @"Could not create player."];
+        [self showAlert:NSLocalizedString(@"ElevenLabsClone.PlaybackError", @"Playback error alert title")
+                message:err.localizedDescription ?: NSLocalizedString(@"ElevenLabsClone.PlayerCreateFailed", @"Playback setup failure")];
         return;
     }
     self.player.delegate = self;
@@ -782,8 +782,8 @@ static NSString * const kEZElevenLabsURL         =
 
 - (void)showQuickLook:(id)sender {
     if (!self.recordedFileURL) {
-        [self showAlert:@"No Recording"
-                message:@"Please record or import a sample first."];
+        [self showAlert:NSLocalizedString(@"ElevenLabsClone.NoRecording", @"No recording alert title")
+                message:NSLocalizedString(@"ElevenLabsClone.NoRecordingMessage", @"No recording alert message")];
         return;
     }
     QLPreviewController *ql = [QLPreviewController new];
@@ -833,8 +833,8 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
             [NSFileManager.defaultManager removeItemAtURL:dest error:nil];
 
         if (![NSFileManager.defaultManager copyItemAtURL:url toURL:dest error:&err]) {
-            [self showAlert:@"Import Failed"
-                    message:err.localizedDescription ?: @"Unable to copy file."];
+            [self showAlert:NSLocalizedString(@"ElevenLabsClone.ImportFailed", @"Import failed alert title")
+                    message:err.localizedDescription ?: NSLocalizedString(@"ElevenLabsClone.CopyFailed", @"Audio file copy failure")];
             return;
         }
 
@@ -891,14 +891,14 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
 
 - (void)showSubscriptionRequiredAlert {
     UIAlertController *alert = [UIAlertController
-        alertControllerWithTitle:@"Subscription Required"
-                         message:@"Voice cloning is available with an active EZComplete subscription. Subscribe to create a cloned voice."
+        alertControllerWithTitle:NSLocalizedString(@"ElevenLabsClone.SubscriptionRequired", @"Subscription required alert title")
+                         message:NSLocalizedString(@"ElevenLabsClone.SubscriptionRequiredMessage", @"Subscription required alert message")
                   preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Not Now"
+    [alert addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"ElevenLabsClone.NotNow", @"Subscription alert cancel button")
                                               style:UIAlertActionStyleCancel
                                             handler:nil]];
     __weak typeof(self) weakSelf = self;
-    [alert addAction:[UIAlertAction actionWithTitle:@"View Plans"
+    [alert addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"ElevenLabsClone.ViewPlans", @"Subscription alert plans button")
                                               style:UIAlertActionStyleDefault
                                             handler:^(__unused UIAlertAction *action) {
         __strong typeof(weakSelf) self = weakSelf;
@@ -911,21 +911,21 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
 
 - (void)uploadClone:(id)sender {
     if (!self.recordedFileURL) {
-        [self showAlert:@"No Recording"
-                message:@"Please record or import a sample first."];
+        [self showAlert:NSLocalizedString(@"ElevenLabsClone.NoRecording", @"No recording alert title")
+                message:NSLocalizedString(@"ElevenLabsClone.NoRecordingMessage", @"No recording alert message")];
         return;
     }
     NSString *name = [[self.nameField.text ?: @""
         stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet]
         copy];
     if (name.length == 0) {
-        [self showAlert:@"Missing Name" message:@"Enter a voice name."];
+        [self showAlert:NSLocalizedString(@"ElevenLabsClone.MissingName", @"Missing voice name alert title") message:NSLocalizedString(@"ElevenLabsClone.MissingNameMessage", @"Missing voice name alert message")];
         return;
     }
     NSString *jwt = [self userJWT];
     if (jwt.length == 0) {
-        [self showAlert:@"Not Signed In"
-                message:@"Sign in to your EZComplete account to clone voices."];
+        [self showAlert:NSLocalizedString(@"ElevenLabsClone.NotSignedIn", @"Not signed in alert title")
+                message:NSLocalizedString(@"ElevenLabsClone.SignInCloneMessage", @"Sign in to clone alert message")];
         return;
     }
 
@@ -944,8 +944,8 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
             self.uploadButton.enabled = (self.recordedFileURL != nil);
 
             if (!refreshed) {
-                [self showAlert:@"Subscription Check Unavailable"
-                        message:@"We couldn't verify your subscription. Please try again before cloning a voice."];
+                [self showAlert:NSLocalizedString(@"ElevenLabsClone.SubscriptionCheckUnavailable", @"Subscription check failure title")
+                        message:NSLocalizedString(@"ElevenLabsClone.SubscriptionCheckUnavailableMessage", @"Subscription check failure message")];
                 return;
             }
             if (![self hasActiveSubscription]) {
@@ -966,7 +966,7 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
 
     NSData *audioData = [NSData dataWithContentsOfURL:self.recordedFileURL];
     if (audioData.length == 0) {
-        [self showAlert:@"Empty File" message:@"The recording file is empty."];
+        [self showAlert:NSLocalizedString(@"ElevenLabsClone.EmptyFile", @"Empty recording file alert title") message:NSLocalizedString(@"ElevenLabsClone.EmptyFileMessage", @"Empty recording file alert message")];
         return;
     }
     NSString *audioB64     = [audioData base64EncodedStringWithOptions:0];
@@ -988,33 +988,33 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
             [self setLoading:NO];
 
             if (networkError) {
-                [self showAlert:@"Network Error" message:networkError.localizedDescription];
+                [self showAlert:NSLocalizedString(@"ElevenLabsClone.NetworkError", @"Network error alert title") message:networkError.localizedDescription];
                 return;
             }
             if (statusCode == 402) {
                 NSInteger balance = [responseDict[@"balance"] integerValue];
                 NSInteger cost    = [responseDict[@"cost"]    integerValue];
-                [self showAlert:@"Need More Coins"
+                [self showAlert:NSLocalizedString(@"ElevenLabsClone.NeedMoreCoins", @"Insufficient coins alert title")
                         message:[NSString stringWithFormat:
-                                 @"You have %ld coins but cloning costs %ld coins.",
+                                 NSLocalizedString(@"ElevenLabsClone.NeedMoreCoinsMessage", @"Insufficient coins alert message format"),
                                  (long)balance, (long)cost]];
                 return;
             }
             if (statusCode == 403) {
                 NSString *errKey = responseDict[@"error"] ?: @"";
-                NSString *reason = responseDict[@"reason"] ?: @"Access denied.";
+                NSString *reason = responseDict[@"reason"] ?: NSLocalizedString(@"ElevenLabsClone.AccessDenied", @"Access denied fallback message");
                 NSString *title  = [errKey isEqualToString:@"clone_slot_limit"]
-                                 ? @"Voice Slot Full"
+                                 ? NSLocalizedString(@"ElevenLabsClone.VoiceSlotFull", @"Voice clone slot limit title")
                                  : [errKey isEqualToString:@"membership_required"]
-                                 ? @"Subscription Required"
-                                 : @"Not Available";
+                                 ? NSLocalizedString(@"ElevenLabsClone.SubscriptionRequired", @"Subscription required alert title")
+                                 : NSLocalizedString(@"ElevenLabsClone.NotAvailable", @"Unavailable alert title");
                 [self showAlert:title message:reason];
                 return;
             }
             if (statusCode < 200 || statusCode >= 300) {
                 NSString *msg = responseDict[@"error"] ?: responseDict[@"detail"]
-                             ?: @"Upload failed.";
-                [self showAlert:@"Clone Failed" message:msg];
+                             ?: NSLocalizedString(@"ElevenLabsClone.UploadFailed", @"Upload failure fallback message");
+                [self showAlert:NSLocalizedString(@"ElevenLabsClone.CloneFailed", @"Clone failed alert title") message:msg];
                 return;
             }
 
@@ -1023,7 +1023,7 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
             NSInteger slotsLimit  = [responseDict[@"slots_limit"] integerValue];
 
             if (voiceID.length == 0) {
-                [self showAlert:@"Clone Failed" message:@"No voice ID in response."];
+                [self showAlert:NSLocalizedString(@"ElevenLabsClone.CloneFailed", @"Clone failed alert title") message:NSLocalizedString(@"ElevenLabsClone.NoVoiceID", @"Missing voice ID alert message")];
                 return;
             }
 
@@ -1035,11 +1035,11 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
             [self saveVoiceLocally:voiceEntry];
 
             NSString *slotInfo = (slotsLimit > 0)
-                ? [NSString stringWithFormat:@"\nSlots used: %ld / %ld",
+                ? [NSString stringWithFormat:NSLocalizedString(@"ElevenLabsClone.SlotsUsedFormat", @"Voice clone slots used format"),
                    (long)slotsUsed, (long)slotsLimit]
                 : @"";
-            [self showAlert:@"Voice Cloned"
-                    message:[NSString stringWithFormat:@"Voice ID: %@%@", voiceID, slotInfo]];
+            [self showAlert:NSLocalizedString(@"ElevenLabsClone.VoiceCloned", @"Voice cloned success alert title")
+                    message:[NSString stringWithFormat:NSLocalizedString(@"ElevenLabsClone.VoiceClonedMessage", @"Voice cloned success alert message format"), voiceID, slotInfo]];
             EZLogf(EZLogLevelInfo, @"CLONE", @"Created voice %@", voiceID);
         });
     }];
@@ -1204,7 +1204,7 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
 
     NSString *name = [mutableSafe[@"name"] isKindOfClass:NSString.class]
         ? mutableSafe[@"name"]
-        : @"Unnamed Voice";
+        : NSLocalizedString(@"ElevenLabsClone.UnnamedVoice", @"Fallback voice name");
     NSString *category = [mutableSafe[@"category"] isKindOfClass:NSString.class]
         ? mutableSafe[@"category"]
         : @"";
@@ -1231,7 +1231,7 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
 
     if (self.myVoices.count == 0) {
         UILabel *empty = [[UILabel alloc] initWithFrame:CGRectMake(m, y, w, 52)];
-        empty.text = @"No cloned voices found. Record and upload to create one.";
+        empty.text = NSLocalizedString(@"ElevenLabsClone.NoClonedVoices", @"Empty cloned voices list message");
         empty.font = [UIFont systemFontOfSize:13];
         empty.textColor = [UIColor secondaryLabelColor];
         empty.numberOfLines = 2;
@@ -1258,7 +1258,7 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
 
         if (visibleCount < self.myVoices.count) {
             UILabel *moreLabel = [[UILabel alloc] initWithFrame:CGRectMake(m, y + 4, w, 18)];
-            moreLabel.text = [NSString stringWithFormat:@"Showing %lu of %lu voices",
+            moreLabel.text = [NSString stringWithFormat:NSLocalizedString(@"ElevenLabsClone.ShowingVoicesFormat", @"Visible cloned voices count format"),
                               (unsigned long)visibleCount,
                               (unsigned long)self.myVoices.count];
             moreLabel.font = [UIFont systemFontOfSize:12];
@@ -1266,7 +1266,7 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
             [self.voicesContainerView addSubview:moreLabel];
             y += 26;
 
-            UIButton *moreButton = [self makeOutlineButton:@"Show More Voices"
+            UIButton *moreButton = [self makeOutlineButton:NSLocalizedString(@"ElevenLabsClone.ShowMoreVoices", @"Show more cloned voices button")
                                                      frame:CGRectMake(m, y, w, 40)
                                                     action:@selector(showMoreVoicesTapped:)];
             [self.voicesContainerView addSubview:moreButton];
@@ -1294,7 +1294,7 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     CGFloat delW = 72.0;
     UIView *row = [[UIView alloc] initWithFrame:CGRectMake(0, 0, vw, 54)];
 
-    NSString *name    = voice[@"name"] ?: @"Unnamed Voice";
+    NSString *name    = voice[@"name"] ?: NSLocalizedString(@"ElevenLabsClone.UnnamedVoice", @"Fallback voice name");
     NSString *voiceID = voice[@"voice_id"] ?: voice[@"id"] ?: @"";
     NSString *cat     = voice[@"category"] ?: @"";
 
@@ -1323,7 +1323,7 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
 
     UIButton *del = [UIButton buttonWithType:UIButtonTypeSystem];
     del.frame = CGRectMake(vw - m - delW, 11, delW, 32);
-    [del setTitle:@"Delete" forState:UIControlStateNormal];
+    [del setTitle:NSLocalizedString(@"ElevenLabsClone.Delete", @"Delete voice button") forState:UIControlStateNormal];
     [del setTitleColor:[UIColor systemRedColor] forState:UIControlStateNormal];
     del.titleLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
     del.layer.cornerRadius = 6;
@@ -1343,20 +1343,19 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     if (index >= self.myVoices.count) return;
 
     NSDictionary *voice   = self.myVoices[index];
-    NSString *displayName = voice[@"name"] ?: @"this voice";
+    NSString *displayName = voice[@"name"] ?: NSLocalizedString(@"ElevenLabsClone.ThisVoice", @"Fallback voice reference");
     NSString *voiceID     = voice[@"voice_id"] ?: voice[@"id"];
 
     UIAlertController *ac =
-        [UIAlertController alertControllerWithTitle:@"Delete Voice"
+        [UIAlertController alertControllerWithTitle:NSLocalizedString(@"ElevenLabsClone.DeleteVoice", @"Delete voice confirmation title")
                                             message:[NSString stringWithFormat:
-                                                     @"Permanently delete \"%@\" from "
-                                                     @"ElevenLabs? This cannot be undone.",
+                                                     NSLocalizedString(@"ElevenLabsClone.DeleteVoiceMessage", @"Delete voice confirmation message format"),
                                                      displayName]
                                      preferredStyle:UIAlertControllerStyleAlert];
-    [ac addAction:[UIAlertAction actionWithTitle:@"Cancel"
+    [ac addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"ElevenLabsClone.Cancel", @"Cancel deletion button")
                                            style:UIAlertActionStyleCancel
                                          handler:nil]];
-    [ac addAction:[UIAlertAction actionWithTitle:@"Delete"
+    [ac addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"ElevenLabsClone.Delete", @"Delete voice button")
                                            style:UIAlertActionStyleDestructive
                                          handler:^(UIAlertAction *action) {
         [self deleteVoiceWithID:voiceID atIndex:index];
@@ -1367,8 +1366,8 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
 - (void)deleteVoiceWithID:(NSString *)voiceID atIndex:(NSUInteger)index {
     NSString *jwt = [self userJWT];
     if (jwt.length == 0) {
-        [self showAlert:@"Not Signed In"
-                message:@"Sign in to delete voices."];
+        [self showAlert:NSLocalizedString(@"ElevenLabsClone.NotSignedIn", @"Not signed in alert title")
+                message:NSLocalizedString(@"ElevenLabsClone.SignInDeleteMessage", @"Sign in to delete alert message")];
         return;
     }
     if (index >= self.myVoices.count) return;
@@ -1390,8 +1389,8 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
                 [weakSelf.myVoices insertObject:removed atIndex:restoreAt];
                 [weakSelf rebuildVoiceRows];
                 NSString *msg = networkError.localizedDescription
-                    ?: responseDict[@"reason"] ?: responseDict[@"error"] ?: @"Delete failed.";
-                [weakSelf showAlert:@"Delete Failed" message:msg];
+                    ?: responseDict[@"reason"] ?: responseDict[@"error"] ?: NSLocalizedString(@"ElevenLabsClone.DeleteFailedMessage", @"Delete failure fallback message");
+                [weakSelf showAlert:NSLocalizedString(@"ElevenLabsClone.DeleteFailed", @"Delete failed alert title") message:msg];
                 EZLogf(EZLogLevelError, @"DEL", @"Delete voice %@ failed: %@", voiceID, msg);
             } else {
                 [[NSUserDefaults standardUserDefaults]

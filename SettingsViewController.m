@@ -320,22 +320,29 @@
     // ─────────────────────────────────────────────────────────────────────────────
 
     - (void)refreshSubscriptionDisplay {
-        [[EZEntitlementManager shared] refreshBalanceWithCompletion:^(NSInteger balance) {
+        [[EZEntitlementManager shared] refreshSubscriptionStatusWithCompletion:
+         ^(BOOL refreshed, NSInteger balance) {
             dispatch_async(dispatch_get_main_queue(), ^{
-                NSString *tier = [EZEntitlementManager shared].currentTier;
-                BOOL isActive  = ![tier isEqualToString:@"none"] && balance >= 0;
+                EZEntitlementManager *entitlements = [EZEntitlementManager shared];
+                NSString *tier   = entitlements.currentTier;
+                NSString *status = entitlements.currentStatus;
+                BOOL isActive = tier.length > 0 && [status isEqualToString:@"active"];
 
-                if (isActive && ![tier isEqualToString:@"none"]) {
+                if (!refreshed) {
+                    self.subscriptionStatusLabel.text = @"⚠️ Unable to verify subscription";
+                    self.subscriptionStatusLabel.textColor = [UIColor systemOrangeColor];
+                } else if (isActive) {
                     self.subscriptionStatusLabel.text = [NSString stringWithFormat:
                         @"✅ Active — %@ plan", tier.capitalizedString];
                     self.subscriptionStatusLabel.textColor = [UIColor systemGreenColor];
-                    self.coinBalanceLabel.text = [NSString stringWithFormat:
-                        @"🪙 Coin balance: %ld", (long)balance];
                 } else {
-                    self.subscriptionStatusLabel.text  = @"❌ No active subscription";
-                    self.subscriptionStatusLabel.textColor = [UIColor systemRedColor];
-                    self.coinBalanceLabel.text = @"Subscribe below to get started";
+                    self.subscriptionStatusLabel.text = [status isEqualToString:@"coins_only"]
+                        ? @"🪙 Coins only — no active subscription"
+                        : @"❌ No active subscription";
+                    self.subscriptionStatusLabel.textColor = [UIColor secondaryLabelColor];
                 }
+                self.coinBalanceLabel.text = [NSString stringWithFormat:
+                    @"🪙 Coin balance: %ld", (long)balance];
             });
         }];
     }

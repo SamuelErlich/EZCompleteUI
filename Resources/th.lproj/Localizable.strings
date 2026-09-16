@@ -1,0 +1,288 @@
+/* EZModelPickerViewController localization */
+
+"EZModelPicker.Title" = "เลือกโมเดล";
+
+"EZModelSection.FrontierReasoning" = "การให้เหตุผลขั้นสูง";
+"EZModelSection.GPT4Chat" = "แชต GPT-4";
+"EZModelSection.ImageGeneration" = "สร้างรูปภาพ";
+"EZModelSection.AudioTranscription" = "ถอดเสียง";
+
+"EZModelLabel.ChatVisionNewest" = "💬 แชต + 👁 วิชัน ⭐ ใหม่ล่าสุด";
+"EZModelLabel.ChatVision" = "💬 แชต + 👁 วิชัน";
+"EZModelLabel.ChatVisionBalanced" = "💬 แชต + 👁 วิชัน (สมดุล)";
+"EZModelLabel.ChatVisionFastCheap" = "💬 แชต + 👁 วิชัน (เร็ว/คุ้มค่า)";
+"EZModelLabel.ChatOnly" = "💬 แชตเท่านั้น";
+"EZModelLabel.ImageGenNewestFast" = "🖼 สร้างรูปภาพ (ใหม่ล่าสุด, เร็ว) — ต่ำ/กลาง/สูง/สูงมาก/สูงสุด";
+"EZModelLabel.ImageGenEditPrecision" = "🖼 สร้างรูปภาพ + ✏️ แก้ไข (แม่นยำ) — ต่ำ/กลาง/สูง/สูงมาก/สูงสุด";
+"EZModelLabel.ImageGenEdit" = "🖼 สร้างรูปภาพ + ✏️ แก้ไข — ต่ำ/กลาง/สูง";
+"EZModelLabel.ImageGen" = "🖼 สร้างรูปภาพ";
+"EZModelLabel.ImageGenFastCheap" = "🖼 สร้างรูปภาพ (เร็ว/คุ้มค่า)";
+"EZModelLabel.ChatGPTImageLatest" = "🖼 รูปภาพ ChatGPT (ใหม่ล่าสุด)";
+"EZModelLabel.AudioTranscriptionOnly" = "🎙 ถอดเสียงเท่านั้น";
+
+
+/* TextToSpeechViewController localization */
+
+"EZTTS.Title" = "ข้อความเป็นเสียง";
+
+"EZTTS.PromptHeader" = "ต้องการให้พูดว่าอะไร?";
+
+"EZTTS.VoiceHeader" = "เสียง";
+
+"EZTTS.SpeedFormat" = "ความเร็ว: %.2f×";
+
+"EZTTS.Generate" = "สร้าง";
+
+"EZTTS.ChooseVoice" = "เลือกเสียง…";
+
+"EZTTS.CharactersRemaining" = "เหลือ %lu อักขระ";
+
+"EZTTS.MissingTextTitle" = "ไม่มีข้อความ";
+
+"EZTTS.MissingTextMessage" = "กรุณาป้อนข้อความที่ต้องการสร้างเสียง";
+
+"EZTTS.ErrorTitle" = "ข้อผิดพลาด TTS";
+
+"EZTTS.FailedToSynthesize" = "สร้างเสียงไม่สำเร็จ";
+
+"EZTTS.NoAudioReturned" = "ไม่ได้รับข้อมูลเสียง";
+
+"EZTTS.PlaybackError" = "ข้อผิดพลาดในการเล่น";
+
+"EZTTS.UnableToPlay" = "ไม่สามารถเล่นเสียงได้";
+
+"EZTTS.NotLoggedIn" = "ยังไม่ได้ลงชื่อเข้าใช้";
+
+"EZTTS.NotAuthorized" = "ไม่ได้รับอนุญาต โปรดลงชื่อเข้าใช้อีกครั้ง";
+
+"EZTTS.InvalidServerResponse" = "การตอบกลับจากเซิร์ฟเวอร์ไม่ถูกต้อง";
+
+"EZTTS.EmptyAudio" = "ได้รับข้อมูลเสียงว่างเปล่า";
+
+"EZTTS.FailedWavWrap" = "แปลง PCM เป็น WAV ไม่สำเร็จ";
+
+"EZTTS.InsufficientCoins" = "คุณมีเหรียญไม่เพียงพอสำหรับการสร้างเสียงนี้";
+
+"EZTTS.NeedCoins" = "ต้องใช้ %@ เหรียญ คุณมี %@ เหรียญ";
+
+"EZTTS.ServerError" = "ข้อผิดพลาดเซิร์ฟเวอร์";
+
+"EZTTS.OK" = "ตกลง";
+
+/* Subscription paywall */
+"EZSubscription.RequiredTitle" = "ต้องสมัครสมาชิก";
+"EZSubscription.NotNow" = "ไว้ทีหลัง";
+"EZSubscription.ViewPlans" = "ดูแผน";
+"EZSubscription.ModelRequiredFormat" = "ต้องมีการสมัครสมาชิก EZComplete ที่ใช้งานอยู่จึงจะใช้ %@ ได้";
+"EZSubscription.ImageSettingsRequired" = "รูปภาพคุณภาพสูง เอาต์พุต PNG และพื้นหลังโปร่งใสต้องใช้การสมัครสมาชิก EZComplete ที่ใช้งานอยู่";
+
+/* EZCoinStoreViewController localization */
+
+"EZCoinStore.Title" = "🪙 ร้านเหรียญ EZ";
+
+"EZCoinStore.CancelPlan" = "ยกเลิกแผน";
+
+"EZCoinStore.Subscribe" = "สมัครสมาชิก";
+
+"EZCoinStore.BuyNow" = "ซื้อเลย";
+
+"EZCoinStore.Badge.Buy1Get1" = "🔥 ซื้อ 1 แถม 1";
+
+"EZCoinStore.Promo.SubscriptionBadgeFormat" = "+%ld เหรียญฟรี*";
+
+"EZCoinStore.Promo.SubscriptionFootnote" = "*เหรียญพิเศษเป็นโบนัสครั้งเดียว ไม่ใช่การเพิ่มขึ้นทุกเดือน";
+
+"EZCoinStore.Tier.Basic" = "ขั้นพื้นฐาน";
+
+"EZCoinStore.Tier.BasicSubtitle" = "400 เหรียญ / เดือน\\nเหมาะสำหรับการใช้งานทั่วไป";
+
+"EZCoinStore.Tier.BasicPrice" = "$5 / เดือน";
+
+"EZCoinStore.Tier.Standard" = "มาตรฐาน";
+
+"EZCoinStore.Tier.StandardSubtitle" = "900 เหรียญ / เดือน\\nเหมาะสำหรับผู้ใช้ทั่วไป";
+
+"EZCoinStore.Tier.StandardPrice" = "$10 / เดือน";
+
+"EZCoinStore.Badge.Popular" = "เป็นที่นิยม";
+
+"EZCoinStore.Tier.Pro" = "โปร";
+
+"EZCoinStore.Tier.ProSubtitle" = "1,600 เหรียญ / เดือน\\nเหมาะสำหรับผู้ใช้รายวัน";
+
+"EZCoinStore.Tier.ProPrice" = "$15 / เดือน";
+
+"EZCoinStore.Badge.BestValue" = "คุ้มค่าที่สุด";
+
+"EZCoinStore.Tier.Ultra" = "อัลตร้า";
+
+"EZCoinStore.Tier.UltraSubtitle" = "2,500 เหรียญ / เดือน\\nยินดีต้อนรับผู้ใช้ระดับสูง";
+
+"EZCoinStore.Tier.UltraPrice" = "$20 / เดือน";
+
+"EZCoinStore.Badge.Ultra" = "อัลตร้า";
+
+"EZCoinStore.TopUp.Starter" = "แพ็คเริ่มต้นเหรียญ";
+
+"EZCoinStore.TopUp.StarterSubtitle" = "400 เหรียญ ครั้งเดียว\\nไม่มีวันหมดอายุ";
+
+"EZCoinStore.TopUp.Value" = "ชุดมูลค่าเหรียญ";
+
+"EZCoinStore.TopUp.ValueSubtitle" = "900 เหรียญ ครั้งเดียว\\nไม่มีวันหมดอายุ";
+
+"EZCoinStore.Badge.Save10" = "ประหยัด 10%";
+
+"EZCoinStore.Promo.Headline" = "🔥 ซื้อ 1 แถม 1 🔥";
+
+"EZCoinStore.Promo.Subtitle" = "เหรียญและการสมัครสมาชิกทั้งหมด — มีเวลาจำกัด!";
+
+"EZCoinStore.LoadingBalance" = "กำลังโหลดยอดคงเหลือ...";
+
+"EZCoinStore.ThisFeature" = "คุณลักษณะนี้";
+
+"EZCoinStore.NotEnoughCoins" = "⚠️ เหรียญไม่เพียงพอสำหรับ %@ เติมเงินด้านล่าง.";
+
+"EZCoinStore.NoActiveSubscription" = "ไม่มีการสมัครสมาชิกที่ใช้งานอยู่";
+
+"EZCoinStore.BalanceFormat" = "🪙 %ld เหรียญ   •   %@";
+
+"EZCoinStore.Section.Subscriptions" = "การสมัครสมาชิก";
+
+"EZCoinStore.Section.OneTimeTopUps" = "เติมเงินครั้งเดียว";
+
+"EZCoinStore.DailyCoins" = "🎁 เหรียญรายวัน";
+
+"EZCoinStore.DailyCoins.FreeFormat" = "🎁 +%ld ฟรี!";
+
+"EZCoinStore.DailyCoins.Free" = "🎁 เหรียญฟรี!";
+
+"EZCoinStore.DailyCoins.NextHours" = "🎁 ถัดไป: %ldh %ldm";
+
+"EZCoinStore.DailyCoins.NextMinutes" = "🎁 ถัดไป: %ldm %lds";
+
+"EZCoinStore.DailyCoins.NextSeconds" = "🎁 ถัดไป: %lds";
+
+"EZCoinStore.DailyCoins.Claiming" = "⏳ อ้างสิทธิ์...";
+
+"EZCoinStore.Alert.NotSignedIn" = "ไม่ได้ลงชื่อเข้าใช้";
+
+"EZCoinStore.Alert.SignInDailyCoins" = "กรุณาลงชื่อเข้าใช้เพื่อรับเหรียญรายวันของคุณ";
+
+"EZCoinStore.Alert.NetworkError" = "ข้อผิดพลาดของเครือข่าย";
+
+"EZCoinStore.Alert.ServerUnreachable" = "ไม่สามารถเข้าถึงเซิร์ฟเวอร์ โปรดลองอีกครั้ง";
+
+"EZCoinStore.Alert.AlreadyClaimed" = "อ้างสิทธิ์แล้ว";
+
+"EZCoinStore.Alert.AlreadyClaimedMessage" = "คุณได้รับสิทธิ์รับเหรียญฟรีของคุณแล้ว กลับมาตรวจสอบอีกครั้งใน 6 ชั่วโมง!";
+
+"EZCoinStore.Alert.GenericRetry" = "มีบางอย่างผิดพลาด โปรดลองอีกครั้ง";
+
+"EZCoinStore.Alert.Error" = "เกิดข้อผิดพลาด";
+
+"EZCoinStore.Ledger" = "บัญชีแยกประเภท";
+
+"EZCoinStore.Alert.NotLoggedIn" = "ไม่ได้เข้าสู่ระบบ";
+
+"EZCoinStore.Alert.SignInFirst" = "กรุณาเข้าสู่ระบบก่อน";
+
+"EZCoinStore.Alert.CancelSubscription" = "ยกเลิกการสมัครสมาชิก?";
+
+"EZCoinStore.Alert.CancelSubscriptionMessage" = "เหรียญที่เหลือของคุณจะยังคงอยู่ในบัญชีของคุณ สิ่งนี้ไม่สามารถยกเลิกได้";
+
+"EZCoinStore.KeepPlan" = "เก็บแผน";
+
+"EZCoinStore.Alert.Cancelled" = "ยกเลิกแล้ว";
+
+"EZCoinStore.Alert.CancelledMessage" = "การสมัครของคุณถูกยกเลิกแล้ว เหรียญของคุณยังคงอยู่";
+
+"EZCoinStore.Alert.CancelFailed" = "ไม่สามารถยกเลิกการสมัครสมาชิกได้ โปรดลองอีกครั้ง";
+
+"EZCoinStore.Alert.CheckoutStartFailed" = "ไม่สามารถเริ่มชำระเงินได้ ลองอีกครั้ง";
+
+"EZCoinStore.Alert.PurchaseConfirmFailed" = "ไม่สามารถยืนยันการซื้อได้ ตรวจสอบยอดเงินคงเหลือของคุณ — เหรียญอาจถูกเพิ่มเข้ามาแล้ว";
+
+"EZCoinStore.Alert.PurchaseNotConfirmed" = "ไม่สามารถยืนยันการซื้อได้";
+
+"EZCoinStore.Alert.PurchaseIssue" = "ปัญหาการซื้อ";
+
+"EZCoinStore.Celebration.CoinsAdded" = "🪙 เพิ่มเหรียญแล้ว!";
+
+"EZCoinStore.Celebration.AmountFormat" = "+%ld เหรียญ";
+
+"EZCoinStore.Celebration.NewBalanceFormat" = "ยอดคงเหลือใหม่: %ld เหรียญ";
+
+"EZCoinStore.Celebration.Sweet" = "หวาน!";
+
+"EZCoinStore.OK" = "ตกลง";
+
+/* ElevenLabs voice cloning */
+"ElevenLabsClone.Title" = "โคลนเสียง";
+"ElevenLabsClone.VoiceName" = "ชื่อเสียง";
+"ElevenLabsClone.VoiceNamePlaceholder" = "เช่น มายโปรวอยซ์";
+"ElevenLabsClone.LanguageCode" = "รหัสภาษา";
+"ElevenLabsClone.LanguageCodePlaceholder" = "เช่น ห้องน้ำในตัว";
+"ElevenLabsClone.Instant" = "ทันที (IVC)";
+"ElevenLabsClone.Professional" = "มืออาชีพ (พีวีซี)";
+"ElevenLabsClone.ProfessionalNote" = "⚠️ Professional Voice Clone — จำเป็นต้องมีแผนผู้สร้าง (เร็วๆ นี้)";
+"ElevenLabsClone.RemoveNoise" = "ลบเสียงรบกวนพื้นหลัง";
+"ElevenLabsClone.StartRecording" = "⏺ เริ่มการบันทึก";
+"ElevenLabsClone.StopRecording" = "⏹ หยุดการบันทึก";
+"ElevenLabsClone.Play" = "▶︎ เล่น";
+"ElevenLabsClone.Stop" = "⏹ หยุด";
+"ElevenLabsClone.ImportFile" = "📂 นำเข้าไฟล์";
+"ElevenLabsClone.QuickLook" = "🔍 ดูด่วน";
+"ElevenLabsClone.UploadClone" = "อัปโหลดและโคลนเสียง";
+"ElevenLabsClone.MyVoices" = "เสียงโคลนของฉัน";
+"ElevenLabsClone.Refresh" = "↻ รีเฟรช";
+"ElevenLabsClone.Notice" = "ประกาศ";
+"ElevenLabsClone.OK" = "ตกลง";
+"ElevenLabsClone.MicrophoneDenied" = "การเข้าถึงไมโครโฟนถูกปฏิเสธ";
+"ElevenLabsClone.MicrophoneDeniedMessage" = "เปิดใช้งานการเข้าถึงไมโครโฟนในการตั้งค่าเพื่อบันทึก";
+"ElevenLabsClone.RecordError" = "บันทึกข้อผิดพลาด";
+"ElevenLabsClone.RecordInitFailed" = "ไม่สามารถเริ่มต้นเครื่องบันทึกได้";
+"ElevenLabsClone.RecordPrepareFailed" = "ไม่สามารถเตรียมการบันทึกได้";
+"ElevenLabsClone.RecordingFailed" = "การบันทึกล้มเหลว";
+"ElevenLabsClone.RecordingFailedMessage" = "การบันทึกถูกขัดจังหวะหรือล้มเหลว";
+"ElevenLabsClone.PlaybackError" = "ข้อผิดพลาดในการเล่น";
+"ElevenLabsClone.PlayerCreateFailed" = "ไม่สามารถสร้างผู้เล่นได้";
+"ElevenLabsClone.NoRecording" = "ไม่มีการบันทึก";
+"ElevenLabsClone.NoRecordingMessage" = "โปรดบันทึกหรือนำเข้าตัวอย่างก่อน";
+"ElevenLabsClone.ImportFailed" = "การนำเข้าล้มเหลว";
+"ElevenLabsClone.CopyFailed" = "ไม่สามารถคัดลอกไฟล์ได้";
+"ElevenLabsClone.SubscriptionRequired" = "ต้องสมัครสมาชิก";
+"ElevenLabsClone.SubscriptionRequiredMessage" = "การโคลนเสียงสามารถใช้งานได้เมื่อสมัครสมาชิก EZComplete ที่ใช้งานอยู่ สมัครสมาชิกเพื่อสร้างเสียงโคลน";
+"ElevenLabsClone.NotNow" = "ไม่ใช่ตอนนี้";
+"ElevenLabsClone.ViewPlans" = "ดูแผน";
+"ElevenLabsClone.MissingName" = "ชื่อหายไป";
+"ElevenLabsClone.MissingNameMessage" = "ป้อนชื่อเสียง";
+"ElevenLabsClone.NotSignedIn" = "ไม่ได้ลงชื่อเข้าใช้";
+"ElevenLabsClone.SignInCloneMessage" = "ลงชื่อเข้าใช้บัญชี EZComplete ของคุณเพื่อโคลนเสียง";
+"ElevenLabsClone.SubscriptionCheckUnavailable" = "ตรวจสอบการสมัครสมาชิกไม่พร้อมใช้งาน";
+"ElevenLabsClone.SubscriptionCheckUnavailableMessage" = "เราไม่สามารถยืนยันการสมัครของคุณได้ โปรดลองอีกครั้งก่อนที่จะโคลนเสียง";
+"ElevenLabsClone.EmptyFile" = "ไฟล์เปล่า";
+"ElevenLabsClone.EmptyFileMessage" = "ไฟล์บันทึกว่างเปล่า";
+"ElevenLabsClone.NetworkError" = "ข้อผิดพลาดของเครือข่าย";
+"ElevenLabsClone.NeedMoreCoins" = "ต้องการเหรียญเพิ่ม";
+"ElevenLabsClone.NeedMoreCoinsMessage" = "คุณมี %ld เหรียญ แต่การโคลนต้องใช้ %ld เหรียญ";
+"ElevenLabsClone.AccessDenied" = "การเข้าถึงถูกปฏิเสธ";
+"ElevenLabsClone.VoiceSlotFull" = "ช่องเสียงเต็ม";
+"ElevenLabsClone.NotAvailable" = "ไม่สามารถใช้ได้";
+"ElevenLabsClone.UploadFailed" = "การอัปโหลดล้มเหลว";
+"ElevenLabsClone.CloneFailed" = "โคลนล้มเหลว";
+"ElevenLabsClone.NoVoiceID" = "ไม่มีรหัสเสียงในการตอบกลับ";
+"ElevenLabsClone.SlotsUsedFormat" = "\\\\nช่องที่ใช้: %ld / %ld";
+"ElevenLabsClone.VoiceCloned" = "โคลนเสียง";
+"ElevenLabsClone.VoiceClonedMessage" = "รหัสเสียง: %@%@";
+"ElevenLabsClone.UnnamedVoice" = "เสียงที่ไม่มีชื่อ";
+"ElevenLabsClone.NoClonedVoices" = "ไม่พบเสียงโคลน บันทึกและอัปโหลดเพื่อสร้างหนึ่งรายการ";
+"ElevenLabsClone.ShowingVoicesFormat" = "กำลังแสดง %lu จาก %lu เสียง";
+"ElevenLabsClone.ShowMoreVoices" = "แสดงเสียงเพิ่มเติม";
+"ElevenLabsClone.Delete" = "ลบ";
+"ElevenLabsClone.ThisVoice" = "เสียงนี้";
+"ElevenLabsClone.DeleteVoice" = "ลบเสียง";
+"ElevenLabsClone.DeleteVoiceMessage" = "ลบ \\\"%@\\\" ออกจาก ElevenLabs อย่างถาวรหรือไม่ สิ่งนี้ไม่สามารถยกเลิกได้";
+"ElevenLabsClone.Cancel" = "ยกเลิก";
+"ElevenLabsClone.SignInDeleteMessage" = "ลงชื่อเข้าใช้เพื่อลบเสียง";
+"ElevenLabsClone.DeleteFailedMessage" = "ลบไม่สำเร็จ";
+"ElevenLabsClone.DeleteFailed" = "ลบไม่สำเร็จ";

@@ -1,0 +1,139 @@
+/* EZCoinStoreViewController localization */
+
+"EZCoinStore.Title" = "🪙 Boutique de pièces EZ";
+
+"EZCoinStore.CancelPlan" = "Annuler le forfait";
+
+"EZCoinStore.Subscribe" = "S’abonner";
+
+"EZCoinStore.BuyNow" = "Acheter maintenant";
+
+"EZCoinStore.Badge.Buy1Get1" = "🔥 ACHETEZ-EN 1, RECEVEZ-EN 1";
+
+"EZCoinStore.Promo.SubscriptionBadgeFormat" = "+%ld PIÈCES GRATUITES*";
+
+"EZCoinStore.Promo.SubscriptionFootnote" = "*Les pièces supplémentaires sont un bonus unique, pas une augmentation mensuelle.";
+
+"EZCoinStore.Tier.Basic" = "Essentiel";
+
+"EZCoinStore.Tier.BasicSubtitle" = "400 pièces / mois\nIdéal pour un usage occasionnel";
+
+"EZCoinStore.Tier.BasicPrice" = "5 $ / mois";
+
+"EZCoinStore.Tier.Standard" = "Standard";
+
+"EZCoinStore.Tier.StandardSubtitle" = "900 pièces / mois\nIdéal pour une utilisation régulière";
+
+"EZCoinStore.Tier.StandardPrice" = "10 $ / mois";
+
+"EZCoinStore.Badge.Popular" = "POPULAIRE";
+
+"EZCoinStore.Tier.Pro" = "Pro";
+
+"EZCoinStore.Tier.ProSubtitle" = "1 600 pièces / mois\nIdéal pour une utilisation quotidienne";
+
+"EZCoinStore.Tier.ProPrice" = "15 $ / mois";
+
+"EZCoinStore.Badge.BestValue" = "MEILLEURE VALEUR";
+
+"EZCoinStore.Tier.Ultra" = "Ultra";
+
+"EZCoinStore.Tier.UltraSubtitle" = "2 500 pièces / mois\nPour les utilisateurs intensifs";
+
+"EZCoinStore.Tier.UltraPrice" = "20 $ / mois";
+
+"EZCoinStore.Badge.Ultra" = "ULTRA";
+
+"EZCoinStore.TopUp.Starter" = "Pack de démarrage de pièces";
+
+"EZCoinStore.TopUp.StarterSubtitle" = "400 pièces, paiement unique\nN’expirent jamais";
+
+"EZCoinStore.TopUp.Value" = "Pack de pièces avantageux";
+
+"EZCoinStore.TopUp.ValueSubtitle" = "900 pièces, paiement unique\nN’expirent jamais";
+
+"EZCoinStore.Badge.Save10" = "ÉCONOMISEZ 10 %";
+
+"EZCoinStore.Promo.Headline" = "🔥 ACHETEZ 1, LE 2e EST GRATUIT 🔥";
+
+"EZCoinStore.Promo.Subtitle" = "Toutes les pièces et tous les abonnements, pour une durée limitée !";
+
+"EZCoinStore.LoadingBalance" = "Chargement du solde...";
+
+"EZCoinStore.ThisFeature" = "cette fonctionnalité";
+
+"EZCoinStore.NotEnoughCoins" = "⚠️ Pas assez de pièces pour %@. Rechargez ci-dessous.";
+
+"EZCoinStore.NoActiveSubscription" = "Aucun abonnement actif";
+
+"EZCoinStore.BalanceFormat" = "🪙 %ld pièces   •   %@";
+
+"EZCoinStore.Section.Subscriptions" = "ABONNEMENTS";
+
+"EZCoinStore.Section.OneTimeTopUps" = "RECHARGES UNIQUES";
+
+"EZCoinStore.DailyCoins" = "🎁 Pièces quotidiennes";
+
+"EZCoinStore.DailyCoins.FreeFormat" = "🎁 +%ld gratuites !";
+
+"EZCoinStore.DailyCoins.Free" = "🎁 Pièces gratuites !";
+
+"EZCoinStore.DailyCoins.NextHours" = "🎁 Prochain : %ld h %ld min";
+
+"EZCoinStore.DailyCoins.NextMinutes" = "🎁 Prochain : %ld min %ld s";
+
+"EZCoinStore.DailyCoins.NextSeconds" = "🎁 Prochain : %ld s";
+
+"EZCoinStore.DailyCoins.Claiming" = "⏳ Récupération...";
+
+"EZCoinStore.Alert.NotSignedIn" = "Non connecté";
+
+"EZCoinStore.Alert.SignInDailyCoins" = "Connectez-vous pour récupérer vos pièces quotidiennes.";
+
+"EZCoinStore.Alert.NetworkError" = "Erreur réseau";
+
+"EZCoinStore.Alert.ServerUnreachable" = "Impossible de joindre le serveur. Réessayez.";
+
+"EZCoinStore.Alert.AlreadyClaimed" = "Déjà récupérées";
+
+"EZCoinStore.Alert.AlreadyClaimedMessage" = "Vous avez déjà récupéré vos pièces gratuites. Revenez dans 6 heures !";
+
+"EZCoinStore.Alert.GenericRetry" = "Une erreur s’est produite. Réessayez.";
+
+"EZCoinStore.Alert.Error" = "Erreur";
+
+"EZCoinStore.Ledger" = "Registre";
+
+"EZCoinStore.Alert.NotLoggedIn" = "Non connecté";
+
+"EZCoinStore.Alert.SignInFirst" = "Connectez-vous d’abord.";
+
+"EZCoinStore.Alert.CancelSubscription" = "Annuler l’abonnement ?";
+
+"EZCoinStore.Alert.CancelSubscriptionMessage" = "Vos pièces restantes resteront sur votre compte. Cette action est irréversible.";
+
+"EZCoinStore.KeepPlan" = "Conserver le forfait";
+
+"EZCoinStore.Alert.Cancelled" = "Annulé";
+
+"EZCoinStore.Alert.CancelledMessage" = "Votre abonnement a été annulé. Vos pièces restent disponibles.";
+
+"EZCoinStore.Alert.CancelFailed" = "Impossible d’annuler l’abonnement. Réessayez.";
+
+"EZCoinStore.Alert.CheckoutStartFailed" = "Impossible de démarrer le paiement. Réessayez.";
+
+"EZCoinStore.Alert.PurchaseConfirmFailed" = "Impossible de confirmer l’achat. Vérifiez votre solde, les pièces ont peut-être déjà été ajoutées.";
+
+"EZCoinStore.Alert.PurchaseNotConfirmed" = "Impossible de confirmer l’achat.";
+
+"EZCoinStore.Alert.PurchaseIssue" = "Problème d’achat";
+
+"EZCoinStore.Celebration.CoinsAdded" = "🪙 Pièces ajoutées !";
+
+"EZCoinStore.Celebration.AmountFormat" = "+%ld pièces";
+
+"EZCoinStore.Celebration.NewBalanceFormat" = "Nouveau solde : %ld pièces";
+
+"EZCoinStore.Celebration.Sweet" = "Super !";
+
+"EZCoinStore.OK" = "OK";

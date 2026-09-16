@@ -1,0 +1,139 @@
+/* EZCoinStoreViewController localization */
+
+"EZCoinStore.Title" = "🪙 متجر عملات EZ";
+
+"EZCoinStore.CancelPlan" = "إلغاء الخطة";
+
+"EZCoinStore.Subscribe" = "اشتراك";
+
+"EZCoinStore.BuyNow" = "اشترِ الآن";
+
+"EZCoinStore.Badge.Buy1Get1" = "🔥 اشترِ 1 واحصل على 1";
+
+"EZCoinStore.Promo.SubscriptionBadgeFormat" = "+%ld عملات مجانية*";
+
+"EZCoinStore.Promo.SubscriptionFootnote" = "*العملات الإضافية مكافأة لمرة واحدة وليست زيادة شهرية.";
+
+"EZCoinStore.Tier.Basic" = "أساسي";
+
+"EZCoinStore.Tier.BasicSubtitle" = "400 عملة / شهر\nمثالي للاستخدام العرضي";
+
+"EZCoinStore.Tier.BasicPrice" = "$5 / شهر";
+
+"EZCoinStore.Tier.Standard" = "قياسي";
+
+"EZCoinStore.Tier.StandardSubtitle" = "900 عملة / شهر\nرائع للاستخدام المنتظم";
+
+"EZCoinStore.Tier.StandardPrice" = "$10 / شهر";
+
+"EZCoinStore.Badge.Popular" = "شائع";
+
+"EZCoinStore.Tier.Pro" = "احترافي";
+
+"EZCoinStore.Tier.ProSubtitle" = "1,600 عملة / شهر\nرائع للمستخدمين اليوميين";
+
+"EZCoinStore.Tier.ProPrice" = "$15 / شهر";
+
+"EZCoinStore.Badge.BestValue" = "أفضل قيمة";
+
+"EZCoinStore.Tier.Ultra" = "ألترا";
+
+"EZCoinStore.Tier.UltraSubtitle" = "2,500 عملة / شهر\nمرحبًا بالمستخدمين المتقدمين";
+
+"EZCoinStore.Tier.UltraPrice" = "$20 / شهر";
+
+"EZCoinStore.Badge.Ultra" = "ألترا";
+
+"EZCoinStore.TopUp.Starter" = "حزمة بداية العملات";
+
+"EZCoinStore.TopUp.StarterSubtitle" = "400 عملة، لمرة واحدة\nلا تنتهي صلاحيتها";
+
+"EZCoinStore.TopUp.Value" = "حزمة قيمة العملات";
+
+"EZCoinStore.TopUp.ValueSubtitle" = "900 عملة، لمرة واحدة\nلا تنتهي صلاحيتها";
+
+"EZCoinStore.Badge.Save10" = "وفّر 10%";
+
+"EZCoinStore.Promo.Headline" = "🔥 اشترِ 1 واحصل على 1 مجانًا 🔥";
+
+"EZCoinStore.Promo.Subtitle" = "جميع العملات والاشتراكات لفترة محدودة!";
+
+"EZCoinStore.LoadingBalance" = "جارٍ تحميل الرصيد...";
+
+"EZCoinStore.ThisFeature" = "هذه الميزة";
+
+"EZCoinStore.NotEnoughCoins" = "⚠️ لا توجد عملات كافية لـ %@. اشحن رصيدك أدناه.";
+
+"EZCoinStore.NoActiveSubscription" = "لا يوجد اشتراك نشط";
+
+"EZCoinStore.BalanceFormat" = "🪙 %ld عملة   •   %@";
+
+"EZCoinStore.Section.Subscriptions" = "الاشتراكات";
+
+"EZCoinStore.Section.OneTimeTopUps" = "عمليات الشحن لمرة واحدة";
+
+"EZCoinStore.DailyCoins" = "🎁 العملات اليومية";
+
+"EZCoinStore.DailyCoins.FreeFormat" = "🎁 +%ld مجانًا!";
+
+"EZCoinStore.DailyCoins.Free" = "🎁 عملات مجانية!";
+
+"EZCoinStore.DailyCoins.NextHours" = "🎁 التالي: %ldس %ldد";
+
+"EZCoinStore.DailyCoins.NextMinutes" = "🎁 التالي: %ldد %ldث";
+
+"EZCoinStore.DailyCoins.NextSeconds" = "🎁 التالي: %ldث";
+
+"EZCoinStore.DailyCoins.Claiming" = "⏳ جارٍ الاستلام...";
+
+"EZCoinStore.Alert.NotSignedIn" = "لم تسجل الدخول";
+
+"EZCoinStore.Alert.SignInDailyCoins" = "يرجى تسجيل الدخول للحصول على عملاتك اليومية.";
+
+"EZCoinStore.Alert.NetworkError" = "خطأ في الشبكة";
+
+"EZCoinStore.Alert.ServerUnreachable" = "تعذر الوصول إلى الخادم. حاول مرة أخرى.";
+
+"EZCoinStore.Alert.AlreadyClaimed" = "تم الاستلام بالفعل";
+
+"EZCoinStore.Alert.AlreadyClaimedMessage" = "لقد استلمت عملاتك المجانية بالفعل. تحقق مرة أخرى بعد 6 ساعات!";
+
+"EZCoinStore.Alert.GenericRetry" = "حدث خطأ ما. حاول مرة أخرى.";
+
+"EZCoinStore.Alert.Error" = "خطأ";
+
+"EZCoinStore.Ledger" = "السجل";
+
+"EZCoinStore.Alert.NotLoggedIn" = "لم يتم تسجيل الدخول";
+
+"EZCoinStore.Alert.SignInFirst" = "يرجى تسجيل الدخول أولًا.";
+
+"EZCoinStore.Alert.CancelSubscription" = "إلغاء الاشتراك؟";
+
+"EZCoinStore.Alert.CancelSubscriptionMessage" = "ستبقى عملاتك المتبقية في حسابك. لا يمكن التراجع عن هذا الإجراء.";
+
+"EZCoinStore.KeepPlan" = "الاحتفاظ بالخطة";
+
+"EZCoinStore.Alert.Cancelled" = "تم الإلغاء";
+
+"EZCoinStore.Alert.CancelledMessage" = "تم إلغاء اشتراكك. ستظل عملاتك متاحة.";
+
+"EZCoinStore.Alert.CancelFailed" = "تعذر إلغاء الاشتراك. حاول مرة أخرى.";
+
+"EZCoinStore.Alert.CheckoutStartFailed" = "تعذر بدء الدفع. حاول مرة أخرى.";
+
+"EZCoinStore.Alert.PurchaseConfirmFailed" = "تعذر تأكيد الشراء. تحقق من رصيدك، فقد تكون العملات قد أضيفت بالفعل.";
+
+"EZCoinStore.Alert.PurchaseNotConfirmed" = "تعذر تأكيد الشراء.";
+
+"EZCoinStore.Alert.PurchaseIssue" = "مشكلة في الشراء";
+
+"EZCoinStore.Celebration.CoinsAdded" = "🪙 تمت إضافة العملات!";
+
+"EZCoinStore.Celebration.AmountFormat" = "+%ld عملة";
+
+"EZCoinStore.Celebration.NewBalanceFormat" = "الرصيد الجديد: %ld عملة";
+
+"EZCoinStore.Celebration.Sweet" = "رائع!";
+
+"EZCoinStore.OK" = "موافق";

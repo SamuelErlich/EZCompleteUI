@@ -1,0 +1,139 @@
+/* EZCoinStoreViewController localization */
+
+"EZCoinStore.Title" = "🪙 EZ 金币商店";
+
+"EZCoinStore.CancelPlan" = "取消套餐";
+
+"EZCoinStore.Subscribe" = "订阅";
+
+"EZCoinStore.BuyNow" = "立即购买";
+
+"EZCoinStore.Badge.Buy1Get1" = "🔥 买一送一";
+
+"EZCoinStore.Promo.SubscriptionBadgeFormat" = "+%ld 免费金币*";
+
+"EZCoinStore.Promo.SubscriptionFootnote" = "*额外金币是一次性奖励，不会增加每月金币额度。";
+
+"EZCoinStore.Tier.Basic" = "基础";
+
+"EZCoinStore.Tier.BasicSubtitle" = "每月 400 金币\n适合偶尔使用";
+
+"EZCoinStore.Tier.BasicPrice" = "$5 / 月";
+
+"EZCoinStore.Tier.Standard" = "标准";
+
+"EZCoinStore.Tier.StandardSubtitle" = "每月 900 金币\n适合经常使用";
+
+"EZCoinStore.Tier.StandardPrice" = "$10 / 月";
+
+"EZCoinStore.Badge.Popular" = "热门";
+
+"EZCoinStore.Tier.Pro" = "专业";
+
+"EZCoinStore.Tier.ProSubtitle" = "每月 1,600 金币\n适合每日使用";
+
+"EZCoinStore.Tier.ProPrice" = "$15 / 月";
+
+"EZCoinStore.Badge.BestValue" = "超值";
+
+"EZCoinStore.Tier.Ultra" = "Ultra";
+
+"EZCoinStore.Tier.UltraSubtitle" = "每月 2,500 金币\n欢迎高级用户";
+
+"EZCoinStore.Tier.UltraPrice" = "$20 / 月";
+
+"EZCoinStore.Badge.Ultra" = "ULTRA";
+
+"EZCoinStore.TopUp.Starter" = "金币入门包";
+
+"EZCoinStore.TopUp.StarterSubtitle" = "400 金币，一次性购买\n永不过期";
+
+"EZCoinStore.TopUp.Value" = "金币超值包";
+
+"EZCoinStore.TopUp.ValueSubtitle" = "900 金币，一次性购买\n永不过期";
+
+"EZCoinStore.Badge.Save10" = "节省 10%";
+
+"EZCoinStore.Promo.Headline" = "🔥 买一送一免费 🔥";
+
+"EZCoinStore.Promo.Subtitle" = "所有金币和订阅限时优惠！";
+
+"EZCoinStore.LoadingBalance" = "正在加载余额...";
+
+"EZCoinStore.ThisFeature" = "此功能";
+
+"EZCoinStore.NotEnoughCoins" = "⚠️ %@ 的金币不足。请在下方充值。";
+
+"EZCoinStore.NoActiveSubscription" = "没有有效订阅";
+
+"EZCoinStore.BalanceFormat" = "🪙 %ld 金币   •   %@";
+
+"EZCoinStore.Section.Subscriptions" = "订阅";
+
+"EZCoinStore.Section.OneTimeTopUps" = "一次性充值";
+
+"EZCoinStore.DailyCoins" = "🎁 每日金币";
+
+"EZCoinStore.DailyCoins.FreeFormat" = "🎁 +%ld 免费金币！";
+
+"EZCoinStore.DailyCoins.Free" = "🎁 免费金币！";
+
+"EZCoinStore.DailyCoins.NextHours" = "🎁 下次：%ld小时 %ld分钟";
+
+"EZCoinStore.DailyCoins.NextMinutes" = "🎁 下次：%ld分钟 %ld秒";
+
+"EZCoinStore.DailyCoins.NextSeconds" = "🎁 下次：%ld秒";
+
+"EZCoinStore.DailyCoins.Claiming" = "⏳ 正在领取...";
+
+"EZCoinStore.Alert.NotSignedIn" = "未登录";
+
+"EZCoinStore.Alert.SignInDailyCoins" = "请先登录以领取每日金币。";
+
+"EZCoinStore.Alert.NetworkError" = "网络错误";
+
+"EZCoinStore.Alert.ServerUnreachable" = "无法连接服务器。请重试。";
+
+"EZCoinStore.Alert.AlreadyClaimed" = "已领取";
+
+"EZCoinStore.Alert.AlreadyClaimedMessage" = "你已经领取过免费金币。6 小时后再来领取！";
+
+"EZCoinStore.Alert.GenericRetry" = "出现问题。请重试。";
+
+"EZCoinStore.Alert.Error" = "错误";
+
+"EZCoinStore.Ledger" = "账本";
+
+"EZCoinStore.Alert.NotLoggedIn" = "未登录";
+
+"EZCoinStore.Alert.SignInFirst" = "请先登录。";
+
+"EZCoinStore.Alert.CancelSubscription" = "取消订阅？";
+
+"EZCoinStore.Alert.CancelSubscriptionMessage" = "你剩余的金币会保留在账户中。此操作无法撤销。";
+
+"EZCoinStore.KeepPlan" = "保留套餐";
+
+"EZCoinStore.Alert.Cancelled" = "已取消";
+
+"EZCoinStore.Alert.CancelledMessage" = "你的订阅已取消。金币仍然可用。";
+
+"EZCoinStore.Alert.CancelFailed" = "无法取消订阅。请重试。";
+
+"EZCoinStore.Alert.CheckoutStartFailed" = "无法开始结账。请重试。";
+
+"EZCoinStore.Alert.PurchaseConfirmFailed" = "无法确认购买。请检查余额，金币可能已经到账。";
+
+"EZCoinStore.Alert.PurchaseNotConfirmed" = "无法确认购买。";
+
+"EZCoinStore.Alert.PurchaseIssue" = "购买问题";
+
+"EZCoinStore.Celebration.CoinsAdded" = "🪙 金币已添加！";
+
+"EZCoinStore.Celebration.AmountFormat" = "+%ld 金币";
+
+"EZCoinStore.Celebration.NewBalanceFormat" = "新余额：%ld 金币";
+
+"EZCoinStore.Celebration.Sweet" = "太好了！";
+
+"EZCoinStore.OK" = "好";

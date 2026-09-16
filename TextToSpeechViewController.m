@@ -94,7 +94,7 @@ static NSString *timestampString(void) {
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.title = @"Text to Speech";
+    self.title = NSLocalizedString(@"EZTTS.Title", nil);
     self.view.backgroundColor = [UIColor systemBackgroundColor];
 
     self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc]
@@ -120,7 +120,7 @@ static NSString *timestampString(void) {
     [self.view addSubview:self.container];
 
     self.promptSectionLabel = [self sectionHeaderLabel];
-    self.promptSectionLabel.text = @"WHAT SHOULD IT SAY?";
+    self.promptSectionLabel.text = NSLocalizedString(@"EZTTS.PromptHeader", nil);
     [self.container addSubview:self.promptSectionLabel];
 
     // TextView
@@ -146,7 +146,7 @@ static NSString *timestampString(void) {
     [self updateCharCountLabel];
 
     self.voiceSectionLabel = [self sectionHeaderLabel];
-    self.voiceSectionLabel.text = @"VOICE";
+    self.voiceSectionLabel.text = NSLocalizedString(@"EZTTS.VoiceHeader", nil);
     [self.container addSubview:self.voiceSectionLabel];
 
     // Voice picker button — never shows a raw voice ID, only the resolved name.
@@ -164,7 +164,7 @@ static NSString *timestampString(void) {
 
     // Speed label + slider (ElevenLabs speed: 0.7 = slowest, 1.2 = fastest)
     self.speedLabel = [[UILabel alloc] initWithFrame:CGRectZero];
-    self.speedLabel.text = @"Speed: 1.00×";
+    self.speedLabel.text = NSLocalizedString(@"EZTTS.SpeedFormat", nil);
     self.speedLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
     self.speedLabel.textAlignment = NSTextAlignmentCenter;
     self.speedLabel.textColor = [UIColor secondaryLabelColor];
@@ -185,7 +185,7 @@ static NSString *timestampString(void) {
     // so there's no separate Download button anymore; Play is the whole interaction.
     self.playButton = [UIButton buttonWithType:UIButtonTypeSystem];
     UIButtonConfiguration *playConfig = [UIButtonConfiguration filledButtonConfiguration];
-    playConfig.title = @"Generate";
+    playConfig.title = NSLocalizedString(@"EZTTS.Generate", nil);
     playConfig.image = [UIImage systemImageNamed:@"play.fill"];
     playConfig.imagePadding = 8;
     playConfig.baseBackgroundColor = [UIColor systemBlueColor];
@@ -316,7 +316,7 @@ static NSString *timestampString(void) {
 #pragma mark - Voice picker
 
 - (void)updateVoiceButtonTitle {
-    NSString *display = self.selectedVoiceName.length > 0 ? self.selectedVoiceName : @"Choose a voice…";
+    NSString *display = self.selectedVoiceName.length > 0 ? self.selectedVoiceName : NSLocalizedString(@"EZTTS.ChooseVoice", nil);
     [self.voiceButton setTitle:[NSString stringWithFormat:@"🎙️  %@   ›", display] forState:UIControlStateNormal];
 }
 
@@ -343,7 +343,7 @@ static NSString *timestampString(void) {
     // Snap to nearest 0.05
     float snapped = roundf(slider.value / 0.05f) * 0.05f;
     slider.value = snapped;
-    self.speedLabel.text = [NSString stringWithFormat:@"Speed: %.2f×", snapped];
+    self.speedLabel.text = [NSString stringWithFormat:NSLocalizedString(@"EZTTS.SpeedFormat", nil), snapped];
 }
 
 #pragma mark - Character limit
@@ -359,7 +359,7 @@ static NSString *timestampString(void) {
 
 - (void)updateCharCountLabel {
     NSUInteger remaining = kPromptCharacterLimit - MIN(self.textView.text.length, kPromptCharacterLimit);
-    self.charCountLabel.text = [NSString stringWithFormat:@"%lu characters remaining", (unsigned long)remaining];
+    self.charCountLabel.text = [NSString stringWithFormat:NSLocalizedString(@"EZTTS.CharactersRemaining", nil), (unsigned long)remaining];
     if (remaining <= 10) {
         self.charCountLabel.textColor = [UIColor systemRedColor];
     } else if (remaining <= 30) {
@@ -373,24 +373,24 @@ static NSString *timestampString(void) {
 
 - (void)synthesizeAndPlay:(id)sender {
     NSString *text = [self.textView.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] ?: @"";
-    if (text.length == 0) { [self showAlert:@"Missing text" message:@"Please enter text to synthesize."]; return; }
+    if (text.length == 0) { [self showAlert:NSLocalizedString(@"EZTTS.MissingTextTitle", nil) message:NSLocalizedString(@"EZTTS.MissingTextMessage", nil)]; return; }
     [self setLoading:YES];
     [self performTTSWithText:text preferredFormat:nil completion:^(NSURL *fileURL, NSString *mime, NSError *err) {
         dispatch_async(dispatch_get_main_queue(), ^{
             [self setLoading:NO];
             if (err) {
-                [self showAlert:@"TTS Error" message:err.localizedDescription ?: @"Failed to synthesize."];
+                [self showAlert:NSLocalizedString(@"EZTTS.ErrorTitle", nil) message:err.localizedDescription ?: NSLocalizedString(@"EZTTS.FailedToSynthesize", nil)];
                 return;
             }
             if (!fileURL) {
-                [self showAlert:@"TTS Error" message:@"No audio returned."];
+                [self showAlert:NSLocalizedString(@"EZTTS.ErrorTitle", nil) message:NSLocalizedString(@"EZTTS.NoAudioReturned", nil)];
                 return;
             }
             NSError *perr = nil;
             self.player = [[AVAudioPlayer alloc] initWithContentsOfURL:fileURL error:&perr];
             if (perr) {
                 EZLogf(EZLogLevelError, @"TTS", @"Playback error: %@", perr.localizedDescription);
-                [self showAlert:@"Playback error" message:perr.localizedDescription ?: @"Unable to play audio."];
+                [self showAlert:NSLocalizedString(@"EZTTS.PlaybackError", nil) message:perr.localizedDescription ?: NSLocalizedString(@"EZTTS.UnableToPlay", nil)];
                 return;
             }
             [self.player prepareToPlay];
@@ -410,7 +410,7 @@ static NSString *timestampString(void) {
     NSString *token = [EZAuthManager shared].accessToken;
     if (token.length == 0) {
         completion(nil, nil, [NSError errorWithDomain:@"TTS" code:401
-            userInfo:@{NSLocalizedDescriptionKey: @"Not logged in."}]);
+            userInfo:@{NSLocalizedDescriptionKey: NSLocalizedString(@"EZTTS.NotLoggedIn", nil)}]);
         return;
     }
 
@@ -458,7 +458,7 @@ static NSString *timestampString(void) {
         NSHTTPURLResponse *http = (NSHTTPURLResponse *)response;
         if (http.statusCode == 402) {
             // Parse balance/cost from response if available
-            NSString *coinMsg = @"You don't have enough coins for this synthesis.";
+            NSString *coinMsg = NSLocalizedString(@"EZTTS.InsufficientCoins", nil);
             if (data.length) {
                 NSDictionary *errJson = [NSJSONSerialization
                     JSONObjectWithData:data options:0 error:nil];
@@ -467,7 +467,7 @@ static NSString *timestampString(void) {
                     NSNumber *cost = errJson[@"cost"];
                     if (bal && cost) {
                         coinMsg = [NSString stringWithFormat:
-                            @"Need %@ coins, you have %@.", cost, bal];
+                            NSLocalizedString(@"EZTTS.NeedCoins", nil), cost, bal];
                     }
                 }
             }
@@ -477,13 +477,13 @@ static NSString *timestampString(void) {
         }
         if (http.statusCode == 403) {
             completion(nil, nil, [NSError errorWithDomain:@"TTS" code:403
-                userInfo:@{NSLocalizedDescriptionKey: @"Not authorized. Please sign in again."}]);
+                userInfo:@{NSLocalizedDescriptionKey: NSLocalizedString(@"EZTTS.NotAuthorized", nil)}]);
             return;
         }
         if (http.statusCode != 200) {
             NSString *msg = data.length
                 ? [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding]
-                : @"Server error";
+                : NSLocalizedString(@"EZTTS.ServerError", nil);
             completion(nil, nil, [NSError errorWithDomain:@"TTS" code:http.statusCode
                 userInfo:@{NSLocalizedDescriptionKey: msg}]);
             return;
@@ -494,7 +494,7 @@ static NSString *timestampString(void) {
                                                              options:0 error:&jerr];
         if (jerr || !json[@"audio_b64"]) {
             completion(nil, nil, [NSError errorWithDomain:@"TTS" code:-1
-                userInfo:@{NSLocalizedDescriptionKey: @"Invalid response from server."}]);
+                userInfo:@{NSLocalizedDescriptionKey: NSLocalizedString(@"EZTTS.InvalidServerResponse", nil)}]);
             return;
         }
 
@@ -502,7 +502,7 @@ static NSString *timestampString(void) {
             initWithBase64EncodedString:json[@"audio_b64"] options:0];
         if (!audioData || audioData.length == 0) {
             completion(nil, nil, [NSError errorWithDomain:@"TTS" code:-2
-                userInfo:@{NSLocalizedDescriptionKey: @"Empty audio returned."}]);
+                userInfo:@{NSLocalizedDescriptionKey: NSLocalizedString(@"EZTTS.EmptyAudio", nil)}]);
             return;
         }
 
@@ -519,7 +519,7 @@ static NSString *timestampString(void) {
                                     bitsPerSample:16];
             if (!wavData) {
                 completion(nil, nil, [NSError errorWithDomain:@"TTS" code:-3
-                    userInfo:@{NSLocalizedDescriptionKey: @"Failed to wrap PCM into WAV."}]);
+                    userInfo:@{NSLocalizedDescriptionKey: NSLocalizedString(@"EZTTS.FailedWavWrap", nil)}]);
                 return;
             }
             audioData = wavData;
@@ -734,7 +734,7 @@ static NSString *timestampString(void) {
 - (void)showAlert:(NSString *)title message:(NSString *)message {
     EZLogf(EZLogLevelInfo, @"UI", @"%@ — %@", title, message ?: @"");
     UIAlertController *ac = [UIAlertController alertControllerWithTitle:title message:message preferredStyle:UIAlertControllerStyleAlert];
-    [ac addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+    [ac addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"EZTTS.OK", nil) style:UIAlertActionStyleDefault handler:nil]];
     dispatch_async(dispatch_get_main_queue(), ^{
         [self presentViewController:ac animated:YES completion:nil];
     });

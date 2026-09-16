@@ -1,0 +1,139 @@
+/* EZCoinStoreViewController localization */
+
+"EZCoinStore.Title" = "🪙 EZ Coin Store";
+
+"EZCoinStore.CancelPlan" = "Cancel Plan";
+
+"EZCoinStore.Subscribe" = "Subscribe";
+
+"EZCoinStore.BuyNow" = "Buy Now";
+
+"EZCoinStore.Badge.Buy1Get1" = "🔥 BUY 1 GET 1";
+
+"EZCoinStore.Promo.SubscriptionBadgeFormat" = "+%ld FREE Coins*";
+
+"EZCoinStore.Promo.SubscriptionFootnote" = "*Extra coins are a one time bonus, not a monthly increase.";
+
+"EZCoinStore.Tier.Basic" = "Basic";
+
+"EZCoinStore.Tier.BasicSubtitle" = "400 coins / month\nIdeal for casual use";
+
+"EZCoinStore.Tier.BasicPrice" = "$5 / mo";
+
+"EZCoinStore.Tier.Standard" = "Standard";
+
+"EZCoinStore.Tier.StandardSubtitle" = "900 coins / month\nGreat for regular users";
+
+"EZCoinStore.Tier.StandardPrice" = "$10 / mo";
+
+"EZCoinStore.Badge.Popular" = "POPULAR";
+
+"EZCoinStore.Tier.Pro" = "Pro";
+
+"EZCoinStore.Tier.ProSubtitle" = "1,600 coins / month\nGreat for daily users";
+
+"EZCoinStore.Tier.ProPrice" = "$15 / mo";
+
+"EZCoinStore.Badge.BestValue" = "BEST VALUE";
+
+"EZCoinStore.Tier.Ultra" = "Ultra";
+
+"EZCoinStore.Tier.UltraSubtitle" = "2,500 coins / month\nPower users welcome";
+
+"EZCoinStore.Tier.UltraPrice" = "$20 / mo";
+
+"EZCoinStore.Badge.Ultra" = "ULTRA";
+
+"EZCoinStore.TopUp.Starter" = "Coin Starter Pack";
+
+"EZCoinStore.TopUp.StarterSubtitle" = "400 coins, one-time\nNever expires";
+
+"EZCoinStore.TopUp.Value" = "Coin Value Pack";
+
+"EZCoinStore.TopUp.ValueSubtitle" = "900 coins, one-time\nNever expires";
+
+"EZCoinStore.Badge.Save10" = "SAVE 10%";
+
+"EZCoinStore.Promo.Headline" = "🔥 BUY 1 GET 1 FREE 🔥";
+
+"EZCoinStore.Promo.Subtitle" = "All coins & subscriptions — limited time!";
+
+"EZCoinStore.LoadingBalance" = "Loading balance...";
+
+"EZCoinStore.ThisFeature" = "this feature";
+
+"EZCoinStore.NotEnoughCoins" = "⚠️ Not enough coins for %@. Top up below.";
+
+"EZCoinStore.NoActiveSubscription" = "No active subscription";
+
+"EZCoinStore.BalanceFormat" = "🪙 %ld coins   •   %@";
+
+"EZCoinStore.Section.Subscriptions" = "SUBSCRIPTIONS";
+
+"EZCoinStore.Section.OneTimeTopUps" = "ONE-TIME TOP-UPS";
+
+"EZCoinStore.DailyCoins" = "🎁 Daily Coins";
+
+"EZCoinStore.DailyCoins.FreeFormat" = "🎁 +%ld Free!";
+
+"EZCoinStore.DailyCoins.Free" = "🎁 Free Coins!";
+
+"EZCoinStore.DailyCoins.NextHours" = "🎁 Next: %ldh %ldm";
+
+"EZCoinStore.DailyCoins.NextMinutes" = "🎁 Next: %ldm %lds";
+
+"EZCoinStore.DailyCoins.NextSeconds" = "🎁 Next: %lds";
+
+"EZCoinStore.DailyCoins.Claiming" = "⏳ Claiming...";
+
+"EZCoinStore.Alert.NotSignedIn" = "Not Signed In";
+
+"EZCoinStore.Alert.SignInDailyCoins" = "Please sign in to claim your daily coins.";
+
+"EZCoinStore.Alert.NetworkError" = "Network Error";
+
+"EZCoinStore.Alert.ServerUnreachable" = "Couldn't reach the server. Please try again.";
+
+"EZCoinStore.Alert.AlreadyClaimed" = "Already Claimed";
+
+"EZCoinStore.Alert.AlreadyClaimedMessage" = "You've already claimed your free coins. Check back in 6 hours!";
+
+"EZCoinStore.Alert.GenericRetry" = "Something went wrong. Please try again.";
+
+"EZCoinStore.Alert.Error" = "Error";
+
+"EZCoinStore.Ledger" = "Ledger";
+
+"EZCoinStore.Alert.NotLoggedIn" = "Not logged in";
+
+"EZCoinStore.Alert.SignInFirst" = "Please sign in first.";
+
+"EZCoinStore.Alert.CancelSubscription" = "Cancel Subscription?";
+
+"EZCoinStore.Alert.CancelSubscriptionMessage" = "Your remaining coins will stay in your account. This cannot be undone.";
+
+"EZCoinStore.KeepPlan" = "Keep Plan";
+
+"EZCoinStore.Alert.Cancelled" = "Cancelled";
+
+"EZCoinStore.Alert.CancelledMessage" = "Your subscription has been cancelled. Your coins remain available.";
+
+"EZCoinStore.Alert.CancelFailed" = "Could not cancel subscription. Please try again.";
+
+"EZCoinStore.Alert.CheckoutStartFailed" = "Could not start checkout. Try again.";
+
+"EZCoinStore.Alert.PurchaseConfirmFailed" = "Could not confirm purchase. Check your balance — coins may still have been added.";
+
+"EZCoinStore.Alert.PurchaseNotConfirmed" = "Purchase could not be confirmed.";
+
+"EZCoinStore.Alert.PurchaseIssue" = "Purchase Issue";
+
+"EZCoinStore.Celebration.CoinsAdded" = "🪙 Coins Added!";
+
+"EZCoinStore.Celebration.AmountFormat" = "+%ld coins";
+
+"EZCoinStore.Celebration.NewBalanceFormat" = "New balance: %ld coins";
+
+"EZCoinStore.Celebration.Sweet" = "Sweet!";
+
+"EZCoinStore.OK" = "OK";

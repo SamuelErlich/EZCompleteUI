@@ -75,3 +75,214 @@
 "EZSubscription.ViewPlans" = "Xem các gói";
 "EZSubscription.ModelRequiredFormat" = "%@ chỉ khả dụng với gói đăng ký EZComplete đang hoạt động. Hãy đăng ký để dùng mô hình này.";
 "EZSubscription.ImageSettingsRequired" = "Hình ảnh chất lượng cao, đầu ra PNG và nền không đục yêu cầu gói đăng ký EZComplete đang hoạt động.";
+
+/* EZCoinStoreViewController localization */
+
+"EZCoinStore.Title" = "🪙 Cửa hàng xu EZ";
+
+"EZCoinStore.CancelPlan" = "Hủy gói";
+
+"EZCoinStore.Subscribe" = "Đăng ký";
+
+"EZCoinStore.BuyNow" = "Mua ngay";
+
+"EZCoinStore.Badge.Buy1Get1" = "🔥 MUA 1 TẶNG 1";
+
+"EZCoinStore.Promo.SubscriptionBadgeFormat" = "+%ld XU MIỄN PHÍ*";
+
+"EZCoinStore.Promo.SubscriptionFootnote" = "*Xu bổ sung là phần thưởng một lần, không phải tăng thêm hàng tháng.";
+
+"EZCoinStore.Tier.Basic" = "Cơ bản";
+
+"EZCoinStore.Tier.BasicSubtitle" = "400 xu / tháng\nLý tưởng cho nhu cầu sử dụng không thường xuyên";
+
+"EZCoinStore.Tier.BasicPrice" = "$5 / tháng";
+
+"EZCoinStore.Tier.Standard" = "Tiêu chuẩn";
+
+"EZCoinStore.Tier.StandardSubtitle" = "900 xu / tháng\nPhù hợp cho người dùng thường xuyên";
+
+"EZCoinStore.Tier.StandardPrice" = "$10 / tháng";
+
+"EZCoinStore.Badge.Popular" = "PHỔ BIẾN";
+
+"EZCoinStore.Tier.Pro" = "Pro";
+
+"EZCoinStore.Tier.ProSubtitle" = "1.600 xu / tháng\nPhù hợp cho người dùng hằng ngày";
+
+"EZCoinStore.Tier.ProPrice" = "$15 / tháng";
+
+"EZCoinStore.Badge.BestValue" = "GIÁ TRỊ TỐT NHẤT";
+
+"EZCoinStore.Tier.Ultra" = "Ultra";
+
+"EZCoinStore.Tier.UltraSubtitle" = "2.500 xu / tháng\nDành cho người dùng chuyên sâu";
+
+"EZCoinStore.Tier.UltraPrice" = "$20 / tháng";
+
+"EZCoinStore.Badge.Ultra" = "ULTRA";
+
+"EZCoinStore.TopUp.Starter" = "Gói xu khởi đầu";
+
+"EZCoinStore.TopUp.StarterSubtitle" = "400 xu, một lần\nKhông bao giờ hết hạn";
+
+"EZCoinStore.TopUp.Value" = "Gói xu tiết kiệm";
+
+"EZCoinStore.TopUp.ValueSubtitle" = "900 xu, một lần\nKhông bao giờ hết hạn";
+
+"EZCoinStore.Badge.Save10" = "TIẾT KIỆM 10%";
+
+"EZCoinStore.Promo.Headline" = "🔥 MUA 1 TẶNG 1 MIỄN PHÍ 🔥";
+
+"EZCoinStore.Promo.Subtitle" = "Tất cả xu và gói đăng ký – chỉ trong thời gian giới hạn!";
+
+"EZCoinStore.LoadingBalance" = "Đang tải số dư...";
+
+"EZCoinStore.ThisFeature" = "tính năng này";
+
+"EZCoinStore.NotEnoughCoins" = "⚠️ Không đủ xu cho %@. Nạp thêm bên dưới.";
+
+"EZCoinStore.NoActiveSubscription" = "Không có gói đăng ký đang hoạt động";
+
+"EZCoinStore.BalanceFormat" = "🪙 %ld xu   •   %@";
+
+"EZCoinStore.Section.Subscriptions" = "GÓI ĐĂNG KÝ";
+
+"EZCoinStore.Section.OneTimeTopUps" = "NẠP MỘT LẦN";
+
+"EZCoinStore.DailyCoins" = "🎁 Xu hằng ngày";
+
+"EZCoinStore.DailyCoins.FreeFormat" = "🎁 +%ld miễn phí!";
+
+"EZCoinStore.DailyCoins.Free" = "🎁 Xu miễn phí!";
+
+"EZCoinStore.DailyCoins.NextHours" = "🎁 Tiếp theo: %ldg %ldp";
+
+"EZCoinStore.DailyCoins.NextMinutes" = "🎁 Tiếp theo: %ldp %lds";
+
+"EZCoinStore.DailyCoins.NextSeconds" = "🎁 Tiếp theo: %lds";
+
+"EZCoinStore.DailyCoins.Claiming" = "⏳ Đang nhận...";
+
+"EZCoinStore.Alert.NotSignedIn" = "Chưa đăng nhập";
+
+"EZCoinStore.Alert.SignInDailyCoins" = "Vui lòng đăng nhập để nhận xu hằng ngày.";
+
+"EZCoinStore.Alert.NetworkError" = "Lỗi mạng";
+
+"EZCoinStore.Alert.ServerUnreachable" = "Không thể kết nối máy chủ. Vui lòng thử lại.";
+
+"EZCoinStore.Alert.AlreadyClaimed" = "Đã nhận";
+
+"EZCoinStore.Alert.AlreadyClaimedMessage" = "Bạn đã nhận xu miễn phí. Hãy quay lại sau 6 giờ!";
+
+"EZCoinStore.Alert.GenericRetry" = "Đã xảy ra lỗi. Vui lòng thử lại.";
+
+"EZCoinStore.Alert.Error" = "Lỗi";
+
+"EZCoinStore.Ledger" = "Sổ cái";
+
+"EZCoinStore.Alert.NotLoggedIn" = "Chưa đăng nhập";
+
+"EZCoinStore.Alert.SignInFirst" = "Vui lòng đăng nhập trước.";
+
+"EZCoinStore.Alert.CancelSubscription" = "Hủy gói đăng ký?";
+
+"EZCoinStore.Alert.CancelSubscriptionMessage" = "Số xu còn lại sẽ vẫn trong tài khoản của bạn. Không thể hoàn tác.";
+
+"EZCoinStore.KeepPlan" = "Giữ gói";
+
+"EZCoinStore.Alert.Cancelled" = "Đã hủy";
+
+"EZCoinStore.Alert.CancelledMessage" = "Gói đăng ký của bạn đã được hủy. Xu của bạn vẫn còn khả dụng.";
+
+"EZCoinStore.Alert.CancelFailed" = "Không thể hủy gói đăng ký. Vui lòng thử lại.";
+
+"EZCoinStore.Alert.CheckoutStartFailed" = "Không thể bắt đầu thanh toán. Vui lòng thử lại.";
+
+"EZCoinStore.Alert.PurchaseConfirmFailed" = "Không thể xác nhận giao dịch mua. Hãy kiểm tra số dư, xu có thể đã được cộng.";
+
+"EZCoinStore.Alert.PurchaseNotConfirmed" = "Không thể xác nhận giao dịch mua.";
+
+"EZCoinStore.Alert.PurchaseIssue" = "Vấn đề khi mua";
+
+"EZCoinStore.Celebration.CoinsAdded" = "🪙 Đã thêm xu!";
+
+"EZCoinStore.Celebration.AmountFormat" = "+%ld xu";
+
+"EZCoinStore.Celebration.NewBalanceFormat" = "Số dư mới: %ld xu";
+
+"EZCoinStore.Celebration.Sweet" = "Tuyệt!";
+
+"EZCoinStore.OK" = "OK";
+
+/* ElevenLabs voice cloning */
+"ElevenLabsClone.Title" = "Trình nhân bản giọng nói";
+"ElevenLabsClone.VoiceName" = "TÊN GIỌNG NÓI";
+"ElevenLabsClone.VoiceNamePlaceholder" = "vd. GiongNoiChuyenNghiep";
+"ElevenLabsClone.LanguageCode" = "MÃ NGÔN NGỮ";
+"ElevenLabsClone.LanguageCodePlaceholder" = "vd. vi";
+"ElevenLabsClone.Instant" = "Tức thì (IVC)";
+"ElevenLabsClone.Professional" = "Chuyên nghiệp (PVC)";
+"ElevenLabsClone.ProfessionalNote" = "⚠️ Nhân bản giọng nói chuyên nghiệp — cần gói Creator (sắp có)";
+"ElevenLabsClone.RemoveNoise" = "Loại bỏ tiếng ồn nền";
+"ElevenLabsClone.StartRecording" = "⏺  Bắt đầu ghi âm";
+"ElevenLabsClone.StopRecording" = "⏹  Dừng ghi âm";
+"ElevenLabsClone.Play" = "▶︎ Phát";
+"ElevenLabsClone.Stop" = "⏹ Dừng";
+"ElevenLabsClone.ImportFile" = "📂  Nhập tệp";
+"ElevenLabsClone.QuickLook" = "🔍  Xem nhanh";
+"ElevenLabsClone.UploadClone" = "Tải lên và nhân bản giọng nói";
+"ElevenLabsClone.MyVoices" = "Giọng nói đã nhân bản của tôi";
+"ElevenLabsClone.Refresh" = "↻ Làm mới";
+"ElevenLabsClone.Notice" = "Thông báo";
+"ElevenLabsClone.OK" = "OK";
+"ElevenLabsClone.MicrophoneDenied" = "Từ chối quyền truy cập micrô";
+"ElevenLabsClone.MicrophoneDeniedMessage" = "Bật quyền truy cập micrô trong Cài đặt để ghi âm.";
+"ElevenLabsClone.RecordError" = "Lỗi ghi âm";
+"ElevenLabsClone.RecordInitFailed" = "Không thể khởi tạo trình ghi âm.";
+"ElevenLabsClone.RecordPrepareFailed" = "Không thể chuẩn bị ghi âm.";
+"ElevenLabsClone.RecordingFailed" = "Ghi âm thất bại";
+"ElevenLabsClone.RecordingFailedMessage" = "Bản ghi đã bị gián đoạn hoặc thất bại.";
+"ElevenLabsClone.PlaybackError" = "Lỗi phát lại";
+"ElevenLabsClone.PlayerCreateFailed" = "Không thể tạo trình phát.";
+"ElevenLabsClone.NoRecording" = "Không có bản ghi";
+"ElevenLabsClone.NoRecordingMessage" = "Vui lòng ghi âm hoặc nhập mẫu trước.";
+"ElevenLabsClone.ImportFailed" = "Nhập tệp thất bại";
+"ElevenLabsClone.CopyFailed" = "Không thể sao chép tệp.";
+"ElevenLabsClone.SubscriptionRequired" = "Yêu cầu đăng ký";
+"ElevenLabsClone.SubscriptionRequiredMessage" = "Tính năng nhân bản giọng nói cần gói đăng ký EZComplete đang hoạt động. Hãy đăng ký để tạo giọng nói nhân bản.";
+"ElevenLabsClone.NotNow" = "Để sau";
+"ElevenLabsClone.ViewPlans" = "Xem gói";
+"ElevenLabsClone.MissingName" = "Thiếu tên";
+"ElevenLabsClone.MissingNameMessage" = "Nhập tên giọng nói.";
+"ElevenLabsClone.NotSignedIn" = "Chưa đăng nhập";
+"ElevenLabsClone.SignInCloneMessage" = "Đăng nhập tài khoản EZComplete để nhân bản giọng nói.";
+"ElevenLabsClone.SubscriptionCheckUnavailable" = "Không thể kiểm tra gói đăng ký";
+"ElevenLabsClone.SubscriptionCheckUnavailableMessage" = "Không thể xác minh gói đăng ký của bạn. Vui lòng thử lại trước khi nhân bản giọng nói.";
+"ElevenLabsClone.EmptyFile" = "Tệp trống";
+"ElevenLabsClone.EmptyFileMessage" = "Tệp ghi âm trống.";
+"ElevenLabsClone.NetworkError" = "Lỗi mạng";
+"ElevenLabsClone.NeedMoreCoins" = "Cần thêm xu";
+"ElevenLabsClone.NeedMoreCoinsMessage" = "Bạn có %ld xu nhưng nhân bản tốn %ld xu.";
+"ElevenLabsClone.AccessDenied" = "Truy cập bị từ chối.";
+"ElevenLabsClone.VoiceSlotFull" = "Đã hết chỗ cho giọng nói";
+"ElevenLabsClone.NotAvailable" = "Không khả dụng";
+"ElevenLabsClone.UploadFailed" = "Tải lên thất bại.";
+"ElevenLabsClone.CloneFailed" = "Nhân bản thất bại";
+"ElevenLabsClone.NoVoiceID" = "Không có ID giọng nói trong phản hồi.";
+"ElevenLabsClone.SlotsUsedFormat" = "\\nĐã dùng: %ld / %ld chỗ";
+"ElevenLabsClone.VoiceCloned" = "Đã nhân bản giọng nói";
+"ElevenLabsClone.VoiceClonedMessage" = "ID giọng nói: %@%@";
+"ElevenLabsClone.UnnamedVoice" = "Giọng nói chưa có tên";
+"ElevenLabsClone.NoClonedVoices" = "Không tìm thấy giọng nói đã nhân bản. Hãy ghi âm và tải lên để tạo.";
+"ElevenLabsClone.ShowingVoicesFormat" = "Đang hiển thị %lu trên %lu giọng nói";
+"ElevenLabsClone.ShowMoreVoices" = "Hiển thị thêm giọng nói";
+"ElevenLabsClone.Delete" = "Xóa";
+"ElevenLabsClone.ThisVoice" = "giọng nói này";
+"ElevenLabsClone.DeleteVoice" = "Xóa giọng nói";
+"ElevenLabsClone.DeleteVoiceMessage" = "Xóa vĩnh viễn \"%@\" khỏi ElevenLabs? Không thể hoàn tác thao tác này.";
+"ElevenLabsClone.Cancel" = "Hủy";
+"ElevenLabsClone.SignInDeleteMessage" = "Đăng nhập để xóa giọng nói.";
+"ElevenLabsClone.DeleteFailedMessage" = "Xóa thất bại.";
+"ElevenLabsClone.DeleteFailed" = "Xóa thất bại";

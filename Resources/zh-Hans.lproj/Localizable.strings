@@ -75,3 +75,214 @@
 "EZSubscription.ViewPlans" = "查看套餐";
 "EZSubscription.ModelRequiredFormat" = "%@ 需要有效的 EZComplete 订阅才能使用。请订阅后使用此模型。";
 "EZSubscription.ImageSettingsRequired" = "高质量图像、PNG 输出和非不透明背景需要有效的 EZComplete 订阅。";
+
+/* EZCoinStoreViewController localization */
+
+"EZCoinStore.Title" = "🪙 EZ 金币商店";
+
+"EZCoinStore.CancelPlan" = "取消套餐";
+
+"EZCoinStore.Subscribe" = "订阅";
+
+"EZCoinStore.BuyNow" = "立即购买";
+
+"EZCoinStore.Badge.Buy1Get1" = "🔥 买一送一";
+
+"EZCoinStore.Promo.SubscriptionBadgeFormat" = "+%ld 免费金币*";
+
+"EZCoinStore.Promo.SubscriptionFootnote" = "*额外金币是一次性奖励，不会增加每月金币额度。";
+
+"EZCoinStore.Tier.Basic" = "基础";
+
+"EZCoinStore.Tier.BasicSubtitle" = "每月 400 金币\n适合偶尔使用";
+
+"EZCoinStore.Tier.BasicPrice" = "$5 / 月";
+
+"EZCoinStore.Tier.Standard" = "标准";
+
+"EZCoinStore.Tier.StandardSubtitle" = "每月 900 金币\n适合经常使用";
+
+"EZCoinStore.Tier.StandardPrice" = "$10 / 月";
+
+"EZCoinStore.Badge.Popular" = "热门";
+
+"EZCoinStore.Tier.Pro" = "专业";
+
+"EZCoinStore.Tier.ProSubtitle" = "每月 1,600 金币\n适合每日使用";
+
+"EZCoinStore.Tier.ProPrice" = "$15 / 月";
+
+"EZCoinStore.Badge.BestValue" = "超值";
+
+"EZCoinStore.Tier.Ultra" = "Ultra";
+
+"EZCoinStore.Tier.UltraSubtitle" = "每月 2,500 金币\n欢迎高级用户";
+
+"EZCoinStore.Tier.UltraPrice" = "$20 / 月";
+
+"EZCoinStore.Badge.Ultra" = "ULTRA";
+
+"EZCoinStore.TopUp.Starter" = "金币入门包";
+
+"EZCoinStore.TopUp.StarterSubtitle" = "400 金币，一次性购买\n永不过期";
+
+"EZCoinStore.TopUp.Value" = "金币超值包";
+
+"EZCoinStore.TopUp.ValueSubtitle" = "900 金币，一次性购买\n永不过期";
+
+"EZCoinStore.Badge.Save10" = "节省 10%";
+
+"EZCoinStore.Promo.Headline" = "🔥 买一送一免费 🔥";
+
+"EZCoinStore.Promo.Subtitle" = "所有金币和订阅限时优惠！";
+
+"EZCoinStore.LoadingBalance" = "正在加载余额...";
+
+"EZCoinStore.ThisFeature" = "此功能";
+
+"EZCoinStore.NotEnoughCoins" = "⚠️ %@ 的金币不足。请在下方充值。";
+
+"EZCoinStore.NoActiveSubscription" = "没有有效订阅";
+
+"EZCoinStore.BalanceFormat" = "🪙 %ld 金币   •   %@";
+
+"EZCoinStore.Section.Subscriptions" = "订阅";
+
+"EZCoinStore.Section.OneTimeTopUps" = "一次性充值";
+
+"EZCoinStore.DailyCoins" = "🎁 每日金币";
+
+"EZCoinStore.DailyCoins.FreeFormat" = "🎁 +%ld 免费金币！";
+
+"EZCoinStore.DailyCoins.Free" = "🎁 免费金币！";
+
+"EZCoinStore.DailyCoins.NextHours" = "🎁 下次：%ld小时 %ld分钟";
+
+"EZCoinStore.DailyCoins.NextMinutes" = "🎁 下次：%ld分钟 %ld秒";
+
+"EZCoinStore.DailyCoins.NextSeconds" = "🎁 下次：%ld秒";
+
+"EZCoinStore.DailyCoins.Claiming" = "⏳ 正在领取...";
+
+"EZCoinStore.Alert.NotSignedIn" = "未登录";
+
+"EZCoinStore.Alert.SignInDailyCoins" = "请先登录以领取每日金币。";
+
+"EZCoinStore.Alert.NetworkError" = "网络错误";
+
+"EZCoinStore.Alert.ServerUnreachable" = "无法连接服务器。请重试。";
+
+"EZCoinStore.Alert.AlreadyClaimed" = "已领取";
+
+"EZCoinStore.Alert.AlreadyClaimedMessage" = "你已经领取过免费金币。6 小时后再来领取！";
+
+"EZCoinStore.Alert.GenericRetry" = "出现问题。请重试。";
+
+"EZCoinStore.Alert.Error" = "错误";
+
+"EZCoinStore.Ledger" = "账本";
+
+"EZCoinStore.Alert.NotLoggedIn" = "未登录";
+
+"EZCoinStore.Alert.SignInFirst" = "请先登录。";
+
+"EZCoinStore.Alert.CancelSubscription" = "取消订阅？";
+
+"EZCoinStore.Alert.CancelSubscriptionMessage" = "你剩余的金币会保留在账户中。此操作无法撤销。";
+
+"EZCoinStore.KeepPlan" = "保留套餐";
+
+"EZCoinStore.Alert.Cancelled" = "已取消";
+
+"EZCoinStore.Alert.CancelledMessage" = "你的订阅已取消。金币仍然可用。";
+
+"EZCoinStore.Alert.CancelFailed" = "无法取消订阅。请重试。";
+
+"EZCoinStore.Alert.CheckoutStartFailed" = "无法开始结账。请重试。";
+
+"EZCoinStore.Alert.PurchaseConfirmFailed" = "无法确认购买。请检查余额，金币可能已经到账。";
+
+"EZCoinStore.Alert.PurchaseNotConfirmed" = "无法确认购买。";
+
+"EZCoinStore.Alert.PurchaseIssue" = "购买问题";
+
+"EZCoinStore.Celebration.CoinsAdded" = "🪙 金币已添加！";
+
+"EZCoinStore.Celebration.AmountFormat" = "+%ld 金币";
+
+"EZCoinStore.Celebration.NewBalanceFormat" = "新余额：%ld 金币";
+
+"EZCoinStore.Celebration.Sweet" = "太好了！";
+
+"EZCoinStore.OK" = "好";
+
+/* ElevenLabs voice cloning */
+"ElevenLabsClone.Title" = "声音克隆";
+"ElevenLabsClone.VoiceName" = "声音名称";
+"ElevenLabsClone.VoiceNamePlaceholder" = "例如：我的专业声音";
+"ElevenLabsClone.LanguageCode" = "语言代码";
+"ElevenLabsClone.LanguageCodePlaceholder" = "例如：zh";
+"ElevenLabsClone.Instant" = "即时 (IVC)";
+"ElevenLabsClone.Professional" = "专业 (PVC)";
+"ElevenLabsClone.ProfessionalNote" = "⚠️ 专业声音克隆 — 需要 Creator 套餐（即将推出）";
+"ElevenLabsClone.RemoveNoise" = "移除背景噪声";
+"ElevenLabsClone.StartRecording" = "⏺  开始录音";
+"ElevenLabsClone.StopRecording" = "⏹  停止录音";
+"ElevenLabsClone.Play" = "▶︎ 播放";
+"ElevenLabsClone.Stop" = "⏹ 停止";
+"ElevenLabsClone.ImportFile" = "📂  导入文件";
+"ElevenLabsClone.QuickLook" = "🔍  快速查看";
+"ElevenLabsClone.UploadClone" = "上传并克隆声音";
+"ElevenLabsClone.MyVoices" = "我的已克隆声音";
+"ElevenLabsClone.Refresh" = "↻ 刷新";
+"ElevenLabsClone.Notice" = "提示";
+"ElevenLabsClone.OK" = "好";
+"ElevenLabsClone.MicrophoneDenied" = "麦克风访问被拒绝";
+"ElevenLabsClone.MicrophoneDeniedMessage" = "请在“设置”中启用麦克风访问权限以进行录音。";
+"ElevenLabsClone.RecordError" = "录音错误";
+"ElevenLabsClone.RecordInitFailed" = "无法初始化录音机。";
+"ElevenLabsClone.RecordPrepareFailed" = "无法准备录音。";
+"ElevenLabsClone.RecordingFailed" = "录音失败";
+"ElevenLabsClone.RecordingFailedMessage" = "录音被中断或失败。";
+"ElevenLabsClone.PlaybackError" = "播放错误";
+"ElevenLabsClone.PlayerCreateFailed" = "无法创建播放器。";
+"ElevenLabsClone.NoRecording" = "没有录音";
+"ElevenLabsClone.NoRecordingMessage" = "请先录制或导入一个样本。";
+"ElevenLabsClone.ImportFailed" = "导入失败";
+"ElevenLabsClone.CopyFailed" = "无法复制文件。";
+"ElevenLabsClone.SubscriptionRequired" = "需要订阅";
+"ElevenLabsClone.SubscriptionRequiredMessage" = "声音克隆需要有效的 EZComplete 订阅。请订阅以创建克隆声音。";
+"ElevenLabsClone.NotNow" = "暂不";
+"ElevenLabsClone.ViewPlans" = "查看套餐";
+"ElevenLabsClone.MissingName" = "缺少名称";
+"ElevenLabsClone.MissingNameMessage" = "请输入声音名称。";
+"ElevenLabsClone.NotSignedIn" = "未登录";
+"ElevenLabsClone.SignInCloneMessage" = "请登录您的 EZComplete 帐户以克隆声音。";
+"ElevenLabsClone.SubscriptionCheckUnavailable" = "无法检查订阅";
+"ElevenLabsClone.SubscriptionCheckUnavailableMessage" = "无法验证您的订阅。请在克隆声音前重试。";
+"ElevenLabsClone.EmptyFile" = "空文件";
+"ElevenLabsClone.EmptyFileMessage" = "录音文件为空。";
+"ElevenLabsClone.NetworkError" = "网络错误";
+"ElevenLabsClone.NeedMoreCoins" = "需要更多金币";
+"ElevenLabsClone.NeedMoreCoinsMessage" = "您有 %ld 枚金币，但克隆需要 %ld 枚金币。";
+"ElevenLabsClone.AccessDenied" = "访问被拒绝。";
+"ElevenLabsClone.VoiceSlotFull" = "声音名额已满";
+"ElevenLabsClone.NotAvailable" = "不可用";
+"ElevenLabsClone.UploadFailed" = "上传失败。";
+"ElevenLabsClone.CloneFailed" = "克隆失败";
+"ElevenLabsClone.NoVoiceID" = "响应中没有声音 ID。";
+"ElevenLabsClone.SlotsUsedFormat" = "\\n已用名额：%ld / %ld";
+"ElevenLabsClone.VoiceCloned" = "声音已克隆";
+"ElevenLabsClone.VoiceClonedMessage" = "声音 ID：%@%@";
+"ElevenLabsClone.UnnamedVoice" = "未命名声音";
+"ElevenLabsClone.NoClonedVoices" = "未找到已克隆声音。录制并上传样本以创建一个。";
+"ElevenLabsClone.ShowingVoicesFormat" = "正在显示 %lu / %lu 个声音";
+"ElevenLabsClone.ShowMoreVoices" = "显示更多声音";
+"ElevenLabsClone.Delete" = "删除";
+"ElevenLabsClone.ThisVoice" = "此声音";
+"ElevenLabsClone.DeleteVoice" = "删除声音";
+"ElevenLabsClone.DeleteVoiceMessage" = "要从 ElevenLabs 永久删除“%@”吗？此操作无法撤销。";
+"ElevenLabsClone.Cancel" = "取消";
+"ElevenLabsClone.SignInDeleteMessage" = "请登录以删除声音。";
+"ElevenLabsClone.DeleteFailedMessage" = "删除失败。";
+"ElevenLabsClone.DeleteFailed" = "删除失败";

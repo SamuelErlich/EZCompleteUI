@@ -1,0 +1,288 @@
+/* EZModelPickerViewController localization */
+
+"EZModelPicker.Title" = "मॉडल चुनें";
+
+"EZModelSection.FrontierReasoning" = "उन्नत तर्क";
+"EZModelSection.GPT4Chat" = "GPT-4 चैट";
+"EZModelSection.ImageGeneration" = "चित्र निर्माण";
+"EZModelSection.AudioTranscription" = "ऑडियो ट्रांसक्रिप्शन";
+
+"EZModelLabel.ChatVisionNewest" = "💬 चैट + 👁 विज़न ⭐ नवीनतम";
+"EZModelLabel.ChatVision" = "💬 चैट + 👁 विज़न";
+"EZModelLabel.ChatVisionBalanced" = "💬 चैट + 👁 विज़न (संतुलित)";
+"EZModelLabel.ChatVisionFastCheap" = "💬 चैट + 👁 विज़न (तेज़/किफ़ायती)";
+"EZModelLabel.ChatOnly" = "💬 केवल चैट";
+"EZModelLabel.ImageGenNewestFast" = "🖼 चित्र निर्माण (नवीनतम, तेज़) — कम/मध्यम/उच्च/बहुत उच्च/अधिकतम";
+"EZModelLabel.ImageGenEditPrecision" = "🖼 चित्र निर्माण + ✏️ संपादन (सटीक) — कम/मध्यम/उच्च/बहुत उच्च/अधिकतम";
+"EZModelLabel.ImageGenEdit" = "🖼 चित्र निर्माण + ✏️ संपादन — कम/मध्यम/उच्च";
+"EZModelLabel.ImageGen" = "🖼 चित्र निर्माण";
+"EZModelLabel.ImageGenFastCheap" = "🖼 चित्र निर्माण (तेज़/किफ़ायती)";
+"EZModelLabel.ChatGPTImageLatest" = "🖼 ChatGPT चित्र (नवीनतम)";
+"EZModelLabel.AudioTranscriptionOnly" = "🎙 केवल ऑडियो ट्रांसक्रिप्शन";
+
+
+/* TextToSpeechViewController localization */
+
+"EZTTS.Title" = "टेक्स्ट से आवाज़";
+
+"EZTTS.PromptHeader" = "इसे क्या कहना चाहिए?";
+
+"EZTTS.VoiceHeader" = "आवाज़";
+
+"EZTTS.SpeedFormat" = "गति: %.2f×";
+
+"EZTTS.Generate" = "बनाएँ";
+
+"EZTTS.ChooseVoice" = "आवाज़ चुनें…";
+
+"EZTTS.CharactersRemaining" = "%lu अक्षर शेष";
+
+"EZTTS.MissingTextTitle" = "टेक्स्ट नहीं है";
+
+"EZTTS.MissingTextMessage" = "बोलने के लिए टेक्स्ट दर्ज करें।";
+
+"EZTTS.ErrorTitle" = "TTS त्रुटि";
+
+"EZTTS.FailedToSynthesize" = "आवाज़ बनाना विफल रहा।";
+
+"EZTTS.NoAudioReturned" = "कोई ऑडियो प्राप्त नहीं हुआ।";
+
+"EZTTS.PlaybackError" = "प्लेबैक त्रुटि";
+
+"EZTTS.UnableToPlay" = "ऑडियो चलाया नहीं जा सका।";
+
+"EZTTS.NotLoggedIn" = "साइन इन नहीं हैं।";
+
+"EZTTS.NotAuthorized" = "अनुमति नहीं है। कृपया फिर से साइन इन करें।";
+
+"EZTTS.InvalidServerResponse" = "सर्वर से अमान्य उत्तर।";
+
+"EZTTS.EmptyAudio" = "खाली ऑडियो प्राप्त हुआ।";
+
+"EZTTS.FailedWavWrap" = "PCM को WAV में बदलना विफल रहा।";
+
+"EZTTS.InsufficientCoins" = "इस आवाज़ के लिए आपके पास पर्याप्त कॉइन नहीं हैं।";
+
+"EZTTS.NeedCoins" = "%@ कॉइन चाहिए, आपके पास %@ हैं।";
+
+"EZTTS.ServerError" = "सर्वर त्रुटि";
+
+"EZTTS.OK" = "ठीक है";
+
+/* Subscription paywall */
+"EZSubscription.RequiredTitle" = "सदस्यता आवश्यक है";
+"EZSubscription.NotNow" = "अभी नहीं";
+"EZSubscription.ViewPlans" = "प्लान देखें";
+"EZSubscription.ModelRequiredFormat" = "%@ का उपयोग करने के लिए सक्रिय EZComplete सदस्यता आवश्यक है।";
+"EZSubscription.ImageSettingsRequired" = "उच्च-गुणवत्ता चित्रों, PNG आउटपुट और पारदर्शी पृष्ठभूमि के लिए सक्रिय EZComplete सदस्यता आवश्यक है।";
+
+/* EZCoinStoreViewController localization */
+
+"EZCoinStore.Title" = "🪙 ईज़ी कॉइन स्टोर";
+
+"EZCoinStore.CancelPlan" = "योजना रद्द करें";
+
+"EZCoinStore.Subscribe" = "सदस्यता लें";
+
+"EZCoinStore.BuyNow" = "अभी खरीदें";
+
+"EZCoinStore.Badge.Buy1Get1" = "🔥 1 खरीदें 1 पाएं";
+
+"EZCoinStore.Promo.SubscriptionBadgeFormat" = "+%ld मुफ़्त सिक्के*";
+
+"EZCoinStore.Promo.SubscriptionFootnote" = "*अतिरिक्त सिक्के एक बार का बोनस है, मासिक वृद्धि नहीं।";
+
+"EZCoinStore.Tier.Basic" = "बुनियादी";
+
+"EZCoinStore.Tier.BasicSubtitle" = "400 सिक्के/माह\\nआकस्मिक उपयोग के लिए आदर्श";
+
+"EZCoinStore.Tier.BasicPrice" = "$5/माह";
+
+"EZCoinStore.Tier.Standard" = "मानक";
+
+"EZCoinStore.Tier.StandardSubtitle" = "900 सिक्के/माह\\nनियमित उपयोगकर्ताओं के लिए बढ़िया";
+
+"EZCoinStore.Tier.StandardPrice" = "$10/माह";
+
+"EZCoinStore.Badge.Popular" = "लोकप्रिय";
+
+"EZCoinStore.Tier.Pro" = "प्रो";
+
+"EZCoinStore.Tier.ProSubtitle" = "1,600 सिक्के/माह\\nदैनिक उपयोगकर्ताओं के लिए बढ़िया";
+
+"EZCoinStore.Tier.ProPrice" = "$15/माह";
+
+"EZCoinStore.Badge.BestValue" = "सर्वोत्तम मूल्य";
+
+"EZCoinStore.Tier.Ultra" = "अल्ट्रा";
+
+"EZCoinStore.Tier.UltraSubtitle" = "2,500 सिक्के/माह\\nबिजली उपयोगकर्ताओं का स्वागत है";
+
+"EZCoinStore.Tier.UltraPrice" = "$20/माह";
+
+"EZCoinStore.Badge.Ultra" = "अल्ट्रा";
+
+"EZCoinStore.TopUp.Starter" = "सिक्का स्टार्टर पैक";
+
+"EZCoinStore.TopUp.StarterSubtitle" = "400 सिक्के, एक बार\\nकभी समाप्त नहीं होते";
+
+"EZCoinStore.TopUp.Value" = "सिक्का मूल्य पैक";
+
+"EZCoinStore.TopUp.ValueSubtitle" = "900 सिक्के, एकमुश्त\\nकभी समाप्त नहीं होते";
+
+"EZCoinStore.Badge.Save10" = "10% बचाएं";
+
+"EZCoinStore.Promo.Headline" = "🔥1 खरीदें 1 मुफ़्त पाएं 🔥";
+
+"EZCoinStore.Promo.Subtitle" = "सभी सिक्के और सदस्यताएँ - सीमित समय!";
+
+"EZCoinStore.LoadingBalance" = "शेष लोड हो रहा है...";
+
+"EZCoinStore.ThisFeature" = "यह सुविधा";
+
+"EZCoinStore.NotEnoughCoins" = "⚠️ %@ के लिए पर्याप्त सिक्के नहीं। नीचे ऊपर ऊपर.";
+
+"EZCoinStore.NoActiveSubscription" = "कोई सक्रिय सदस्यता नहीं";
+
+"EZCoinStore.BalanceFormat" = "🪙 %ld सिक्के • %@";
+
+"EZCoinStore.Section.Subscriptions" = "सदस्यताएँ";
+
+"EZCoinStore.Section.OneTimeTopUps" = "एक बार का टॉप-अप";
+
+"EZCoinStore.DailyCoins" = "🎁 दैनिक सिक्के";
+
+"EZCoinStore.DailyCoins.FreeFormat" = "🎁 +%ld निःशुल्क!";
+
+"EZCoinStore.DailyCoins.Free" = "🎁 मुफ़्त सिक्के!";
+
+"EZCoinStore.DailyCoins.NextHours" = "🎁 अगला: %ldh %ldm";
+
+"EZCoinStore.DailyCoins.NextMinutes" = "🎁 अगला: %ldm %lds";
+
+"EZCoinStore.DailyCoins.NextSeconds" = "🎁 अगला: %lds";
+
+"EZCoinStore.DailyCoins.Claiming" = "⏳ दावा...";
+
+"EZCoinStore.Alert.NotSignedIn" = "साइन इन नहीं है";
+
+"EZCoinStore.Alert.SignInDailyCoins" = "कृपया अपने दैनिक सिक्कों पर दावा करने के लिए साइन इन करें।";
+
+"EZCoinStore.Alert.NetworkError" = "नेटवर्क त्रुटि";
+
+"EZCoinStore.Alert.ServerUnreachable" = "सर्वर तक नहीं पहुंच सका. कृपया पुन: प्रयास करें।";
+
+"EZCoinStore.Alert.AlreadyClaimed" = "पहले ही दावा किया जा चुका है";
+
+"EZCoinStore.Alert.AlreadyClaimedMessage" = "आप पहले ही अपने मुफ़्त सिक्कों पर दावा कर चुके हैं। 6 घंटे में वापस जाँचें!";
+
+"EZCoinStore.Alert.GenericRetry" = "कुछ ग़लत हो गया. कृपया पुन: प्रयास करें।";
+
+"EZCoinStore.Alert.Error" = "त्रुटि";
+
+"EZCoinStore.Ledger" = "बही";
+
+"EZCoinStore.Alert.NotLoggedIn" = "लॉग इन नहीं है";
+
+"EZCoinStore.Alert.SignInFirst" = "कृपया पहले साइन इन करें.";
+
+"EZCoinStore.Alert.CancelSubscription" = "सदस्यता रद्द करें?";
+
+"EZCoinStore.Alert.CancelSubscriptionMessage" = "आपके बचे हुए सिक्के आपके खाते में रहेंगे। इसे असंपादित नहीं किया जा सकता है।";
+
+"EZCoinStore.KeepPlan" = "योजना बनाये रखें";
+
+"EZCoinStore.Alert.Cancelled" = "रद्द कर दिया गया";
+
+"EZCoinStore.Alert.CancelledMessage" = "आपकी सदस्यता रद्द कर दी गई है. आपके सिक्के उपलब्ध रहेंगे.";
+
+"EZCoinStore.Alert.CancelFailed" = "सदस्यता रद्द नहीं की जा सकी. कृपया पुन: प्रयास करें।";
+
+"EZCoinStore.Alert.CheckoutStartFailed" = "चेकआउट प्रारंभ नहीं किया जा सका. पुनः प्रयास करें।";
+
+"EZCoinStore.Alert.PurchaseConfirmFailed" = "खरीदारी की पुष्टि नहीं हो सकी. अपना शेष जांचें - हो सकता है कि सिक्के अभी भी जोड़े गए हों।";
+
+"EZCoinStore.Alert.PurchaseNotConfirmed" = "खरीद की पुष्टि नहीं की जा सकी.";
+
+"EZCoinStore.Alert.PurchaseIssue" = "खरीद मुद्दा";
+
+"EZCoinStore.Celebration.CoinsAdded" = "🪙 सिक्के जोड़े गए!";
+
+"EZCoinStore.Celebration.AmountFormat" = "+%ld सिक्के";
+
+"EZCoinStore.Celebration.NewBalanceFormat" = "नया शेष: %ld सिक्के";
+
+"EZCoinStore.Celebration.Sweet" = "मधुर!";
+
+"EZCoinStore.OK" = "ठीक है";
+
+/* ElevenLabs voice cloning */
+"ElevenLabsClone.Title" = "आवाज क्लोनर";
+"ElevenLabsClone.VoiceName" = "आवाज़ का नाम";
+"ElevenLabsClone.VoiceNamePlaceholder" = "जैसे MyProVoice";
+"ElevenLabsClone.LanguageCode" = "भाषा कोड";
+"ElevenLabsClone.LanguageCodePlaceholder" = "जैसे इं";
+"ElevenLabsClone.Instant" = "तत्काल (आईवीसी)";
+"ElevenLabsClone.Professional" = "पेशेवर (पीवीसी)";
+"ElevenLabsClone.ProfessionalNote" = "⚠️ प्रोफेशनल वॉयस क्लोन - क्रिएटर प्लान आवश्यक (जल्द ही आ रहा है)";
+"ElevenLabsClone.RemoveNoise" = "पृष्ठभूमि शोर हटाएँ";
+"ElevenLabsClone.StartRecording" = "⏺रिकॉर्डिंग प्रारंभ करें";
+"ElevenLabsClone.StopRecording" = "⏹ रिकॉर्डिंग बंद करो";
+"ElevenLabsClone.Play" = "▶︎ खेलें";
+"ElevenLabsClone.Stop" = "⏹ रुकें";
+"ElevenLabsClone.ImportFile" = "📂फ़ाइल आयात करें";
+"ElevenLabsClone.QuickLook" = "🔍 त्वरित दृष्टि";
+"ElevenLabsClone.UploadClone" = "अपलोड और क्लोन आवाज";
+"ElevenLabsClone.MyVoices" = "मेरी क्लोन आवाज़ें";
+"ElevenLabsClone.Refresh" = "↻ ताज़ा करें";
+"ElevenLabsClone.Notice" = "सूचना";
+"ElevenLabsClone.OK" = "ठीक है";
+"ElevenLabsClone.MicrophoneDenied" = "माइक्रोफ़ोन पहुंच अस्वीकृत";
+"ElevenLabsClone.MicrophoneDeniedMessage" = "रिकॉर्ड करने के लिए सेटिंग्स में माइक्रोफ़ोन एक्सेस सक्षम करें।";
+"ElevenLabsClone.RecordError" = "रिकॉर्ड त्रुटि";
+"ElevenLabsClone.RecordInitFailed" = "रिकॉर्डर प्रारंभ नहीं किया जा सका.";
+"ElevenLabsClone.RecordPrepareFailed" = "रिकार्ड करने के लिए तैयार नहीं हो सका.";
+"ElevenLabsClone.RecordingFailed" = "रिकॉर्डिंग विफल";
+"ElevenLabsClone.RecordingFailedMessage" = "रिकॉर्डिंग बाधित या विफल हो गई थी.";
+"ElevenLabsClone.PlaybackError" = "प्लेबैक त्रुटि";
+"ElevenLabsClone.PlayerCreateFailed" = "प्लेयर नहीं बनाया जा सका.";
+"ElevenLabsClone.NoRecording" = "कोई रिकॉर्डिंग नहीं";
+"ElevenLabsClone.NoRecordingMessage" = "कृपया पहले एक नमूना रिकॉर्ड करें या आयात करें।";
+"ElevenLabsClone.ImportFailed" = "आयात विफल";
+"ElevenLabsClone.CopyFailed" = "फ़ाइल कॉपी करने में असमर्थ.";
+"ElevenLabsClone.SubscriptionRequired" = "सदस्यता आवश्यक है";
+"ElevenLabsClone.SubscriptionRequiredMessage" = "वॉयस क्लोनिंग सक्रिय EZComplete सदस्यता के साथ उपलब्ध है। क्लोन आवाज बनाने के लिए सदस्यता लें।";
+"ElevenLabsClone.NotNow" = "अभी नहीं";
+"ElevenLabsClone.ViewPlans" = "योजनाएं देखें";
+"ElevenLabsClone.MissingName" = "गुम नाम";
+"ElevenLabsClone.MissingNameMessage" = "एक ध्वनि नाम दर्ज करें.";
+"ElevenLabsClone.NotSignedIn" = "साइन इन नहीं है";
+"ElevenLabsClone.SignInCloneMessage" = "आवाज़ों को क्लोन करने के लिए अपने EZComplete खाते में साइन इन करें।";
+"ElevenLabsClone.SubscriptionCheckUnavailable" = "सदस्यता जांच अनुपलब्ध";
+"ElevenLabsClone.SubscriptionCheckUnavailableMessage" = "हम आपकी सदस्यता सत्यापित नहीं कर सके. कृपया आवाज क्लोन करने से पहले पुनः प्रयास करें।";
+"ElevenLabsClone.EmptyFile" = "खाली फ़ाइल";
+"ElevenLabsClone.EmptyFileMessage" = "रिकॉर्डिंग फ़ाइल खाली है.";
+"ElevenLabsClone.NetworkError" = "नेटवर्क त्रुटि";
+"ElevenLabsClone.NeedMoreCoins" = "अधिक सिक्कों की आवश्यकता है";
+"ElevenLabsClone.NeedMoreCoinsMessage" = "आपके पास %ld सिक्के हैं लेकिन क्लोनिंग में %ld सिक्के खर्च होते हैं।";
+"ElevenLabsClone.AccessDenied" = "प्रवेश निषेध.";
+"ElevenLabsClone.VoiceSlotFull" = "वॉयस स्लॉट फुल";
+"ElevenLabsClone.NotAvailable" = "उपलब्ध नहीं है";
+"ElevenLabsClone.UploadFailed" = "अपलोड विफल रहा.";
+"ElevenLabsClone.CloneFailed" = "क्लोन विफल";
+"ElevenLabsClone.NoVoiceID" = "जवाब में कोई वॉयस आईडी नहीं.";
+"ElevenLabsClone.SlotsUsedFormat" = "\\\\nप्रयुक्त स्लॉट: %ld / %ld";
+"ElevenLabsClone.VoiceCloned" = "आवाज़ क्लोन की गई";
+"ElevenLabsClone.VoiceClonedMessage" = "वॉयस आईडी: %@%@";
+"ElevenLabsClone.UnnamedVoice" = "अनाम आवाज";
+"ElevenLabsClone.NoClonedVoices" = "कोई क्लोन आवाज़ें नहीं मिलीं. एक बनाने के लिए रिकॉर्ड करें और अपलोड करें।";
+"ElevenLabsClone.ShowingVoicesFormat" = "%lu की %lu आवाजें दिखाई जा रही हैं";
+"ElevenLabsClone.ShowMoreVoices" = "अधिक आवाजें दिखाएं";
+"ElevenLabsClone.Delete" = "हटाएँ";
+"ElevenLabsClone.ThisVoice" = "यह आवाज";
+"ElevenLabsClone.DeleteVoice" = "आवाज हटाएं";
+"ElevenLabsClone.DeleteVoiceMessage" = "ElevenLabs से \\\"%@\\\" को स्थायी रूप से हटाएं? इसे असंपादित नहीं किया जा सकता है।";
+"ElevenLabsClone.Cancel" = "रद्द करें";
+"ElevenLabsClone.SignInDeleteMessage" = "आवाज़ें हटाने के लिए साइन इन करें.";
+"ElevenLabsClone.DeleteFailedMessage" = "हटाना विफल.";
+"ElevenLabsClone.DeleteFailed" = "हटाना विफल";

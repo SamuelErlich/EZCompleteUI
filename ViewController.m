@@ -1,5 +1,17 @@
 // ViewController.m
-// EZCompleteUI v9.3
+// EZCompleteUI v9.4
+//
+// Changes from v9.3:
+//   - FIXED: both "[System: Generating/Editing image with...]" messages
+//     hardcoded "gpt-image-1" regardless of which model was actually
+//     selected — reported as "says gpt 1 when I have 2.5 selected."
+//     callImageEdit now uses preEditModeModel (the real model, same value
+//     already sent in the actual request body). callGptImage1's message
+//     was built before imgModel got resolved a few lines later, so it was
+//     structurally incapable of reflecting the real model — moved the
+//     message after imgModel's resolution instead of duplicating that
+//     logic at the top. Also fixed two stale MARK comments in the same
+//     area that still said "gpt-image-1" only.
 //
 // Changes from v9.2:
 //   - Added gpt-image-2, gpt-image-2.5-flare, gpt-image-2.5-sunburst to
@@ -554,7 +566,6 @@
 #import "MemoriesViewController.h"
 #import "SupportRequestViewController.h"
 #import "BrainRotViewController.h"
-//#import "EZInsuranceLandingViewController.h"
 #import "EZBubbleCell.h"
 #import "EZSystemCell.h"
 #import "EZCodeBlockCell.h"
@@ -563,7 +574,24 @@
 #import "EZAuthManager.h"         // needed for [EZAuthManager shared].accessToken (edge function JWT)
 #import "EZTermsAcceptanceViewController.h"
 #import "HelperLogViewController.h"
+#import <CommonCrypto/CommonDigest.h>
 
+// Stable, non-reversible identifier for OpenAI safety tracking.  Keep this a
+// raw SHA-256 hex digest: OpenAI's maximum is 64 characters, and a SHA-256
+// digest is exactly 64.  Do not add the old "user_" prefix.
+static NSString *ez_safetyIdentifierForUserId(NSString *userId) {
+    if (userId.length == 0) return nil;
+
+    NSData *data = [userId dataUsingEncoding:NSUTF8StringEncoding];
+    unsigned char digest[CC_SHA256_DIGEST_LENGTH];
+    CC_SHA256(data.bytes, (CC_LONG)data.length, digest);
+
+    NSMutableString *hex = [NSMutableString stringWithCapacity:CC_SHA256_DIGEST_LENGTH * 2];
+    for (NSUInteger i = 0; i < CC_SHA256_DIGEST_LENGTH; i++) {
+        [hex appendFormat:@"%02x", digest[i]];
+    }
+    return hex;
+}
 
 
 typedef NS_ENUM(NSInteger, EZAttachMode) {
@@ -614,7 +642,6 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
 @property (nonatomic, strong) UIButton      *cloningButton;
 @property (nonatomic, strong) UIButton      *galleryButton;
 @property (nonatomic, strong) UIButton      *brainRotButton;
-@property (nonatomic, strong) UIButton      *insurancePolicyButton;
 //@property (nonatomic, strong) UIButton      *textToSpeechButton;
 
 @property (nonatomic, strong) NSLayoutConstraint *containerBottomConstraint;
@@ -850,10 +877,15 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
     if (![defaults stringForKey:@"systemMessage"].length) {
         [defaults setObject:
             @"You are a capable AI assistant with access to the user's conversation history and memories. "
+           "When a user asks what's new with the app, or what changed, check the changelog in yourepo."
+                 "You can get the changelog by doing a web search or going to    https://i0s-tweak3r-betas.yourepo.com/pack/ezcompleteui"
              "When the user references a previous file, image, or conversation, use the context provided. "
              "When providing code, always do so inside a codeblock, with the language and filename(or snippet name),"
               "as that will both create a code block and a new file the user can export."
-             "You can display images by providing their exact local file path starting with \"EZPrefix/\". "
+          "You can create pdf files same way as codeblock just put EZPDF as language"
+          "Or EZDOCX for a document that can be edited, like an rtf. Can also make CSV by"
+         "making a codeblock with EZXCEL as the scripting language,"
+             "You can display images by providing their exact local file path."
              "Be direct, specific and concise in responses, unless directed otherwise."
                      forKey:@"systemMessage"];
     }
@@ -1330,9 +1362,6 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
 
     self.textToSpeechButton = [self _iconButton:@"play.circle.fill" tint:nil action:@selector(openTTS)];
 
-    self.insurancePolicyButton = [self _iconButton:@"lock.shield.fill" tint:nil action:@selector(openInsurancePolicy)];
-
-    
     self.memoriesButton   = [self _iconButton:@"memory" tint:nil
                                       action:@selector(openMemories)];
     // Web search toggle
@@ -1363,8 +1392,7 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
         self.addChatButton, self.historyButton, self.clipboardButton,
         self.speakButton, self.webSearchButton, self.coinPotView,
         self.renameButton, self.clearButton, self.memoriesButton, self.cloningButton, self.supportRequestButton,
-        self.textToSpeechButton, self.galleryButton, self.insurancePolicyButton
-    ]];
+        self.textToSpeechButton, self.galleryButton]];
     topStack.distribution = UIStackViewDistributionEqualSpacing;
     topStack.alignment    = UIStackViewAlignmentCenter;
     topStack.translatesAutoresizingMaskIntoConstraints = NO;
@@ -3251,6 +3279,9 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     NSString *loc = [defaults stringForKey:@"webSearchLocation"] ?: @"";
     if (loc.length > 0) ezBody[@"location"] = loc;
 
+    NSString *safetyIdentifier = ez_safetyIdentifierForUserId([EZAuthManager shared].userId);
+    if (safetyIdentifier.length > 0) ezBody[@"safety_identifier"] = safetyIdentifier;
+
     NSString *token = [EZAuthManager shared].accessToken;
     if (!token) {
         [self appendToChat:@"[Error: Not signed in]"];
@@ -3340,11 +3371,10 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MARK: - gpt-image-1 Text-to-Image Generation
+// MARK: - GPT Image Text-to-Image Generation (gpt-image-1/1.5/mini/2/2.5)
 // ─────────────────────────────────────────────────────────────────────────────
 
 - (void)callGptImage1:(NSString *)prompt {
-    [self appendToChat:@"[System: Generating image with gpt-image-1...]"];
     EZLog(EZLogLevelInfo, @"GPTIMAGE", @"Sending generation request via ez-image");
 
     NSString *token = [EZAuthManager shared].accessToken;
@@ -3360,6 +3390,8 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     if ([imgModel isEqualToString:@"gpt-image-1-edit"]) imgModel = self.preEditModeModel ?: @"gpt-image-1";
     NSInteger imgN = [d integerForKey:@"imgVariations"];
     if (imgN < 1 || imgN > 4) imgN = 1;
+
+    [self appendToChat:[NSString stringWithFormat:@"[System: Generating image with %@...]", imgModel]];
 
     NSMutableDictionary *body = [@{
         @"action":        @"generate",
@@ -3457,7 +3489,7 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MARK: - Image Edit (gpt-image-1)
+// MARK: - Image Edit (gpt-image-1/1.5/mini/2/2.5-flare/2.5-sunburst)
 // ─────────────────────────────────────────────────────────────────────────────
 
 - (void)callImageEdit:(NSString *)prompt imagePath:(NSString *)imagePath {
@@ -3465,7 +3497,8 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
         self.sendButton.enabled = YES;
         [self appendToChat:@"[Error: No image attached for editing]"]; return;
     }
-    [self appendToChat:@"[System: Editing image with gpt-image-1...]"];
+    [self appendToChat:[NSString stringWithFormat:
+        @"[System: Editing image with %@...]", self.preEditModeModel ?: @"gpt-image-1"]];
     EZLog(EZLogLevelInfo, @"IMGEDIT", @"Sending image edit request via ez-image");
 
     NSString *token = [EZAuthManager shared].accessToken;
@@ -5578,13 +5611,6 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
         initWithRootViewController:[[SupportRequestViewController alloc] init]];
     [self presentViewController:nav animated:YES completion:nil];
 }
-/*
-- (void)openInsurancePolicy {
-    UINavigationController *nav = [[UINavigationController alloc]
-        initWithRootViewController:[[EZInsuranceLandingViewController alloc] init]];
-    [self presentViewController:nav animated:YES completion:nil];
-}
-*/
 - (void)openMemories {
     if (self.drawerOpen) {
         [self closeDrawer];

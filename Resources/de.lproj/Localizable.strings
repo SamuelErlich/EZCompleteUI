@@ -75,3 +75,214 @@
 "EZSubscription.ViewPlans" = "Tarife ansehen";
 "EZSubscription.ModelRequiredFormat" = "%@ ist mit einem aktiven EZComplete-Abonnement verfügbar. Abonniere, um dieses Modell zu nutzen.";
 "EZSubscription.ImageSettingsRequired" = "Bilder in hoher Qualität, PNG-Ausgabe und nicht deckende Hintergründe erfordern ein aktives EZComplete-Abonnement.";
+
+/* EZCoinStoreViewController localization */
+
+"EZCoinStore.Title" = "🪙 EZ-Münzshop";
+
+"EZCoinStore.CancelPlan" = "Plan kündigen";
+
+"EZCoinStore.Subscribe" = "Abonnieren";
+
+"EZCoinStore.BuyNow" = "Jetzt kaufen";
+
+"EZCoinStore.Badge.Buy1Get1" = "🔥 1 KAUFEN, 1 BEKOMMEN";
+
+"EZCoinStore.Promo.SubscriptionBadgeFormat" = "+%ld KOSTENLOSE Münzen*";
+
+"EZCoinStore.Promo.SubscriptionFootnote" = "*Zusätzliche Münzen sind ein einmaliger Bonus, keine monatliche Erhöhung.";
+
+"EZCoinStore.Tier.Basic" = "Basic";
+
+"EZCoinStore.Tier.BasicSubtitle" = "400 Münzen / Monat\nIdeal für gelegentliche Nutzung";
+
+"EZCoinStore.Tier.BasicPrice" = "5 $ / Mon.";
+
+"EZCoinStore.Tier.Standard" = "Standard";
+
+"EZCoinStore.Tier.StandardSubtitle" = "900 Münzen / Monat\nIdeal für regelmäßige Nutzung";
+
+"EZCoinStore.Tier.StandardPrice" = "10 $ / Mon.";
+
+"EZCoinStore.Badge.Popular" = "BELIEBT";
+
+"EZCoinStore.Tier.Pro" = "Pro";
+
+"EZCoinStore.Tier.ProSubtitle" = "1.600 Münzen / Monat\nIdeal für tägliche Nutzung";
+
+"EZCoinStore.Tier.ProPrice" = "15 $ / Mon.";
+
+"EZCoinStore.Badge.BestValue" = "BESTES ANGEBOT";
+
+"EZCoinStore.Tier.Ultra" = "Ultra";
+
+"EZCoinStore.Tier.UltraSubtitle" = "2.500 Münzen / Monat\nFür Power-User";
+
+"EZCoinStore.Tier.UltraPrice" = "20 $ / Mon.";
+
+"EZCoinStore.Badge.Ultra" = "ULTRA";
+
+"EZCoinStore.TopUp.Starter" = "Münz-Starterpaket";
+
+"EZCoinStore.TopUp.StarterSubtitle" = "400 Münzen, einmalig\nLaufen nie ab";
+
+"EZCoinStore.TopUp.Value" = "Münz-Wertpaket";
+
+"EZCoinStore.TopUp.ValueSubtitle" = "900 Münzen, einmalig\nLaufen nie ab";
+
+"EZCoinStore.Badge.Save10" = "10 % SPAREN";
+
+"EZCoinStore.Promo.Headline" = "🔥 1 KAUFEN, 1 GRATIS 🔥";
+
+"EZCoinStore.Promo.Subtitle" = "Alle Münzen & Abos – nur für kurze Zeit!";
+
+"EZCoinStore.LoadingBalance" = "Kontostand wird geladen...";
+
+"EZCoinStore.ThisFeature" = "diese Funktion";
+
+"EZCoinStore.NotEnoughCoins" = "⚠️ Nicht genügend Münzen für %@. Unten aufladen.";
+
+"EZCoinStore.NoActiveSubscription" = "Kein aktives Abonnement";
+
+"EZCoinStore.BalanceFormat" = "🪙 %ld Münzen   •   %@";
+
+"EZCoinStore.Section.Subscriptions" = "ABONNEMENTS";
+
+"EZCoinStore.Section.OneTimeTopUps" = "EINMALIGE AUFLADUNGEN";
+
+"EZCoinStore.DailyCoins" = "🎁 Tagesmünzen";
+
+"EZCoinStore.DailyCoins.FreeFormat" = "🎁 +%ld gratis!";
+
+"EZCoinStore.DailyCoins.Free" = "🎁 Kostenlose Münzen!";
+
+"EZCoinStore.DailyCoins.NextHours" = "🎁 Nächste: %ld Std. %ld Min.";
+
+"EZCoinStore.DailyCoins.NextMinutes" = "🎁 Nächste: %ld Min. %ld Sek.";
+
+"EZCoinStore.DailyCoins.NextSeconds" = "🎁 Nächste: %ld Sek.";
+
+"EZCoinStore.DailyCoins.Claiming" = "⏳ Wird angefordert...";
+
+"EZCoinStore.Alert.NotSignedIn" = "Nicht angemeldet";
+
+"EZCoinStore.Alert.SignInDailyCoins" = "Bitte anmelden, um deine Tagesmünzen abzuholen.";
+
+"EZCoinStore.Alert.NetworkError" = "Netzwerkfehler";
+
+"EZCoinStore.Alert.ServerUnreachable" = "Server nicht erreichbar. Bitte erneut versuchen.";
+
+"EZCoinStore.Alert.AlreadyClaimed" = "Bereits abgeholt";
+
+"EZCoinStore.Alert.AlreadyClaimedMessage" = "Du hast deine kostenlosen Münzen bereits abgeholt. Schau in 6 Stunden wieder vorbei!";
+
+"EZCoinStore.Alert.GenericRetry" = "Etwas ist schiefgelaufen. Bitte erneut versuchen.";
+
+"EZCoinStore.Alert.Error" = "Fehler";
+
+"EZCoinStore.Ledger" = "Ledger";
+
+"EZCoinStore.Alert.NotLoggedIn" = "Nicht angemeldet";
+
+"EZCoinStore.Alert.SignInFirst" = "Bitte zuerst anmelden.";
+
+"EZCoinStore.Alert.CancelSubscription" = "Abonnement kündigen?";
+
+"EZCoinStore.Alert.CancelSubscriptionMessage" = "Deine verbleibenden Münzen bleiben in deinem Konto. Dies kann nicht rückgängig gemacht werden.";
+
+"EZCoinStore.KeepPlan" = "Plan behalten";
+
+"EZCoinStore.Alert.Cancelled" = "Gekündigt";
+
+"EZCoinStore.Alert.CancelledMessage" = "Dein Abonnement wurde gekündigt. Deine Münzen bleiben verfügbar.";
+
+"EZCoinStore.Alert.CancelFailed" = "Abonnement konnte nicht gekündigt werden. Bitte erneut versuchen.";
+
+"EZCoinStore.Alert.CheckoutStartFailed" = "Kasse konnte nicht gestartet werden. Bitte erneut versuchen.";
+
+"EZCoinStore.Alert.PurchaseConfirmFailed" = "Kauf konnte nicht bestätigt werden. Prüfe deinen Kontostand, möglicherweise wurden die Münzen bereits hinzugefügt.";
+
+"EZCoinStore.Alert.PurchaseNotConfirmed" = "Kauf konnte nicht bestätigt werden.";
+
+"EZCoinStore.Alert.PurchaseIssue" = "Kaufproblem";
+
+"EZCoinStore.Celebration.CoinsAdded" = "🪙 Münzen hinzugefügt!";
+
+"EZCoinStore.Celebration.AmountFormat" = "+%ld Münzen";
+
+"EZCoinStore.Celebration.NewBalanceFormat" = "Neuer Kontostand: %ld Münzen";
+
+"EZCoinStore.Celebration.Sweet" = "Super!";
+
+"EZCoinStore.OK" = "OK";
+
+/* ElevenLabs voice cloning */
+"ElevenLabsClone.Title" = "Stimmenkloner";
+"ElevenLabsClone.VoiceName" = "STIMMENNAME";
+"ElevenLabsClone.VoiceNamePlaceholder" = "z. B. MeineProStimme";
+"ElevenLabsClone.LanguageCode" = "SPRACHCODE";
+"ElevenLabsClone.LanguageCodePlaceholder" = "z. B. de";
+"ElevenLabsClone.Instant" = "Sofort (IVC)";
+"ElevenLabsClone.Professional" = "Professionell (PVC)";
+"ElevenLabsClone.ProfessionalNote" = "⚠️ Professionelles Stimmenklonen — Creator-Abo erforderlich (demnächst)";
+"ElevenLabsClone.RemoveNoise" = "Hintergrundgeräusche entfernen";
+"ElevenLabsClone.StartRecording" = "⏺  Aufnahme starten";
+"ElevenLabsClone.StopRecording" = "⏹  Aufnahme beenden";
+"ElevenLabsClone.Play" = "▶︎ Abspielen";
+"ElevenLabsClone.Stop" = "⏹ Stopp";
+"ElevenLabsClone.ImportFile" = "📂  Datei importieren";
+"ElevenLabsClone.QuickLook" = "🔍  Schnellansicht";
+"ElevenLabsClone.UploadClone" = "Stimme hochladen und klonen";
+"ElevenLabsClone.MyVoices" = "Meine geklonten Stimmen";
+"ElevenLabsClone.Refresh" = "↻ Aktualisieren";
+"ElevenLabsClone.Notice" = "Hinweis";
+"ElevenLabsClone.OK" = "OK";
+"ElevenLabsClone.MicrophoneDenied" = "Mikrofonzugriff verweigert";
+"ElevenLabsClone.MicrophoneDeniedMessage" = "Aktiviere den Mikrofonzugriff in den Einstellungen, um aufzunehmen.";
+"ElevenLabsClone.RecordError" = "Aufnahmefehler";
+"ElevenLabsClone.RecordInitFailed" = "Recorder konnte nicht initialisiert werden.";
+"ElevenLabsClone.RecordPrepareFailed" = "Aufnahme konnte nicht vorbereitet werden.";
+"ElevenLabsClone.RecordingFailed" = "Aufnahme fehlgeschlagen";
+"ElevenLabsClone.RecordingFailedMessage" = "Die Aufnahme wurde unterbrochen oder ist fehlgeschlagen.";
+"ElevenLabsClone.PlaybackError" = "Wiedergabefehler";
+"ElevenLabsClone.PlayerCreateFailed" = "Player konnte nicht erstellt werden.";
+"ElevenLabsClone.NoRecording" = "Keine Aufnahme";
+"ElevenLabsClone.NoRecordingMessage" = "Bitte nimm zuerst ein Beispiel auf oder importiere es.";
+"ElevenLabsClone.ImportFailed" = "Import fehlgeschlagen";
+"ElevenLabsClone.CopyFailed" = "Datei konnte nicht kopiert werden.";
+"ElevenLabsClone.SubscriptionRequired" = "Abonnement erforderlich";
+"ElevenLabsClone.SubscriptionRequiredMessage" = "Stimmenklonen ist mit einem aktiven EZComplete-Abonnement verfügbar. Abonniere, um eine geklonte Stimme zu erstellen.";
+"ElevenLabsClone.NotNow" = "Nicht jetzt";
+"ElevenLabsClone.ViewPlans" = "Tarife anzeigen";
+"ElevenLabsClone.MissingName" = "Name fehlt";
+"ElevenLabsClone.MissingNameMessage" = "Gib einen Stimmennamen ein.";
+"ElevenLabsClone.NotSignedIn" = "Nicht angemeldet";
+"ElevenLabsClone.SignInCloneMessage" = "Melde dich bei deinem EZComplete-Konto an, um Stimmen zu klonen.";
+"ElevenLabsClone.SubscriptionCheckUnavailable" = "Abonnementprüfung nicht verfügbar";
+"ElevenLabsClone.SubscriptionCheckUnavailableMessage" = "Dein Abonnement konnte nicht überprüft werden. Versuche es vor dem Klonen erneut.";
+"ElevenLabsClone.EmptyFile" = "Leere Datei";
+"ElevenLabsClone.EmptyFileMessage" = "Die Aufnahmedatei ist leer.";
+"ElevenLabsClone.NetworkError" = "Netzwerkfehler";
+"ElevenLabsClone.NeedMoreCoins" = "Mehr Münzen erforderlich";
+"ElevenLabsClone.NeedMoreCoinsMessage" = "Du hast %ld Münzen, aber das Klonen kostet %ld Münzen.";
+"ElevenLabsClone.AccessDenied" = "Zugriff verweigert.";
+"ElevenLabsClone.VoiceSlotFull" = "Stimmenplatz belegt";
+"ElevenLabsClone.NotAvailable" = "Nicht verfügbar";
+"ElevenLabsClone.UploadFailed" = "Hochladen fehlgeschlagen.";
+"ElevenLabsClone.CloneFailed" = "Klonen fehlgeschlagen";
+"ElevenLabsClone.NoVoiceID" = "Keine Stimmen-ID in der Antwort.";
+"ElevenLabsClone.SlotsUsedFormat" = "\\nVerwendete Plätze: %ld / %ld";
+"ElevenLabsClone.VoiceCloned" = "Stimme geklont";
+"ElevenLabsClone.VoiceClonedMessage" = "Stimmen-ID: %@%@";
+"ElevenLabsClone.UnnamedVoice" = "Unbenannte Stimme";
+"ElevenLabsClone.NoClonedVoices" = "Keine geklonten Stimmen gefunden. Nimm eine auf und lade sie hoch, um eine zu erstellen.";
+"ElevenLabsClone.ShowingVoicesFormat" = "%lu von %lu Stimmen werden angezeigt";
+"ElevenLabsClone.ShowMoreVoices" = "Mehr Stimmen anzeigen";
+"ElevenLabsClone.Delete" = "Löschen";
+"ElevenLabsClone.ThisVoice" = "diese Stimme";
+"ElevenLabsClone.DeleteVoice" = "Stimme löschen";
+"ElevenLabsClone.DeleteVoiceMessage" = "\"%@\" dauerhaft aus ElevenLabs löschen? Dies kann nicht rückgängig gemacht werden.";
+"ElevenLabsClone.Cancel" = "Abbrechen";
+"ElevenLabsClone.SignInDeleteMessage" = "Melde dich an, um Stimmen zu löschen.";
+"ElevenLabsClone.DeleteFailedMessage" = "Löschen fehlgeschlagen.";
+"ElevenLabsClone.DeleteFailed" = "Löschen fehlgeschlagen";

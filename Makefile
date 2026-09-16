@@ -18,9 +18,9 @@ EZCompleteUI_CFLAGS = -fobjc-arc -Wno-deprecated -Wno-deprecated-declarations -W
     -fmodules-cache-path=$(shell pwd)/.theos/module-cache
 EZCompleteUI_CODESIGN_FLAGS = -Sent.plist
 EZCompleteUI_INFOPLIST_FILE = Resources/Info.plist
+EZCompleteUI_RESOURCE_DIRS = Resources
 EZCompleteUI_USER  = mobile
 EZCompleteUI_GROUP = mobile
 EZCompleteUI_INSTALL_PATH = /Applications
 
 include $(THEOS_MAKE_PATH)/application.mk
-EZCompleteUI_RESOURCE_DIRS = Resources

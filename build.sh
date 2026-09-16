@@ -73,7 +73,15 @@ echo "==> [4/5] Building IPA..."
 rm -rf Payload
 mkdir -p Payload
 cp -r "${SAVED_APP}" "Payload/${APP_NAME}.app"
+# zip updates an existing archive but does not remove files that disappeared
+# from Payload.  Start fresh so an old case-variant such as
+# en.lproj/localizable.strings cannot survive alongside Localizable.strings.
+rm -f "${APP_NAME}.ipa"
 zip -r9 "${APP_NAME}.ipa" Payload > /dev/null
+if unzip -Z1 "${APP_NAME}.ipa" | grep -qx "Payload/${APP_NAME}.app/en.lproj/localizable.strings"; then
+    echo "ERROR: stale en.lproj/localizable.strings found in IPA"
+    exit 1
+fi
 rm -rf Payload
 echo "  ${APP_NAME}.ipa ready"
 

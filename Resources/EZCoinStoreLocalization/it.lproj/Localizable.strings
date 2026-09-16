@@ -1,0 +1,139 @@
+/* EZCoinStoreViewController localization */
+
+"EZCoinStore.Title" = "🪙 Negozio monete EZ";
+
+"EZCoinStore.CancelPlan" = "Annulla piano";
+
+"EZCoinStore.Subscribe" = "Abbonati";
+
+"EZCoinStore.BuyNow" = "Acquista ora";
+
+"EZCoinStore.Badge.Buy1Get1" = "🔥 COMPRI 1, PRENDI 1";
+
+"EZCoinStore.Promo.SubscriptionBadgeFormat" = "+%ld MONETE GRATIS*";
+
+"EZCoinStore.Promo.SubscriptionFootnote" = "*Le monete extra sono un bonus una tantum, non un aumento mensile.";
+
+"EZCoinStore.Tier.Basic" = "Base";
+
+"EZCoinStore.Tier.BasicSubtitle" = "400 monete / mese\nIdeale per un uso occasionale";
+
+"EZCoinStore.Tier.BasicPrice" = "$5 / mese";
+
+"EZCoinStore.Tier.Standard" = "Standard";
+
+"EZCoinStore.Tier.StandardSubtitle" = "900 monete / mese\nOttimo per utenti regolari";
+
+"EZCoinStore.Tier.StandardPrice" = "$10 / mese";
+
+"EZCoinStore.Badge.Popular" = "POPOLARE";
+
+"EZCoinStore.Tier.Pro" = "Pro";
+
+"EZCoinStore.Tier.ProSubtitle" = "1.600 monete / mese\nOttimo per utenti quotidiani";
+
+"EZCoinStore.Tier.ProPrice" = "$15 / mese";
+
+"EZCoinStore.Badge.BestValue" = "MIGLIOR VALORE";
+
+"EZCoinStore.Tier.Ultra" = "Ultra";
+
+"EZCoinStore.Tier.UltraSubtitle" = "2.500 monete / mese\nPer utenti intensivi";
+
+"EZCoinStore.Tier.UltraPrice" = "$20 / mese";
+
+"EZCoinStore.Badge.Ultra" = "ULTRA";
+
+"EZCoinStore.TopUp.Starter" = "Pacchetto iniziale di monete";
+
+"EZCoinStore.TopUp.StarterSubtitle" = "400 monete, una tantum\nNon scadono mai";
+
+"EZCoinStore.TopUp.Value" = "Pacchetto monete conveniente";
+
+"EZCoinStore.TopUp.ValueSubtitle" = "900 monete, una tantum\nNon scadono mai";
+
+"EZCoinStore.Badge.Save10" = "RISPARMIA IL 10%";
+
+"EZCoinStore.Promo.Headline" = "🔥 COMPRI 1, NE RICEVI 1 GRATIS 🔥";
+
+"EZCoinStore.Promo.Subtitle" = "Tutte le monete e gli abbonamenti, per un periodo limitato!";
+
+"EZCoinStore.LoadingBalance" = "Caricamento saldo...";
+
+"EZCoinStore.ThisFeature" = "questa funzione";
+
+"EZCoinStore.NotEnoughCoins" = "⚠️ Monete insufficienti per %@. Ricarica qui sotto.";
+
+"EZCoinStore.NoActiveSubscription" = "Nessun abbonamento attivo";
+
+"EZCoinStore.BalanceFormat" = "🪙 %ld monete   •   %@";
+
+"EZCoinStore.Section.Subscriptions" = "ABBONAMENTI";
+
+"EZCoinStore.Section.OneTimeTopUps" = "RICARICHE UNA TANTUM";
+
+"EZCoinStore.DailyCoins" = "🎁 Monete giornaliere";
+
+"EZCoinStore.DailyCoins.FreeFormat" = "🎁 +%ld gratis!";
+
+"EZCoinStore.DailyCoins.Free" = "🎁 Monete gratis!";
+
+"EZCoinStore.DailyCoins.NextHours" = "🎁 Prossimo: %ldh %ldm";
+
+"EZCoinStore.DailyCoins.NextMinutes" = "🎁 Prossimo: %ldm %lds";
+
+"EZCoinStore.DailyCoins.NextSeconds" = "🎁 Prossimo: %lds";
+
+"EZCoinStore.DailyCoins.Claiming" = "⏳ Riscatto in corso...";
+
+"EZCoinStore.Alert.NotSignedIn" = "Accesso non effettuato";
+
+"EZCoinStore.Alert.SignInDailyCoins" = "Accedi per riscattare le tue monete giornaliere.";
+
+"EZCoinStore.Alert.NetworkError" = "Errore di rete";
+
+"EZCoinStore.Alert.ServerUnreachable" = "Impossibile raggiungere il server. Riprova.";
+
+"EZCoinStore.Alert.AlreadyClaimed" = "Già riscattate";
+
+"EZCoinStore.Alert.AlreadyClaimedMessage" = "Hai già riscattato le tue monete gratis. Torna tra 6 ore!";
+
+"EZCoinStore.Alert.GenericRetry" = "Qualcosa è andato storto. Riprova.";
+
+"EZCoinStore.Alert.Error" = "Errore";
+
+"EZCoinStore.Ledger" = "Registro";
+
+"EZCoinStore.Alert.NotLoggedIn" = "Accesso non effettuato";
+
+"EZCoinStore.Alert.SignInFirst" = "Accedi prima.";
+
+"EZCoinStore.Alert.CancelSubscription" = "Annullare l’abbonamento?";
+
+"EZCoinStore.Alert.CancelSubscriptionMessage" = "Le monete rimanenti resteranno nel tuo account. Questa azione non può essere annullata.";
+
+"EZCoinStore.KeepPlan" = "Mantieni piano";
+
+"EZCoinStore.Alert.Cancelled" = "Annullato";
+
+"EZCoinStore.Alert.CancelledMessage" = "Il tuo abbonamento è stato annullato. Le tue monete restano disponibili.";
+
+"EZCoinStore.Alert.CancelFailed" = "Impossibile annullare l’abbonamento. Riprova.";
+
+"EZCoinStore.Alert.CheckoutStartFailed" = "Impossibile avviare il pagamento. Riprova.";
+
+"EZCoinStore.Alert.PurchaseConfirmFailed" = "Impossibile confermare l’acquisto. Controlla il saldo: le monete potrebbero essere già state aggiunte.";
+
+"EZCoinStore.Alert.PurchaseNotConfirmed" = "Impossibile confermare l’acquisto.";
+
+"EZCoinStore.Alert.PurchaseIssue" = "Problema con l’acquisto";
+
+"EZCoinStore.Celebration.CoinsAdded" = "🪙 Monete aggiunte!";
+
+"EZCoinStore.Celebration.AmountFormat" = "+%ld monete";
+
+"EZCoinStore.Celebration.NewBalanceFormat" = "Nuovo saldo: %ld monete";
+
+"EZCoinStore.Celebration.Sweet" = "Perfetto!";
+
+"EZCoinStore.OK" = "OK";

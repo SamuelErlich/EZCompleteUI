@@ -1,0 +1,288 @@
+/* EZModelPickerViewController localization */
+
+"EZModelPicker.Title" = "モデルを選択";
+
+"EZModelSection.FrontierReasoning" = "高度な推論";
+"EZModelSection.GPT4Chat" = "GPT-4 チャット";
+"EZModelSection.ImageGeneration" = "画像生成";
+"EZModelSection.AudioTranscription" = "音声文字起こし";
+
+"EZModelLabel.ChatVisionNewest" = "💬 チャット + 👁 ビジョン ⭐ 最新";
+"EZModelLabel.ChatVision" = "💬 チャット + 👁 ビジョン";
+"EZModelLabel.ChatVisionBalanced" = "💬 チャット + 👁 ビジョン（バランス型）";
+"EZModelLabel.ChatVisionFastCheap" = "💬 チャット + 👁 ビジョン（高速・お手頃）";
+"EZModelLabel.ChatOnly" = "💬 チャットのみ";
+"EZModelLabel.ImageGenNewestFast" = "🖼 画像生成（最新・高速）— 低／中／高／非常に高い／最大";
+"EZModelLabel.ImageGenEditPrecision" = "🖼 画像生成 + ✏️ 編集（高精度）— 低／中／高／非常に高い／最大";
+"EZModelLabel.ImageGenEdit" = "🖼 画像生成 + ✏️ 編集 — 低／中／高";
+"EZModelLabel.ImageGen" = "🖼 画像生成";
+"EZModelLabel.ImageGenFastCheap" = "🖼 画像生成（高速・お手頃）";
+"EZModelLabel.ChatGPTImageLatest" = "🖼 ChatGPT画像（最新）";
+"EZModelLabel.AudioTranscriptionOnly" = "🎙 音声文字起こしのみ";
+
+
+/* TextToSpeechViewController localization */
+
+"EZTTS.Title" = "テキスト読み上げ";
+
+"EZTTS.PromptHeader" = "何と話しますか？";
+
+"EZTTS.VoiceHeader" = "音声";
+
+"EZTTS.SpeedFormat" = "速度：%.2f×";
+
+"EZTTS.Generate" = "生成";
+
+"EZTTS.ChooseVoice" = "音声を選択…";
+
+"EZTTS.CharactersRemaining" = "残り%lu文字";
+
+"EZTTS.MissingTextTitle" = "テキストがありません";
+
+"EZTTS.MissingTextMessage" = "読み上げるテキストを入力してください。";
+
+"EZTTS.ErrorTitle" = "読み上げエラー";
+
+"EZTTS.FailedToSynthesize" = "音声の生成に失敗しました。";
+
+"EZTTS.NoAudioReturned" = "音声データが返されませんでした。";
+
+"EZTTS.PlaybackError" = "再生エラー";
+
+"EZTTS.UnableToPlay" = "音声を再生できません。";
+
+"EZTTS.NotLoggedIn" = "サインインしていません。";
+
+"EZTTS.NotAuthorized" = "認証されていません。もう一度サインインしてください。";
+
+"EZTTS.InvalidServerResponse" = "サーバーから無効な応答がありました。";
+
+"EZTTS.EmptyAudio" = "空の音声データが返されました。";
+
+"EZTTS.FailedWavWrap" = "PCMをWAVに変換できませんでした。";
+
+"EZTTS.InsufficientCoins" = "この読み上げに必要なコインが足りません。";
+
+"EZTTS.NeedCoins" = "%@コイン必要ですが、所持コインは%@です。";
+
+"EZTTS.ServerError" = "サーバーエラー";
+
+"EZTTS.OK" = "確認";
+
+/* Subscription paywall */
+"EZSubscription.RequiredTitle" = "サブスクリプションが必要です";
+"EZSubscription.NotNow" = "今はしない";
+"EZSubscription.ViewPlans" = "プランを見る";
+"EZSubscription.ModelRequiredFormat" = "%@ を使用するには、有効なEZCompleteサブスクリプションが必要です。";
+"EZSubscription.ImageSettingsRequired" = "高画質画像、PNG出力、透明または半透明の背景には有効なEZCompleteサブスクリプションが必要です。";
+
+/* EZCoinStoreViewController localization */
+
+"EZCoinStore.Title" = "🪙 EZコインストア";
+
+"EZCoinStore.CancelPlan" = "プランをキャンセルする";
+
+"EZCoinStore.Subscribe" = "購読する";
+
+"EZCoinStore.BuyNow" = "今すぐ購入";
+
+"EZCoinStore.Badge.Buy1Get1" = "🔥 1 つ購入すると 1 つゲット";
+
+"EZCoinStore.Promo.SubscriptionBadgeFormat" = "+%ld 無料コイン*";
+
+"EZCoinStore.Promo.SubscriptionFootnote" = "※追加コインは1回限りのボーナスであり、毎月の増加ではありません。";
+
+"EZCoinStore.Tier.Basic" = "基本";
+
+"EZCoinStore.Tier.BasicSubtitle" = "400 コイン/月\\nカジュアルな使用に最適";
+
+"EZCoinStore.Tier.BasicPrice" = "5ドル/月";
+
+"EZCoinStore.Tier.Standard" = "標準";
+
+"EZCoinStore.Tier.StandardSubtitle" = "900 コイン/月\\n通常のユーザーに最適";
+
+"EZCoinStore.Tier.StandardPrice" = "$10/月";
+
+"EZCoinStore.Badge.Popular" = "人気のある";
+
+"EZCoinStore.Tier.Pro" = "プロ";
+
+"EZCoinStore.Tier.ProSubtitle" = "1,600 コイン/月\\n毎日のユーザーに最適";
+
+"EZCoinStore.Tier.ProPrice" = "$15/月";
+
+"EZCoinStore.Badge.BestValue" = "ベストバリュー";
+
+"EZCoinStore.Tier.Ultra" = "ウルトラ";
+
+"EZCoinStore.Tier.UltraSubtitle" = "2,500 コイン / 月\\nパワー ユーザー歓迎";
+
+"EZCoinStore.Tier.UltraPrice" = "$20/月";
+
+"EZCoinStore.Badge.Ultra" = "ウルトラ";
+
+"EZCoinStore.TopUp.Starter" = "コインスターターパック";
+
+"EZCoinStore.TopUp.StarterSubtitle" = "400 コイン、1 回限り\\n期限切れになりません";
+
+"EZCoinStore.TopUp.Value" = "コインバリューパック";
+
+"EZCoinStore.TopUp.ValueSubtitle" = "900 コイン、1 回限り\\n期限切れになりません";
+
+"EZCoinStore.Badge.Save10" = "10％節約";
+
+"EZCoinStore.Promo.Headline" = "🔥 1 個購入すると 1 個無料 🔥";
+
+"EZCoinStore.Promo.Subtitle" = "すべてのコインとサブスクリプション - 期間限定!";
+
+"EZCoinStore.LoadingBalance" = "ロードバランス...";
+
+"EZCoinStore.ThisFeature" = "この機能";
+
+"EZCoinStore.NotEnoughCoins" = "⚠️ %@ のコインが足りません。以下に補充してください。";
+
+"EZCoinStore.NoActiveSubscription" = "有効なサブスクリプションがありません";
+
+"EZCoinStore.BalanceFormat" = "🪙 %ld コイン • %@";
+
+"EZCoinStore.Section.Subscriptions" = "定期購入";
+
+"EZCoinStore.Section.OneTimeTopUps" = "ワンタイムトップアップ";
+
+"EZCoinStore.DailyCoins" = "🎁 デイリーコイン";
+
+"EZCoinStore.DailyCoins.FreeFormat" = "🎁 +%ld 無料!";
+
+"EZCoinStore.DailyCoins.Free" = "🎁 無料コイン！";
+
+"EZCoinStore.DailyCoins.NextHours" = "🎁 次: %ldh %ldm";
+
+"EZCoinStore.DailyCoins.NextMinutes" = "🎁 次: %ldm %lds";
+
+"EZCoinStore.DailyCoins.NextSeconds" = "🎁 次: %lds";
+
+"EZCoinStore.DailyCoins.Claiming" = "⏳ 主張中...";
+
+"EZCoinStore.Alert.NotSignedIn" = "サインインしていません";
+
+"EZCoinStore.Alert.SignInDailyCoins" = "毎日のコインを受け取るにはサインインしてください。";
+
+"EZCoinStore.Alert.NetworkError" = "ネットワークエラー";
+
+"EZCoinStore.Alert.ServerUnreachable" = "サーバーに到達できませんでした。もう一度試してください。";
+
+"EZCoinStore.Alert.AlreadyClaimed" = "すでに請求済み";
+
+"EZCoinStore.Alert.AlreadyClaimedMessage" = "すでに無料コインを獲得しています。 6 時間後にもう一度チェックしてください。";
+
+"EZCoinStore.Alert.GenericRetry" = "何か問題が発生しました。もう一度試してください。";
+
+"EZCoinStore.Alert.Error" = "エラー";
+
+"EZCoinStore.Ledger" = "元帳";
+
+"EZCoinStore.Alert.NotLoggedIn" = "ログインしていません";
+
+"EZCoinStore.Alert.SignInFirst" = "まずサインインしてください。";
+
+"EZCoinStore.Alert.CancelSubscription" = "サブスクリプションをキャンセルしますか?";
+
+"EZCoinStore.Alert.CancelSubscriptionMessage" = "残りのコインはアカウントに残ります。これを元に戻すことはできません。";
+
+"EZCoinStore.KeepPlan" = "計画を維持する";
+
+"EZCoinStore.Alert.Cancelled" = "キャンセルされました";
+
+"EZCoinStore.Alert.CancelledMessage" = "サブスクリプションはキャンセルされました。コインは引き続き利用可能です。";
+
+"EZCoinStore.Alert.CancelFailed" = "サブスクリプションをキャンセルできませんでした。もう一度試してください。";
+
+"EZCoinStore.Alert.CheckoutStartFailed" = "チェックアウトを開始できませんでした。もう一度やり直してください。";
+
+"EZCoinStore.Alert.PurchaseConfirmFailed" = "購入を確認できませんでした。残高を確認してください。コインがまだ追加されている可能性があります。";
+
+"EZCoinStore.Alert.PurchaseNotConfirmed" = "購入が確認できませんでした。";
+
+"EZCoinStore.Alert.PurchaseIssue" = "購入の問題";
+
+"EZCoinStore.Celebration.CoinsAdded" = "🪙 コインが追加されました！";
+
+"EZCoinStore.Celebration.AmountFormat" = "+%ld コイン";
+
+"EZCoinStore.Celebration.NewBalanceFormat" = "新しい残高: %ld コイン";
+
+"EZCoinStore.Celebration.Sweet" = "甘い！";
+
+"EZCoinStore.OK" = "確認";
+
+/* ElevenLabs voice cloning */
+"ElevenLabsClone.Title" = "ボイスクローナー";
+"ElevenLabsClone.VoiceName" = "ボイスネーム";
+"ElevenLabsClone.VoiceNamePlaceholder" = "例:マイプロボイス";
+"ElevenLabsClone.LanguageCode" = "言語コード";
+"ElevenLabsClone.LanguageCodePlaceholder" = "例: jp";
+"ElevenLabsClone.Instant" = "インスタント (IVC)";
+"ElevenLabsClone.Professional" = "プロフェッショナル(PVC)";
+"ElevenLabsClone.ProfessionalNote" = "⚠️ プロフェッショナル音声クローン — クリエイター プランが必要です (近日公開予定)";
+"ElevenLabsClone.RemoveNoise" = "背景ノイズを除去する";
+"ElevenLabsClone.StartRecording" = "⏺ 録音を開始する";
+"ElevenLabsClone.StopRecording" = "⏹ 録音を停止する";
+"ElevenLabsClone.Play" = "▶︎ 遊ぶ";
+"ElevenLabsClone.Stop" = "⏹ 停止";
+"ElevenLabsClone.ImportFile" = "📂 ファイルをインポート";
+"ElevenLabsClone.QuickLook" = "🔍 クイックルック";
+"ElevenLabsClone.UploadClone" = "音声のアップロードと複製";
+"ElevenLabsClone.MyVoices" = "私のクローン音声";
+"ElevenLabsClone.Refresh" = "↻ リフレッシュ";
+"ElevenLabsClone.Notice" = "お知らせ";
+"ElevenLabsClone.OK" = "確認";
+"ElevenLabsClone.MicrophoneDenied" = "マイクへのアクセスが拒否されました";
+"ElevenLabsClone.MicrophoneDeniedMessage" = "録音するには設定でマイクへのアクセスを有効にしてください。";
+"ElevenLabsClone.RecordError" = "記録エラー";
+"ElevenLabsClone.RecordInitFailed" = "レコーダーを初期化できませんでした。";
+"ElevenLabsClone.RecordPrepareFailed" = "録音の準備ができませんでした。";
+"ElevenLabsClone.RecordingFailed" = "録音に失敗しました";
+"ElevenLabsClone.RecordingFailedMessage" = "録音が中断されたか、失敗しました。";
+"ElevenLabsClone.PlaybackError" = "再生エラー";
+"ElevenLabsClone.PlayerCreateFailed" = "プレーヤーを作成できませんでした。";
+"ElevenLabsClone.NoRecording" = "録音なし";
+"ElevenLabsClone.NoRecordingMessage" = "まずサンプルを録音またはインポートしてください。";
+"ElevenLabsClone.ImportFailed" = "インポートに失敗しました";
+"ElevenLabsClone.CopyFailed" = "ファイルをコピーできません。";
+"ElevenLabsClone.SubscriptionRequired" = "購読が必要です";
+"ElevenLabsClone.SubscriptionRequiredMessage" = "音声クローン作成は、有効な EZComplete サブスクリプションで利用できます。クローン音声を作成するには購読してください。";
+"ElevenLabsClone.NotNow" = "今ではありません";
+"ElevenLabsClone.ViewPlans" = "プランを見る";
+"ElevenLabsClone.MissingName" = "名前がありません";
+"ElevenLabsClone.MissingNameMessage" = "音声名を入力します。";
+"ElevenLabsClone.NotSignedIn" = "サインインしていません";
+"ElevenLabsClone.SignInCloneMessage" = "EZComplete アカウントにサインインして、音声のクローンを作成します。";
+"ElevenLabsClone.SubscriptionCheckUnavailable" = "購読チェックは利用できません";
+"ElevenLabsClone.SubscriptionCheckUnavailableMessage" = "あなたのサブスクリプションを確認できませんでした。音声を複製する前にもう一度試してください。";
+"ElevenLabsClone.EmptyFile" = "空のファイル";
+"ElevenLabsClone.EmptyFileMessage" = "録音ファイルが空です。";
+"ElevenLabsClone.NetworkError" = "ネットワークエラー";
+"ElevenLabsClone.NeedMoreCoins" = "もっとコインが必要";
+"ElevenLabsClone.NeedMoreCoinsMessage" = "%ld コインを持っていますが、クローン作成には %ld コインがかかります。";
+"ElevenLabsClone.AccessDenied" = "アクセスが拒否されました。";
+"ElevenLabsClone.VoiceSlotFull" = "音声スロットがいっぱいです";
+"ElevenLabsClone.NotAvailable" = "利用できません";
+"ElevenLabsClone.UploadFailed" = "アップロードに失敗しました。";
+"ElevenLabsClone.CloneFailed" = "クローン作成に失敗しました";
+"ElevenLabsClone.NoVoiceID" = "音声 ID が応答しません。";
+"ElevenLabsClone.SlotsUsedFormat" = "\\\\n使用されているスロット: %ld / %ld";
+"ElevenLabsClone.VoiceCloned" = "クローン化された音声";
+"ElevenLabsClone.VoiceClonedMessage" = "音声 ID: %@%@";
+"ElevenLabsClone.UnnamedVoice" = "名前のない声";
+"ElevenLabsClone.NoClonedVoices" = "クローン音声は見つかりませんでした。録音してアップロードして作成します。";
+"ElevenLabsClone.ShowingVoicesFormat" = "%lu / %lu の音声を表示しています";
+"ElevenLabsClone.ShowMoreVoices" = "もっと音声を表示";
+"ElevenLabsClone.Delete" = "削除";
+"ElevenLabsClone.ThisVoice" = "この声";
+"ElevenLabsClone.DeleteVoice" = "音声の削除";
+"ElevenLabsClone.DeleteVoiceMessage" = "イレブンラボから「%@」を完全に削除しますか?これを元に戻すことはできません。";
+"ElevenLabsClone.Cancel" = "キャンセル";
+"ElevenLabsClone.SignInDeleteMessage" = "音声を削除するにはサインインしてください。";
+"ElevenLabsClone.DeleteFailedMessage" = "削除に失敗しました。";
+"ElevenLabsClone.DeleteFailed" = "削除に失敗しました";
