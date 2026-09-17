@@ -74,7 +74,7 @@
 "EZSubscription.NotNow" = "ไว้ทีหลัง";
 "EZSubscription.ViewPlans" = "ดูแผน";
 "EZSubscription.ModelRequiredFormat" = "ต้องมีการสมัครสมาชิก EZComplete ที่ใช้งานอยู่จึงจะใช้ %@ ได้";
-"EZSubscription.ImageSettingsRequired" = "รูปภาพคุณภาพสูง เอาต์พุต PNG และพื้นหลังโปร่งใสต้องใช้การสมัครสมาชิก EZComplete ที่ใช้งานอยู่";
+"EZSubscription.ImageSettingsRequired" = "รูปภาพคุณภาพสูงต้องใช้การสมัครสมาชิก EZComplete ที่ใช้งานอยู่";
 
 /* EZCoinStoreViewController localization */
 
@@ -217,6 +217,17 @@
 "EZCoinStore.OK" = "ตกลง";
 
 /* ElevenLabs voice cloning */
+"EZCoinStore.Tier.Power" = "ผู้ใช้ระดับสูง";
+"EZCoinStore.Tier.PowerSubtitle" = "6,250 เหรียญ / เดือน\nพร้อมใช้เมื่อคุณต้องการ";
+"EZCoinStore.Tier.Enterprise" = "องค์กร";
+"EZCoinStore.Tier.EnterpriseSubtitle" = "12,500 เหรียญ / เดือน\nสำหรับทุกความต้องการทางธุรกิจของคุณ";
+"EZCoinStore.TopUp.Ultra" = "แพ็กเหรียญอัลตร้า";
+"EZCoinStore.TopUp.UltraSubtitle" = "2,500 เหรียญ จ่ายครั้งเดียว\nไม่มีวันหมดอายุ";
+"EZCoinStore.TopUp.Power" = "แพ็กเหรียญพาวเวอร์";
+"EZCoinStore.TopUp.PowerSubtitle" = "6,250 เหรียญ จ่ายครั้งเดียว\nไม่มีวันหมดอายุ";
+"EZCoinStore.TopUp.Enterprise" = "แพ็กเหรียญองค์กร";
+"EZCoinStore.TopUp.EnterpriseSubtitle" = "12,500 เหรียญ จ่ายครั้งเดียว\nไม่มีวันหมดอายุ";
+
 "ElevenLabsClone.Title" = "โคลนเสียง";
 "ElevenLabsClone.VoiceName" = "ชื่อเสียง";
 "ElevenLabsClone.VoiceNamePlaceholder" = "เช่น มายโปรวอยซ์";
@@ -286,3 +297,11 @@
 "ElevenLabsClone.SignInDeleteMessage" = "ลงชื่อเข้าใช้เพื่อลบเสียง";
 "ElevenLabsClone.DeleteFailedMessage" = "ลบไม่สำเร็จ";
 "ElevenLabsClone.DeleteFailed" = "ลบไม่สำเร็จ";
+"EZCoinStore.Upsell.Message" = "ชำระรายปีและประหยัด 25% เมื่อเทียบกับการเรียกเก็บเงินรายเดือน";
+"EZCoinStore.Upsell.AnnualTitleFormat" = "%@ รายปี";
+"EZCoinStore.Upsell.MonthlyButtonFormat" = "%@/เดือน";
+"EZCoinStore.Upsell.AnnualButtonFormat" = "%@/ปี — ประหยัด %@";
+"EZCoinStore.Upsell.AnnualButtonPromoFormat" = "%@/ปี — ฟรีเพิ่มอีก 2 เดือน";
+"EZCoinStore.Tier.BasicWeekly" = "Basic รายสัปดาห์";
+"EZCoinStore.Tier.BasicWeeklyPrice" = "$5/สัปดาห์ • 400 เหรียญ/สัปดาห์";
+"EZCoinStore.Tier.BasicWeeklySubtitle" = "แพ็กเกจเริ่มต้นที่ยอดเยี่ยม";

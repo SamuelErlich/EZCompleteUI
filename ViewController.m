@@ -871,25 +871,6 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
                              ?: self.models[0];
     self.webSearchEnabled  = [[NSUserDefaults standardUserDefaults] boolForKey:@"webSearchEnabled"];
 
-    // Set a sensible default system message if the user hasn't configured one yet.
-    // This avoids the model claiming it "can't" do things it absolutely can.
-    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    if (![defaults stringForKey:@"systemMessage"].length) {
-        [defaults setObject:
-            @"You are a capable AI assistant with access to the user's conversation history and memories. "
-           "When a user asks what's new with the app, or what changed, check the changelog in yourepo."
-                 "You can get the changelog by doing a web search or going to    https://i0s-tweak3r-betas.yourepo.com/pack/ezcompleteui"
-             "When the user references a previous file, image, or conversation, use the context provided. "
-             "When providing code, always do so inside a codeblock, with the language and filename(or snippet name),"
-              "as that will both create a code block and a new file the user can export."
-          "You can create pdf files same way as codeblock just put EZPDF as language"
-          "Or EZDOCX for a document that can be edited, like an rtf. Can also make CSV by"
-         "making a codeblock with EZXCEL as the scripting language,"
-             "You can display images by providing their exact local file path."
-             "Be direct, specific and concise in responses, unless directed otherwise."
-                     forKey:@"systemMessage"];
-    }
-
     // Restore persisted image/attachment paths so they survive app restarts.
     // This is the key fix for "reopen image" failing — lastImageLocalPath was
     // always nil after relaunch, so the intent check fell through to generation.
@@ -2927,6 +2908,11 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
                 NSString *editPath = self.pendingImagePaths.lastObject ?: self.lastImageLocalPath;
                 [self.pendingImagePaths removeAllObjects];
                 [self callImageEdit:text imagePath:editPath];
+            } else if ([intent isEqualToString:@"chat"]) {
+                self.selectedModel = @"gpt-5.6-luna";
+                [self.modelButton setTitle:@"Model: gpt-5.6-luna" forState:UIControlStateNormal];
+                [self appendToChat:@"[System: Switched to gpt-5.6-luna for this text request]"];
+                [self callChatCompletions];
             } else {
                 EZLogf(EZLogLevelInfo, @"IMAGE", @"Intent=generate");
                 [self exitImageEditModeIfNeeded];
@@ -3191,7 +3177,7 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
             self.selectedModel]];
     }
 
-    NSString *sys = [defaults stringForKey:@"systemMessage"];
+    NSString *userPreferences = [defaults stringForKey:@"modelPreferences"];
     NSArray *cleanContext = [self sanitizedContextForAPI:self.chatContext
                                      modelSupportsVision:[self modelSupportsVision:self.selectedModel]
                                          useResponsesAPI:useResponsesAPI];
@@ -3270,7 +3256,7 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     ezBody[@"messages"]         = cleanContext;
     ezBody[@"estimated_tokens"] = @(totalEstimate);
     ezBody[@"feature_tier"]     = featureTier;
-    if (sys.length > 0)         ezBody[@"system"] = sys;
+    if (userPreferences.length > 0) ezBody[@"user_preferences"] = userPreferences;
     if (useWebSearch)           ezBody[@"web_search"] = @YES;
     if (capturedPrompt.length > 0) {
         NSUInteger cap = MIN(capturedPrompt.length, 120);
@@ -4512,11 +4498,17 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
         @"edit", @"change", @"modify", @"adjust", @"alter",
         @"add to", @"remove from", @"make it", @"turn it into"
     ];
+    NSArray *textSignals = @[
+        @"explain", @"write", @"rewrite", @"summarize", @"summarise",
+        @"translate", @"email", @"document", @"letter", @"essay",
+        @"what is", @"how do", @"help me", @"code", @"calculate"
+    ];
 
-    NSInteger reopenScore = 0, generateScore = 0, editScore = 0;
+    NSInteger reopenScore = 0, generateScore = 0, editScore = 0, textScore = 0;
     for (NSString *s in reopenSignals)   if ([lower containsString:s]) reopenScore++;
     for (NSString *s in generateSignals) if ([lower containsString:s]) generateScore++;
     for (NSString *s in editSignals)     if ([lower containsString:s]) editScore++;
+    for (NSString *s in textSignals)     if ([lower containsString:s]) textScore++;
 
     EZLogf(EZLogLevelDebug, @"IMAGE",
            @"Intent scores — reopen:%ld generate:%ld edit:%ld hasLocal:%d",
@@ -4539,7 +4531,9 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     }
 
     if (!hasLocalImage) {
-        dispatch_async(dispatch_get_main_queue(), ^{ completion(@"generate"); });
+        // With no source image, recognizable text work should never become a
+        // drawing just because an image model was left selected.
+        dispatch_async(dispatch_get_main_queue(), ^{ completion(textScore > 0 ? @"chat" : @"generate"); });
         return;
     }
 

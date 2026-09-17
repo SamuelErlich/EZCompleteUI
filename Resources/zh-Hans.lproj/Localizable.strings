@@ -74,7 +74,7 @@
 "EZSubscription.NotNow" = "暂不";
 "EZSubscription.ViewPlans" = "查看套餐";
 "EZSubscription.ModelRequiredFormat" = "%@ 需要有效的 EZComplete 订阅才能使用。请订阅后使用此模型。";
-"EZSubscription.ImageSettingsRequired" = "高质量图像、PNG 输出和非不透明背景需要有效的 EZComplete 订阅。";
+"EZSubscription.ImageSettingsRequired" = "高质量图像需要有效的 EZComplete 订阅。";
 
 /* EZCoinStoreViewController localization */
 
@@ -217,6 +217,17 @@
 "EZCoinStore.OK" = "好";
 
 /* ElevenLabs voice cloning */
+"EZCoinStore.Tier.Power" = "高级用户";
+"EZCoinStore.Tier.PowerSubtitle" = "每月 6,250 枚金币\n需要时随时可用。";
+"EZCoinStore.Tier.Enterprise" = "企业版";
+"EZCoinStore.Tier.EnterpriseSubtitle" = "每月 12,500 枚金币\n满足您的所有业务需求";
+"EZCoinStore.TopUp.Ultra" = "超级金币包";
+"EZCoinStore.TopUp.UltraSubtitle" = "2,500 枚金币，一次性付款\n永不过期";
+"EZCoinStore.TopUp.Power" = "高级金币包";
+"EZCoinStore.TopUp.PowerSubtitle" = "6,250 枚金币，一次性付款\n永不过期";
+"EZCoinStore.TopUp.Enterprise" = "企业金币包";
+"EZCoinStore.TopUp.EnterpriseSubtitle" = "12,500 枚金币，一次性付款\n永不过期";
+
 "ElevenLabsClone.Title" = "声音克隆";
 "ElevenLabsClone.VoiceName" = "声音名称";
 "ElevenLabsClone.VoiceNamePlaceholder" = "例如：我的专业声音";
@@ -286,3 +297,11 @@
 "ElevenLabsClone.SignInDeleteMessage" = "请登录以删除声音。";
 "ElevenLabsClone.DeleteFailedMessage" = "删除失败。";
 "ElevenLabsClone.DeleteFailed" = "删除失败";
+"EZCoinStore.Upsell.Message" = "按年付费比按月付费节省 25%。";
+"EZCoinStore.Upsell.AnnualTitleFormat" = "%@ 年度版";
+"EZCoinStore.Upsell.MonthlyButtonFormat" = "%@/月";
+"EZCoinStore.Upsell.AnnualButtonFormat" = "%@/年 — 省 %@";
+"EZCoinStore.Upsell.AnnualButtonPromoFormat" = "%@/年 — 再送 2 个月";
+"EZCoinStore.Tier.BasicWeekly" = "Basic 周度套餐";
+"EZCoinStore.Tier.BasicWeeklyPrice" = "$5/周 • 400 金币/周";
+"EZCoinStore.Tier.BasicWeeklySubtitle" = "超值入门套餐";

@@ -94,10 +94,23 @@ static BOOL EZModelRequiresSubscription(NSString *model) {
     [self dismissViewControllerAnimated:YES completion:nil];
 }
 
-- (BOOL)hasActiveSubscription {
+- (void)selectModel:(NSString *)model {
+    self.selectedModel = model;
+    [self.tableView reloadData];
+    if (self.onModelSelected) self.onModelSelected(model);
+    [self dismissViewControllerAnimated:YES completion:nil];
+}
+
+- (BOOL)hasPurchasedAccess {
     EZEntitlementManager *entitlements = [EZEntitlementManager shared];
-    return entitlements.currentTier.length > 0 &&
-           [entitlements.currentStatus isEqualToString:@"active"];
+    static NSSet<NSString *> *supportedTiers;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        supportedTiers = [NSSet setWithObjects:@"basic", @"basic_weekly", @"standard", @"standard_annual",
+                          @"pro", @"pro_annual", @"ultra", @"ultra_annual", @"power", @"power_annual",
+                          @"enterprise", @"enterprise_annual", nil];
+    });
+    return entitlements.hasEverPurchased || [supportedTiers containsObject:entitlements.currentTier];
 }
 
 - (void)showSubscriptionRequiredAlertForModel:(NSString *)model {
@@ -154,14 +167,29 @@ static BOOL EZModelRequiresSubscription(NSString *model) {
 - (void)tableView:(UITableView *)tv didSelectRowAtIndexPath:(NSIndexPath *)ip {
     [tv deselectRowAtIndexPath:ip animated:YES];
     NSString *model = EZModelSections()[(NSUInteger)ip.section][(NSUInteger)ip.row];
-    if (EZModelRequiresSubscription(model) && ![self hasActiveSubscription]) {
-        [self showSubscriptionRequiredAlertForModel:model];
+    if (!EZModelRequiresSubscription(model)) {
+        [self selectModel:model];
         return;
     }
-    self.selectedModel = model;
-    [tv reloadData];
-    if (self.onModelSelected) self.onModelSelected(model);
-    [self dismissViewControllerAnimated:YES completion:nil];
+
+    // A top-up may have completed since the last balance refresh. Refresh the
+    // purchase flag before showing a gate so a stale local cache never blocks
+    // a customer who has already paid.
+    tv.userInteractionEnabled = NO;
+    __weak typeof(self) weakSelf = self;
+    [[EZEntitlementManager shared] refreshSubscriptionStatusWithCompletion:
+        ^(__unused BOOL refreshed, __unused NSInteger balance) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                __strong typeof(weakSelf) self = weakSelf;
+                if (!self) return;
+                self.tableView.userInteractionEnabled = YES;
+                if (![self hasPurchasedAccess]) {
+                    [self showSubscriptionRequiredAlertForModel:model];
+                    return;
+                }
+                [self selectModel:model];
+            });
+        }];
 }
 
 @end

@@ -74,7 +74,7 @@
 "EZSubscription.NotNow" = "Not Now";
 "EZSubscription.ViewPlans" = "View Plans";
 "EZSubscription.ModelRequiredFormat" = "%@ is available with an active EZComplete subscription. Subscribe to use this model.";
-"EZSubscription.ImageSettingsRequired" = "High-quality images, PNG output, and non-opaque backgrounds require an active EZComplete subscription.";
+"EZSubscription.ImageSettingsRequired" = "High-quality images require an active EZComplete subscription.";
 
 /* EZCoinStoreViewController localization */
 
@@ -122,9 +122,31 @@
 
 "EZCoinStore.Badge.Ultra" = "ULTRA";
 
+"EZCoinStore.Tier.Power" = "Power Users";
+
+"EZCoinStore.Tier.PowerSubtitle" = "6,250 coins / month\nAvailable when you need them.";
+
+"EZCoinStore.Tier.Enterprise" = "Enterprise";
+
+"EZCoinStore.Tier.EnterpriseSubtitle" = "12,500 coins / month\nFor all your business needs";
+
 "EZCoinStore.TopUp.Starter" = "Coin Starter Pack";
 
 "EZCoinStore.TopUp.StarterSubtitle" = "400 coins, one-time\nNever expires";
+
+"EZCoinStore.TopUp.Ultra" = "Ultra Topup Pack";
+
+"EZCoinStore.TopUp.UltraSubtitle" = "2500 coins, one-time\nNever expires";
+
+"EZCoinStore.TopUp.Power" = "Power Topup Pack";
+
+"EZCoinStore.TopUp.PowerSubtitle" = "6250 coins, one-time\nNever expires";
+
+"EZCoinStore.TopUp.Enterprise" = "Enterprise Topup Pack";
+
+"EZCoinStore.TopUp.EnterpriseSubtitle" = "12500 coins, one-time\nNever expires";
+
+
 
 "EZCoinStore.TopUp.Value" = "Coin Value Pack";
 
@@ -286,3 +308,33 @@
 "ElevenLabsClone.SignInDeleteMessage" = "Sign in to delete voices.";
 "ElevenLabsClone.DeleteFailedMessage" = "Delete failed.";
 "ElevenLabsClone.DeleteFailed" = "Delete Failed";
+
+/* Annual subscription offer */
+"EZCoinStore.Upsell.Message" = "Pay annually and save 25% compared with monthly billing.";
+"EZCoinStore.Upsell.StandardTitle" = "Go Annual with Standard";
+"EZCoinStore.Upsell.StandardMonthlyButton" = "$10.00/mo";
+"EZCoinStore.Upsell.StandardAnnualButton" = "$89.99/yr — Save $30";
+"EZCoinStore.Upsell.StandardAnnualButtonPromo" = "$89.99/yr — 2 More Months Free";
+"EZCoinStore.Upsell.ProTitle" = "Go Annual with Pro";
+"EZCoinStore.Upsell.ProMonthlyButton" = "$15.00/mo";
+"EZCoinStore.Upsell.ProAnnualButton" = "$134.99/yr — Save $45";
+"EZCoinStore.Upsell.ProAnnualButtonPromo" = "$134.99/yr — 2 More Months Free";
+"EZCoinStore.Upsell.UltraTitle" = "Go Annual with Ultra";
+"EZCoinStore.Upsell.UltraMonthlyButton" = "$20.00/mo";
+"EZCoinStore.Upsell.UltraAnnualButton" = "$179.99/yr — Save $60";
+"EZCoinStore.Upsell.UltraAnnualButtonPromo" = "$179.99/yr — 2 More Months Free";
+"EZCoinStore.Upsell.PowerTitle" = "Go Annual with Power";
+"EZCoinStore.Upsell.PowerMonthlyButton" = "$49.99/mo";
+"EZCoinStore.Upsell.PowerAnnualButton" = "$449.99/yr — Save $150";
+"EZCoinStore.Upsell.PowerAnnualButtonPromo" = "$449.99/yr — 2 More Months Free";
+"EZCoinStore.Upsell.EnterpriseTitle" = "Go Annual with Enterprise";
+"EZCoinStore.Upsell.EnterpriseMonthlyButton" = "$99.99/mo";
+"EZCoinStore.Upsell.EnterpriseAnnualButton" = "$899.99/yr — Save $300";
+"EZCoinStore.Upsell.EnterpriseAnnualButtonPromo" = "$899.99/yr — 2 More Months Free";
+"EZCoinStore.Upsell.AnnualTitleFormat" = "%@ Annual";
+"EZCoinStore.Upsell.MonthlyButtonFormat" = "%@/mo";
+"EZCoinStore.Upsell.AnnualButtonFormat" = "%@/yr — Save %@";
+"EZCoinStore.Upsell.AnnualButtonPromoFormat" = "%@/yr — 2 More Months Free";
+"EZCoinStore.Tier.BasicWeekly" = "Basic Weekly";
+"EZCoinStore.Tier.BasicWeeklyPrice" = "$5/wk • 400 coins/week";
+"EZCoinStore.Tier.BasicWeeklySubtitle" = "A Great Starter Package";

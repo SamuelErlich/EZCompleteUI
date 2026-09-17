@@ -74,7 +74,7 @@
 "EZSubscription.NotNow" = "अभी नहीं";
 "EZSubscription.ViewPlans" = "प्लान देखें";
 "EZSubscription.ModelRequiredFormat" = "%@ का उपयोग करने के लिए सक्रिय EZComplete सदस्यता आवश्यक है।";
-"EZSubscription.ImageSettingsRequired" = "उच्च-गुणवत्ता चित्रों, PNG आउटपुट और पारदर्शी पृष्ठभूमि के लिए सक्रिय EZComplete सदस्यता आवश्यक है।";
+"EZSubscription.ImageSettingsRequired" = "उच्च-गुणवत्ता चित्रों के लिए सक्रिय EZComplete सदस्यता आवश्यक है।";
 
 /* EZCoinStoreViewController localization */
 
@@ -217,6 +217,17 @@
 "EZCoinStore.OK" = "ठीक है";
 
 /* ElevenLabs voice cloning */
+"EZCoinStore.Tier.Power" = "पावर उपयोगकर्ता";
+"EZCoinStore.Tier.PowerSubtitle" = "6,250 कॉइन / माह\nजब ज़रूरत हो तब उपलब्ध।";
+"EZCoinStore.Tier.Enterprise" = "एंटरप्राइज़";
+"EZCoinStore.Tier.EnterpriseSubtitle" = "12,500 कॉइन / माह\nआपकी सभी व्यावसायिक ज़रूरतों के लिए";
+"EZCoinStore.TopUp.Ultra" = "अल्ट्रा कॉइन पैक";
+"EZCoinStore.TopUp.UltraSubtitle" = "2500 कॉइन, एकमुश्त भुगतान\nकभी समाप्त नहीं होते";
+"EZCoinStore.TopUp.Power" = "पावर कॉइन पैक";
+"EZCoinStore.TopUp.PowerSubtitle" = "6250 कॉइन, एकमुश्त भुगतान\nकभी समाप्त नहीं होते";
+"EZCoinStore.TopUp.Enterprise" = "एंटरप्राइज़ कॉइन पैक";
+"EZCoinStore.TopUp.EnterpriseSubtitle" = "12500 कॉइन, एकमुश्त भुगतान\nकभी समाप्त नहीं होते";
+
 "ElevenLabsClone.Title" = "आवाज क्लोनर";
 "ElevenLabsClone.VoiceName" = "आवाज़ का नाम";
 "ElevenLabsClone.VoiceNamePlaceholder" = "जैसे MyProVoice";
@@ -286,3 +297,11 @@
 "ElevenLabsClone.SignInDeleteMessage" = "आवाज़ें हटाने के लिए साइन इन करें.";
 "ElevenLabsClone.DeleteFailedMessage" = "हटाना विफल.";
 "ElevenLabsClone.DeleteFailed" = "हटाना विफल";
+"EZCoinStore.Upsell.Message" = "मासिक बिलिंग की तुलना में सालाना भुगतान करके 25% बचाएं।";
+"EZCoinStore.Upsell.AnnualTitleFormat" = "%@ वार्षिक";
+"EZCoinStore.Upsell.MonthlyButtonFormat" = "%@/माह";
+"EZCoinStore.Upsell.AnnualButtonFormat" = "%@/वर्ष — %@ बचाएं";
+"EZCoinStore.Upsell.AnnualButtonPromoFormat" = "%@/वर्ष — 2 अतिरिक्त महीने मुफ़्त";
+"EZCoinStore.Tier.BasicWeekly" = "Basic साप्ताहिक";
+"EZCoinStore.Tier.BasicWeeklyPrice" = "$5/सप्ताह • 400 कॉइन/सप्ताह";
+"EZCoinStore.Tier.BasicWeeklySubtitle" = "शुरुआत के लिए शानदार पैकेज";

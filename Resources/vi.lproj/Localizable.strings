@@ -74,7 +74,7 @@
 "EZSubscription.NotNow" = "Không phải bây giờ";
 "EZSubscription.ViewPlans" = "Xem các gói";
 "EZSubscription.ModelRequiredFormat" = "%@ chỉ khả dụng với gói đăng ký EZComplete đang hoạt động. Hãy đăng ký để dùng mô hình này.";
-"EZSubscription.ImageSettingsRequired" = "Hình ảnh chất lượng cao, đầu ra PNG và nền không đục yêu cầu gói đăng ký EZComplete đang hoạt động.";
+"EZSubscription.ImageSettingsRequired" = "Hình ảnh chất lượng cao yêu cầu gói đăng ký EZComplete đang hoạt động.";
 
 /* EZCoinStoreViewController localization */
 
@@ -217,6 +217,17 @@
 "EZCoinStore.OK" = "OK";
 
 /* ElevenLabs voice cloning */
+"EZCoinStore.Tier.Power" = "Người dùng nâng cao";
+"EZCoinStore.Tier.PowerSubtitle" = "6.250 xu / tháng\nSẵn sàng khi bạn cần.";
+"EZCoinStore.Tier.Enterprise" = "Doanh nghiệp";
+"EZCoinStore.Tier.EnterpriseSubtitle" = "12.500 xu / tháng\nCho mọi nhu cầu kinh doanh của bạn";
+"EZCoinStore.TopUp.Ultra" = "Gói xu Ultra";
+"EZCoinStore.TopUp.UltraSubtitle" = "2.500 xu, thanh toán một lần\nKhông bao giờ hết hạn";
+"EZCoinStore.TopUp.Power" = "Gói xu Power";
+"EZCoinStore.TopUp.PowerSubtitle" = "6.250 xu, thanh toán một lần\nKhông bao giờ hết hạn";
+"EZCoinStore.TopUp.Enterprise" = "Gói xu Doanh nghiệp";
+"EZCoinStore.TopUp.EnterpriseSubtitle" = "12.500 xu, thanh toán một lần\nKhông bao giờ hết hạn";
+
 "ElevenLabsClone.Title" = "Trình nhân bản giọng nói";
 "ElevenLabsClone.VoiceName" = "TÊN GIỌNG NÓI";
 "ElevenLabsClone.VoiceNamePlaceholder" = "vd. GiongNoiChuyenNghiep";
@@ -286,3 +297,11 @@
 "ElevenLabsClone.SignInDeleteMessage" = "Đăng nhập để xóa giọng nói.";
 "ElevenLabsClone.DeleteFailedMessage" = "Xóa thất bại.";
 "ElevenLabsClone.DeleteFailed" = "Xóa thất bại";
+"EZCoinStore.Upsell.Message" = "Thanh toán hằng năm và tiết kiệm 25% so với thanh toán hằng tháng.";
+"EZCoinStore.Upsell.AnnualTitleFormat" = "%@ hằng năm";
+"EZCoinStore.Upsell.MonthlyButtonFormat" = "%@/tháng";
+"EZCoinStore.Upsell.AnnualButtonFormat" = "%@/năm — Tiết kiệm %@";
+"EZCoinStore.Upsell.AnnualButtonPromoFormat" = "%@/năm — Miễn phí thêm 2 tháng";
+"EZCoinStore.Tier.BasicWeekly" = "Basic hằng tuần";
+"EZCoinStore.Tier.BasicWeeklyPrice" = "$5/tuần • 400 xu/tuần";
+"EZCoinStore.Tier.BasicWeeklySubtitle" = "Gói khởi đầu tuyệt vời";

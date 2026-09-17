@@ -35,6 +35,10 @@ typedef NS_ENUM(NSInteger, EZFeature) {
 /// Always check for nil before comparing.
 @property (nonatomic, readonly, nullable) NSString *currentStatus;
 
+/// Whether the account has completed any paid purchase. This remains YES after
+/// a subscription expires or is cancelled.
+@property (nonatomic, readonly) BOOL hasEverPurchased;
+
 /// The ez_usage_log row ID returned by the last successful check call.
 /// Automatically used by completeUsageLog: and refundTokensForTier:
 /// so actual API results get written back to the log row.

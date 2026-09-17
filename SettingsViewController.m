@@ -205,8 +205,8 @@
                       y:&y w:w];
 
         // ── OpenAI ───────────────────────────────────────────────────────────────
-        // ── System Prompt ─────────────────────────────────────────────────────────
-        [self addLabel:@"System Message:" y:&y];
+        // ── Model Preferences ─────────────────────────────────────────────────────
+        [self addLabel:@"Model Preferences (Optional):" y:&y];
 
         CGFloat minTextViewHeight = 80.0;
         self.systemMsgView = [[UITextView alloc] initWithFrame:CGRectMake(20, y, w, minTextViewHeight)];
@@ -696,7 +696,7 @@
         NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
 
         // ── Non-sensitive settings ────────────────────────────────────────────────
-        self.systemMsgView.text       = [defaults stringForKey:@"systemMessage"] ?: @"";
+        self.systemMsgView.text       = [defaults stringForKey:@"modelPreferences"] ?: @"";
         self.tempSlider.value         = [defaults floatForKey:@"temperature"] ?: 0.7f;
         id helperTempRaw = [defaults objectForKey:kHelperTemperatureDefaultsKey];
         float helperTemp = [helperTempRaw respondsToSelector:@selector(floatValue)]
@@ -721,7 +721,7 @@
     - (void)saveAndClose {
         NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
 
-        [defaults setObject:self.systemMsgView.text     forKey:@"systemMessage"];
+        [defaults setObject:self.systemMsgView.text     forKey:@"modelPreferences"];
         [defaults setFloat:self.tempSlider.value        forKey:@"temperature"];
         [defaults setFloat:self.helperTempSlider.value  forKey:kHelperTemperatureDefaultsKey];
         [defaults setFloat:self.freqSlider.value        forKey:@"frequency"];

@@ -44,13 +44,9 @@ static NSSet<NSString *> *EZModelsSupportingXhighMax(void) {
 }
 
 static BOOL EZImageSettingRequiresSubscription(NSString *key, NSString *value) {
-    if ([key isEqualToString:@"imgQuality"])
-        return ![value isEqualToString:@"low"] && ![value isEqualToString:@"medium"];
-    if ([key isEqualToString:@"imgFormat"])
-        return [value isEqualToString:@"png"];
-    if ([key isEqualToString:@"imgBackground"])
-        return ![value isEqualToString:@"opaque"];
-    return NO;
+    return [key isEqualToString:@"imgQuality"] &&
+           ![value isEqualToString:@"low"] &&
+           ![value isEqualToString:@"medium"];
 }
 
 @implementation EZImageSettingsViewController {
@@ -81,18 +77,10 @@ static BOOL EZImageSettingRequiresSubscription(NSString *key, NSString *value) {
                storedQuality, selectedModel);
     }
 
-    if (![self hasActiveSubscription]) {
+    if (![self hasPurchasedAccess]) {
         NSString *currentQuality = [defaults stringForKey:@"imgQuality"] ?: @"auto";
         if (EZImageSettingRequiresSubscription(@"imgQuality", currentQuality))
             [defaults setObject:@"medium" forKey:@"imgQuality"];
-
-        NSString *currentFormat = [defaults stringForKey:@"imgFormat"] ?: @"png";
-        if (EZImageSettingRequiresSubscription(@"imgFormat", currentFormat))
-            [defaults setObject:@"jpeg" forKey:@"imgFormat"];
-
-        NSString *currentBackground = [defaults stringForKey:@"imgBackground"] ?: @"auto";
-        if (EZImageSettingRequiresSubscription(@"imgBackground", currentBackground))
-            [defaults setObject:@"opaque" forKey:@"imgBackground"];
     }
 
     _sections = @[
@@ -124,10 +112,16 @@ static BOOL EZImageSettingRequiresSubscription(NSString *key, NSString *value) {
     [self dismissViewControllerAnimated:YES completion:nil];
 }
 
-- (BOOL)hasActiveSubscription {
+- (BOOL)hasPurchasedAccess {
     EZEntitlementManager *entitlements = [EZEntitlementManager shared];
-    return entitlements.currentTier.length > 0 &&
-           [entitlements.currentStatus isEqualToString:@"active"];
+    static NSSet<NSString *> *supportedTiers;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        supportedTiers = [NSSet setWithObjects:@"basic", @"basic_weekly", @"standard", @"standard_annual",
+                          @"pro", @"pro_annual", @"ultra", @"ultra_annual", @"power", @"power_annual",
+                          @"enterprise", @"enterprise_annual", nil];
+    });
+    return entitlements.hasEverPurchased || [supportedTiers containsObject:entitlements.currentTier];
 }
 
 - (void)showSubscriptionRequiredAlert {
@@ -180,7 +174,7 @@ static BOOL EZImageSettingRequiresSubscription(NSString *key, NSString *value) {
     [tv deselectRowAtIndexPath:ip animated:YES];
     NSDictionary *sec = _sections[(NSUInteger)ip.section];
     NSString *val     = sec[@"options"][(NSUInteger)ip.row];
-    if (EZImageSettingRequiresSubscription(sec[@"key"], val) && ![self hasActiveSubscription]) {
+    if (EZImageSettingRequiresSubscription(sec[@"key"], val) && ![self hasPurchasedAccess]) {
         [self showSubscriptionRequiredAlert];
         return;
     }

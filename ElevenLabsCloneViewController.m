@@ -883,10 +883,16 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     return [EZAuthManager shared].accessToken;
 }
 
-- (BOOL)hasActiveSubscription {
+- (BOOL)hasPurchasedAccess {
     EZEntitlementManager *entitlements = [EZEntitlementManager shared];
-    return entitlements.currentTier.length > 0 &&
-           [entitlements.currentStatus isEqualToString:@"active"];
+    static NSSet<NSString *> *supportedTiers;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        supportedTiers = [NSSet setWithObjects:@"basic", @"basic_weekly", @"standard", @"standard_annual",
+                          @"pro", @"pro_annual", @"ultra", @"ultra_annual", @"power", @"power_annual",
+                          @"enterprise", @"enterprise_annual", nil];
+    });
+    return entitlements.hasEverPurchased || [supportedTiers containsObject:entitlements.currentTier];
 }
 
 - (void)showSubscriptionRequiredAlert {
@@ -948,8 +954,8 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
                         message:NSLocalizedString(@"ElevenLabsClone.SubscriptionCheckUnavailableMessage", @"Subscription check failure message")];
                 return;
             }
-            if (![self hasActiveSubscription]) {
-                EZLog(EZLogLevelInfo, @"CLONE", @"Blocked voice clone: no active subscription");
+            if (![self hasPurchasedAccess]) {
+                EZLog(EZLogLevelInfo, @"CLONE", @"Blocked voice clone: no purchase history");
                 [self showSubscriptionRequiredAlert];
                 return;
             }

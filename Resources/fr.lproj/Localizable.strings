@@ -74,7 +74,7 @@
 "EZSubscription.NotNow" = "Pas maintenant";
 "EZSubscription.ViewPlans" = "Voir les forfaits";
 "EZSubscription.ModelRequiredFormat" = "%@ est disponible avec un abonnement EZComplete actif. Abonnez-vous pour utiliser ce modèle.";
-"EZSubscription.ImageSettingsRequired" = "Les images haute qualité, la sortie PNG et les arrière-plans non opaques nécessitent un abonnement EZComplete actif.";
+"EZSubscription.ImageSettingsRequired" = "Les images haute qualité nécessitent un abonnement EZComplete actif.";
 
 /* EZCoinStoreViewController localization */
 
@@ -217,6 +217,17 @@
 "EZCoinStore.OK" = "OK";
 
 /* ElevenLabs voice cloning */
+"EZCoinStore.Tier.Power" = "Utilisateurs avancés";
+"EZCoinStore.Tier.PowerSubtitle" = "6 250 pièces / mois\nDisponibles lorsque vous en avez besoin.";
+"EZCoinStore.Tier.Enterprise" = "Entreprise";
+"EZCoinStore.Tier.EnterpriseSubtitle" = "12 500 pièces / mois\nPour tous vos besoins professionnels";
+"EZCoinStore.TopUp.Ultra" = "Pack de pièces Ultra";
+"EZCoinStore.TopUp.UltraSubtitle" = "2500 pièces, paiement unique\nN'expire jamais";
+"EZCoinStore.TopUp.Power" = "Pack de pièces Power";
+"EZCoinStore.TopUp.PowerSubtitle" = "6250 pièces, paiement unique\nN'expire jamais";
+"EZCoinStore.TopUp.Enterprise" = "Pack de pièces Entreprise";
+"EZCoinStore.TopUp.EnterpriseSubtitle" = "12500 pièces, paiement unique\nN'expire jamais";
+
 "ElevenLabsClone.Title" = "Cloneur de voix";
 "ElevenLabsClone.VoiceName" = "NOM DE LA VOIX";
 "ElevenLabsClone.VoiceNamePlaceholder" = "ex. MaVoixPro";
@@ -286,3 +297,33 @@
 "ElevenLabsClone.SignInDeleteMessage" = "Connectez-vous pour supprimer des voix.";
 "ElevenLabsClone.DeleteFailedMessage" = "Échec de la suppression.";
 "ElevenLabsClone.DeleteFailed" = "Échec de la suppression";
+
+/* Offre d’abonnement annuel */
+"EZCoinStore.Upsell.Message" = "Payez à l’année et économisez 25 % par rapport à la facturation mensuelle.";
+"EZCoinStore.Upsell.StandardTitle" = "Passez à l’année avec Standard";
+"EZCoinStore.Upsell.StandardMonthlyButton" = "$10.00/mois";
+"EZCoinStore.Upsell.StandardAnnualButton" = "$89.99/an — Économisez $30";
+"EZCoinStore.Upsell.StandardAnnualButtonPromo" = "$89.99/an — 2 mois supplémentaires gratuits";
+"EZCoinStore.Upsell.ProTitle" = "Passez à l’année avec Pro";
+"EZCoinStore.Upsell.ProMonthlyButton" = "$15.00/mois";
+"EZCoinStore.Upsell.ProAnnualButton" = "$134.99/an — Économisez $45";
+"EZCoinStore.Upsell.ProAnnualButtonPromo" = "$134.99/an — 2 mois supplémentaires gratuits";
+"EZCoinStore.Upsell.UltraTitle" = "Passez à l’année avec Ultra";
+"EZCoinStore.Upsell.UltraMonthlyButton" = "$20.00/mois";
+"EZCoinStore.Upsell.UltraAnnualButton" = "$179.99/an — Économisez $60";
+"EZCoinStore.Upsell.UltraAnnualButtonPromo" = "$179.99/an — 2 mois supplémentaires gratuits";
+"EZCoinStore.Upsell.PowerTitle" = "Passez à l’année avec Power";
+"EZCoinStore.Upsell.PowerMonthlyButton" = "$49.99/mois";
+"EZCoinStore.Upsell.PowerAnnualButton" = "$449.99/an — Économisez $150";
+"EZCoinStore.Upsell.PowerAnnualButtonPromo" = "$449.99/an — 2 mois supplémentaires gratuits";
+"EZCoinStore.Upsell.EnterpriseTitle" = "Passez à l’année avec Enterprise";
+"EZCoinStore.Upsell.EnterpriseMonthlyButton" = "$99.99/mois";
+"EZCoinStore.Upsell.EnterpriseAnnualButton" = "$899.99/an — Économisez $300";
+"EZCoinStore.Upsell.EnterpriseAnnualButtonPromo" = "$899.99/an — 2 mois supplémentaires gratuits";
+"EZCoinStore.Upsell.AnnualTitleFormat" = "%@ annuel";
+"EZCoinStore.Upsell.MonthlyButtonFormat" = "%@/mois";
+"EZCoinStore.Upsell.AnnualButtonFormat" = "%@/an — Économisez %@";
+"EZCoinStore.Upsell.AnnualButtonPromoFormat" = "%@/an — 2 mois supplémentaires gratuits";
+"EZCoinStore.Tier.BasicWeekly" = "Basic hebdomadaire";
+"EZCoinStore.Tier.BasicWeeklyPrice" = "$5/semaine • 400 pièces/semaine";
+"EZCoinStore.Tier.BasicWeeklySubtitle" = "Un excellent forfait de départ";

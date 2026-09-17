@@ -74,7 +74,7 @@
 "EZSubscription.NotNow" = "Jetzt nicht";
 "EZSubscription.ViewPlans" = "Tarife ansehen";
 "EZSubscription.ModelRequiredFormat" = "%@ ist mit einem aktiven EZComplete-Abonnement verfügbar. Abonniere, um dieses Modell zu nutzen.";
-"EZSubscription.ImageSettingsRequired" = "Bilder in hoher Qualität, PNG-Ausgabe und nicht deckende Hintergründe erfordern ein aktives EZComplete-Abonnement.";
+"EZSubscription.ImageSettingsRequired" = "Bilder in hoher Qualität erfordern ein aktives EZComplete-Abonnement.";
 
 /* EZCoinStoreViewController localization */
 
@@ -217,6 +217,17 @@
 "EZCoinStore.OK" = "OK";
 
 /* ElevenLabs voice cloning */
+"EZCoinStore.Tier.Power" = "Power-User";
+"EZCoinStore.Tier.PowerSubtitle" = "6.250 Münzen / Monat\nVerfügbar, wenn Sie sie brauchen.";
+"EZCoinStore.Tier.Enterprise" = "Enterprise";
+"EZCoinStore.Tier.EnterpriseSubtitle" = "12.500 Münzen / Monat\nFür alle geschäftlichen Anforderungen";
+"EZCoinStore.TopUp.Ultra" = "Ultra-Münzpaket";
+"EZCoinStore.TopUp.UltraSubtitle" = "2.500 Münzen, einmalig\nLäuft nie ab";
+"EZCoinStore.TopUp.Power" = "Power-Münzpaket";
+"EZCoinStore.TopUp.PowerSubtitle" = "6.250 Münzen, einmalig\nLäuft nie ab";
+"EZCoinStore.TopUp.Enterprise" = "Unternehmens-Münzpaket";
+"EZCoinStore.TopUp.EnterpriseSubtitle" = "12.500 Münzen, einmalig\nLäuft nie ab";
+
 "ElevenLabsClone.Title" = "Stimmenkloner";
 "ElevenLabsClone.VoiceName" = "STIMMENNAME";
 "ElevenLabsClone.VoiceNamePlaceholder" = "z. B. MeineProStimme";
@@ -286,3 +297,11 @@
 "ElevenLabsClone.SignInDeleteMessage" = "Melde dich an, um Stimmen zu löschen.";
 "ElevenLabsClone.DeleteFailedMessage" = "Löschen fehlgeschlagen.";
 "ElevenLabsClone.DeleteFailed" = "Löschen fehlgeschlagen";
+"EZCoinStore.Upsell.Message" = "Bei jährlicher Zahlung sparen Sie 25 % gegenüber der monatlichen Abrechnung.";
+"EZCoinStore.Upsell.AnnualTitleFormat" = "%@ jährlich";
+"EZCoinStore.Upsell.MonthlyButtonFormat" = "%@/Monat";
+"EZCoinStore.Upsell.AnnualButtonFormat" = "%@/Jahr — %@ sparen";
+"EZCoinStore.Upsell.AnnualButtonPromoFormat" = "%@/Jahr — 2 weitere Monate gratis";
+"EZCoinStore.Tier.BasicWeekly" = "Basic wöchentlich";
+"EZCoinStore.Tier.BasicWeeklyPrice" = "$5/Woche • 400 Münzen/Woche";
+"EZCoinStore.Tier.BasicWeeklySubtitle" = "Ein tolles Einstiegspaket";

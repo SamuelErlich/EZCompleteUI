@@ -74,7 +74,7 @@
 "EZSubscription.NotNow" = "ليس الآن";
 "EZSubscription.ViewPlans" = "عرض الخطط";
 "EZSubscription.ModelRequiredFormat" = "%@ متاح مع اشتراك EZComplete نشط. اشترك لاستخدام هذا النموذج.";
-"EZSubscription.ImageSettingsRequired" = "تتطلب الصور عالية الجودة وإخراج PNG والخلفيات غير المعتمة اشتراك EZComplete نشطًا.";
+"EZSubscription.ImageSettingsRequired" = "تتطلب الصور عالية الجودة اشتراك EZComplete نشطًا.";
 
 /* EZCoinStoreViewController localization */
 
@@ -217,6 +217,17 @@
 "EZCoinStore.OK" = "موافق";
 
 /* ElevenLabs voice cloning */
+"EZCoinStore.Tier.Power" = "المستخدمون المتقدمون";
+"EZCoinStore.Tier.PowerSubtitle" = "6,250 عملة / شهر\nمتاحة عند الحاجة إليها.";
+"EZCoinStore.Tier.Enterprise" = "المؤسسات";
+"EZCoinStore.Tier.EnterpriseSubtitle" = "12,500 عملة / شهر\nلكل احتياجات عملك";
+"EZCoinStore.TopUp.Ultra" = "حزمة شحن ألترا";
+"EZCoinStore.TopUp.UltraSubtitle" = "2500 عملة، دفعة واحدة\nلا تنتهي صلاحيتها";
+"EZCoinStore.TopUp.Power" = "حزمة شحن باور";
+"EZCoinStore.TopUp.PowerSubtitle" = "6250 عملة، دفعة واحدة\nلا تنتهي صلاحيتها";
+"EZCoinStore.TopUp.Enterprise" = "حزمة شحن المؤسسات";
+"EZCoinStore.TopUp.EnterpriseSubtitle" = "12500 عملة، دفعة واحدة\nلا تنتهي صلاحيتها";
+
 "ElevenLabsClone.Title" = "مستنسخ الصوت";
 "ElevenLabsClone.VoiceName" = "اسم الصوت";
 "ElevenLabsClone.VoiceNamePlaceholder" = "مثال: صوتي الاحترافي";
@@ -286,3 +297,11 @@
 "ElevenLabsClone.SignInDeleteMessage" = "سجّل الدخول لحذف الأصوات.";
 "ElevenLabsClone.DeleteFailedMessage" = "فشل الحذف.";
 "ElevenLabsClone.DeleteFailed" = "فشل الحذف";
+"EZCoinStore.Upsell.Message" = "ادفع سنويًا ووفر 25٪ مقارنة بالفوترة الشهرية.";
+"EZCoinStore.Upsell.AnnualTitleFormat" = "%@ سنوي";
+"EZCoinStore.Upsell.MonthlyButtonFormat" = "%@/شهريًا";
+"EZCoinStore.Upsell.AnnualButtonFormat" = "%@/سنويًا — وفر %@";
+"EZCoinStore.Upsell.AnnualButtonPromoFormat" = "%@/سنويًا — شهران إضافيان مجانًا";
+"EZCoinStore.Tier.BasicWeekly" = "باقة Basic الأسبوعية";
+"EZCoinStore.Tier.BasicWeeklyPrice" = "$5/أسبوع • 400 عملة/أسبوع";
+"EZCoinStore.Tier.BasicWeeklySubtitle" = "باقة بداية رائعة";

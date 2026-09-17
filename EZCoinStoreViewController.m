@@ -218,6 +218,22 @@ static NSString *const kTierPro      = @"pro";
 
 static NSString *const kTierUltra    = @"ultra";
 
+static NSString *const kTierBasicWeekly = @"basic_weekly";
+
+static NSString *const kTierPower = @"power";
+
+static NSString *const kTierPowerAnnual = @"power_annual";
+
+static NSString *const kTierEnterprise = @"enterprise";
+
+static NSString *const kTierEnterpriseAnnual = @"enterprise_annual";
+
+static NSString *const kTierStandardAnnual = @"standard_annual";
+
+static NSString *const kTierProAnnual      = @"pro_annual";
+
+static NSString *const kTierUltraAnnual    = @"ultra_annual";
+
 // ── Promo banner ───────────────────────────────────────────────────────────────
 
 // Height reserved at the top of the table header when a promo is running.
@@ -396,9 +412,9 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
 
         self.footnoteLabel = [[UILabel alloc] init];
 
-        self.footnoteLabel.font          = [UIFont systemFontOfSize:7];
+        self.footnoteLabel.font          = [UIFont systemFontOfSize:9 weight:UIFontWeightMedium];
 
-        self.footnoteLabel.textColor     = [UIColor secondaryLabelColor];
+        self.footnoteLabel.textColor     = [UIColor colorWithWhite:1.0 alpha:0.82];
 
         self.footnoteLabel.textAlignment = NSTextAlignmentCenter;
 
@@ -540,7 +556,7 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
 
     CGFloat buttonWidth  = cardWidth - textX - cellPadding;
 
-    CGFloat buttonHeight = 34;
+    CGFloat buttonHeight = 40;
 
     self.actionButton.frame = CGRectMake(textX, cardHeight - buttonHeight - cellPadding, buttonWidth, buttonHeight);
 
@@ -742,31 +758,34 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
 
     // ── Subscription tiers ────────────────────────────────────────────────────
 
-    EZStoreItem *basic    = [EZStoreItem new];
+    // "basic" is being retired as a new-signup option in favor of the
+    // $4.99/wk tier below, but existing subscribers on the old $4.99/mo plan
+    // are grandfathered indefinitely -- their PayPal subscription is untouched,
+    // this only changes what NEW purchases look like. isLegacyBasicSubscriber
+    // detects that case so the card still shows correctly for them instead of
+    // looking like an orphaned plan with no matching row.
+    BOOL isLegacyBasicSubscriber = isActive && [currentTier isEqualToString:@"basic"];
 
-    basic.title           = NSLocalizedString(@"EZCoinStore.Tier.Basic", @"Basic subscription tier name");
-
-    basic.subtitle        = NSLocalizedString(@"EZCoinStore.Tier.BasicSubtitle", @"Basic subscription description");
-
-    basic.priceString     = NSLocalizedString(@"EZCoinStore.Tier.BasicPrice", @"Basic subscription price");
-
-    basic.planOrPackageID = kTierBasic;
-
-    basic.type            = EZStoreItemTypeSubscription;
-
-    basic.coins           = 400;
-
-    basic.accentColor     = [UIColor systemBlueColor];
-
-    basic.isCurrentPlan   = isActive && [currentTier isEqualToString:@"basic"];
-
-    if ([currentTier isEqualToString:@"basic"] && !isActive && currentStatus)
-
-        basic.badgeText   = currentStatus.uppercaseString;
-
-    [self applySubscriptionPromoBadgeToItem:basic];
-
-    [items addObject:basic];
+    EZStoreItem *basic    = [EZStoreItem new];
+    basic.title           = NSLocalizedString(@"EZCoinStore.Tier.Basic", @"Basic subscription tier name");
+    if (isLegacyBasicSubscriber) {
+        basic.subtitle        = NSLocalizedString(@"EZCoinStore.Tier.BasicSubtitle", @"Basic subscription description");
+        basic.priceString     = NSLocalizedString(@"EZCoinStore.Tier.BasicPrice", @"Basic subscription price");
+        basic.planOrPackageID = kTierBasic;
+    } else {
+        basic.title           = NSLocalizedString(@"EZCoinStore.Tier.BasicWeekly", @"Basic weekly subscription tier name");
+        basic.subtitle        = NSLocalizedString(@"EZCoinStore.Tier.BasicWeeklySubtitle", @"Basic weekly subscription description");
+        basic.priceString     = NSLocalizedString(@"EZCoinStore.Tier.BasicWeeklyPrice", @"Basic weekly subscription price");
+        basic.planOrPackageID = kTierBasicWeekly;
+    }
+    basic.type            = EZStoreItemTypeSubscription;
+    basic.coins           = 400;
+    basic.accentColor     = [UIColor systemBlueColor];
+    basic.isCurrentPlan   = isActive && ([currentTier isEqualToString:@"basic"] || [currentTier isEqualToString:@"basic_weekly"]);
+    if (([currentTier isEqualToString:@"basic"] || [currentTier isEqualToString:@"basic_weekly"]) && !isActive && currentStatus)
+        basic.badgeText   = currentStatus.uppercaseString;
+    [self applySubscriptionPromoBadgeToItem:basic];
+    [items addObject:basic];
 
     EZStoreItem *standard    = [EZStoreItem new];
 
@@ -784,13 +803,13 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
 
     standard.accentColor     = [UIColor systemPurpleColor];
 
-    standard.isCurrentPlan   = isActive && [currentTier isEqualToString:@"standard"];
+    standard.isCurrentPlan = isActive && ([currentTier isEqualToString:@"standard"] || [currentTier isEqualToString:@"standard_annual"]);
 
-    if ([currentTier isEqualToString:@"standard"] && !isActive && currentStatus)
+    if (([currentTier isEqualToString:@"standard"] || [currentTier isEqualToString:@"standard_annual"]) && !isActive && currentStatus)
 
         standard.badgeText   = currentStatus.uppercaseString;
 
-    else if (![currentTier isEqualToString:@"standard"] || !isActive)
+    else if (!standard.isCurrentPlan)
 
         standard.badgeText   = NSLocalizedString(@"EZCoinStore.Badge.Popular", @"Popular badge");
 
@@ -814,13 +833,13 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
 
     pro.accentColor     = [UIColor systemOrangeColor];
 
-    pro.isCurrentPlan   = isActive && [currentTier isEqualToString:@"pro"];
+    pro.isCurrentPlan = isActive && ([currentTier isEqualToString:@"pro"] || [currentTier isEqualToString:@"pro_annual"]);
 
-    if ([currentTier isEqualToString:@"pro"] && !isActive && currentStatus)
+    if (([currentTier isEqualToString:@"pro"] || [currentTier isEqualToString:@"pro_annual"]) && !isActive && currentStatus)
 
         pro.badgeText    = currentStatus.uppercaseString;
 
-    else if (![currentTier isEqualToString:@"pro"] || !isActive)
+    else if (!pro.isCurrentPlan)
 
         pro.badgeText    = NSLocalizedString(@"EZCoinStore.Badge.BestValue", @"Best value badge");
 
@@ -844,9 +863,9 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
 
     ultra.accentColor     = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:1.0]; // gold
 
-    ultra.isCurrentPlan   = isActive && [currentTier isEqualToString:@"ultra"];
+    ultra.isCurrentPlan = isActive && ([currentTier isEqualToString:@"ultra"] || [currentTier isEqualToString:@"ultra_annual"]);
 
-    if ([currentTier isEqualToString:@"ultra"] && !isActive && currentStatus)
+    if (([currentTier isEqualToString:@"ultra"] || [currentTier isEqualToString:@"ultra_annual"]) && !isActive && currentStatus)
 
         ultra.badgeText   = currentStatus.uppercaseString;
 
@@ -857,6 +876,44 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
     [self applySubscriptionPromoBadgeToItem:ultra]; // now included — takes priority over ULTRA
 
     [items addObject:ultra];
+
+    // Power and Enterprise both offer an annual option, presented via an
+    // upsell shown after the user taps Subscribe (see tableView:didSelectRowAtIndexPath:)
+    // rather than as separate store rows, so the store list doesn't grow by
+    // two more cards for something most people will only consider once
+    // they've already decided to subscribe.
+
+    EZStoreItem *power    = [EZStoreItem new];
+    power.title           = NSLocalizedString(@"EZCoinStore.Tier.Power", @"Power subscription tier name");
+    power.subtitle        = NSLocalizedString(@"EZCoinStore.Tier.PowerSubtitle", @"Power subscription description");
+    power.priceString     = @"$49.99/mo";
+    power.planOrPackageID = kTierPower;
+    power.type            = EZStoreItemTypeSubscription;
+    power.coins            = 6250;
+    power.accentColor     = [UIColor systemIndigoColor];
+    power.isCurrentPlan   = isActive && ([currentTier isEqualToString:@"power"] || [currentTier isEqualToString:@"power_annual"]);
+    if (([currentTier isEqualToString:@"power"] || [currentTier isEqualToString:@"power_annual"]) && !isActive && currentStatus)
+        power.badgeText   = currentStatus.uppercaseString;
+    else if (!power.isCurrentPlan)
+        power.badgeText   = NSLocalizedString(@"EZCoinStore.Badge.Power", @"Power tier badge");
+    [self applySubscriptionPromoBadgeToItem:power];
+    [items addObject:power];
+
+    EZStoreItem *enterprise    = [EZStoreItem new];
+    enterprise.title           = NSLocalizedString(@"EZCoinStore.Tier.Enterprise", @"Enterprise subscription tier name");
+    enterprise.subtitle        = NSLocalizedString(@"EZCoinStore.Tier.EnterpriseSubtitle", @"Enterprise subscription description");
+    enterprise.priceString     = @"$99.99/mo";
+    enterprise.planOrPackageID = kTierEnterprise;
+    enterprise.type            = EZStoreItemTypeSubscription;
+    enterprise.coins            = 12500;
+    enterprise.accentColor     = [UIColor colorWithRed:0.0 green:0.0 blue:0.0 alpha:1.0]; // black — top-tier accent
+    enterprise.isCurrentPlan   = isActive && ([currentTier isEqualToString:@"enterprise"] || [currentTier isEqualToString:@"enterprise_annual"]);
+    if (([currentTier isEqualToString:@"enterprise"] || [currentTier isEqualToString:@"enterprise_annual"]) && !isActive && currentStatus)
+        enterprise.badgeText   = currentStatus.uppercaseString;
+    else if (!enterprise.isCurrentPlan)
+        enterprise.badgeText   = NSLocalizedString(@"EZCoinStore.Badge.Enterprise", @"Enterprise tier badge");
+    [self applySubscriptionPromoBadgeToItem:enterprise];
+    [items addObject:enterprise];
 
     // ── One-time top-ups ──────────────────────────────────────────────────────
 
@@ -901,6 +958,41 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
     [self applyPromoBadgeIfNeededToItem:topup2]; // takes priority over SAVE 10%
 
     [items addObject:topup2];
+    EZStoreItem *topup3    = [EZStoreItem new];
+    topup3.title           = NSLocalizedString(@"EZCoinStore.TopUp.Ultra", @"Ultra coin pack title");
+    topup3.subtitle        = NSLocalizedString(@"EZCoinStore.TopUp.UltraSubtitle", @"Ultra coin pack description");
+    topup3.priceString     = @"$20.00";
+    topup3.planOrPackageID = @"TOPUP_2500";
+    topup3.type            = EZStoreItemTypeTopUp;
+    topup3.coins           = 2500;
+    topup3.accentColor     = [UIColor systemIndigoColor];
+    [self applyPromoBadgeIfNeededToItem:topup3];
+    [items addObject:topup3];
+    // Power one-time top-up — mirrors the $49.99 Power monthly tier's coin
+    // amount, matching the existing pattern where a top-up grants the same
+    // coins as a monthly subscription at the same price point.
+    EZStoreItem *topup4    = [EZStoreItem new];
+    topup4.title           = NSLocalizedString(@"EZCoinStore.TopUp.Power", @"Power coin pack title");
+    topup4.subtitle        = NSLocalizedString(@"EZCoinStore.TopUp.PowerSubtitle", @"Power coin pack description");
+    topup4.priceString     = @"$49.99";
+    topup4.planOrPackageID = @"TOPUP_6250";
+    topup4.type            = EZStoreItemTypeTopUp;
+    topup4.coins           = 6250;
+    topup4.accentColor     = [UIColor systemIndigoColor];
+    [self applyPromoBadgeIfNeededToItem:topup4];
+    [items addObject:topup4];
+
+    // Enterprise one-time top-up — mirrors the $99.99 Enterprise monthly tier.
+    EZStoreItem *topup5    = [EZStoreItem new];
+    topup5.title           = NSLocalizedString(@"EZCoinStore.TopUp.Enterprise", @"Enterprise coin pack title");
+    topup5.subtitle        = NSLocalizedString(@"EZCoinStore.TopUp.EnterpriseSubtitle", @"Enterprise coin pack description");
+    topup5.priceString     = @"$99.99";
+    topup5.planOrPackageID = @"TOPUP_12500";
+    topup5.type            = EZStoreItemTypeTopUp;
+    topup5.coins           = 12500;
+    topup5.accentColor     = [UIColor systemPinkColor];
+    [self applyPromoBadgeIfNeededToItem:topup5];
+    [items addObject:topup5];
 
     self.items = [items copy];
 
@@ -986,7 +1078,7 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
 
     pulseAnimation.fromValue          = @1.0;
 
-    pulseAnimation.toValue            = @1.035;
+    pulseAnimation.toValue            = @1.05;
 
     pulseAnimation.duration           = 0.85;
 
@@ -1155,9 +1247,9 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
 
-    if (section == 0) return 4; // subscription tiers
+    if (section == 0) return 6; // subscription tiers
 
-    return 2;                   // top-up packages
+    return 5;                   // top-up packages
 
 }
 
@@ -1211,11 +1303,11 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
 
     if (indexPath.section == 0 && self.isPromoActive) {
 
-        return 156;
+        return 182;
 
     }
 
-    return 120;
+        return 168;
 
 }
 
@@ -1225,7 +1317,7 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
 
                                                         forIndexPath:indexPath];
 
-    NSInteger itemIndex = indexPath.section == 0 ? indexPath.row : 4 + indexPath.row;
+    NSInteger itemIndex = indexPath.section == 0 ? indexPath.row : 6 + indexPath.row;
 
     if (itemIndex < (NSInteger)self.items.count) {
 
@@ -1833,19 +1925,227 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
 
     }
 
-    [self.spinner startAnimating];
+    // Standard, Pro, Ultra, Power, and Enterprise all offer an annual option
+    // at signup time via an upsell interstitial, rather than as separate
+    // store rows (see buildItems). Everything else proceeds straight to
+    // checkout as before. Basic Weekly deliberately has no annual option —
+    // it's the low-commitment entry tier, an annual ask there works against
+    // the point of it.
+    if (item.type == EZStoreItemTypeSubscription &&
+        ([item.planOrPackageID isEqualToString:kTierStandard]  ||
+         [item.planOrPackageID isEqualToString:kTierPro]       ||
+         [item.planOrPackageID isEqualToString:kTierUltra]     ||
+         [item.planOrPackageID isEqualToString:kTierPower]     ||
+         [item.planOrPackageID isEqualToString:kTierEnterprise])) {
 
-    self.tableView.userInteractionEnabled = NO;
+        [self presentAnnualUpsellForMonthlyTier:item.planOrPackageID token:token];
 
-    if (item.type == EZStoreItemTypeSubscription) {
+        return;
 
-        [self startSubscriptionForTier:item.planOrPackageID token:token];
+    }
 
-    } else {
+    [self.spinner startAnimating];
 
-        [self startTopUpForPackageID:item.planOrPackageID coins:item.coins token:token];
+    self.tableView.userInteractionEnabled = NO;
 
-    }
+    if (item.type == EZStoreItemTypeSubscription) {
+
+        [self startSubscriptionForTier:item.planOrPackageID token:token];
+
+    } else {
+
+        [self startTopUpForPackageID:item.planOrPackageID coins:item.coins token:token];
+
+    }
+
+}
+
+// ── Annual upsell ──────────────────────────────────────────────────────────────
+// Shown only for Power/Enterprise, only at the moment of subscribing (not
+// shown for cancel or for other tiers). Lets the user compare the monthly
+// price against the discounted annual price and savings before committing,
+// without the annual option taking up a permanent row in the store list.
+- (void)presentAnnualUpsellForMonthlyTier:(NSString *)monthlyTier token:(NSString *)token {
+
+    // Each tier has two annual-button copy variants: the plain "save $X"
+    // version, and a promo-aware version used only while isPromoActive is on
+    // (see the comment on that property -- it's the manual flag you flip to
+    // match real rows in the `promotions` table). The promo framing compares
+    // against what a promo'd monthly signup nets (1 free month) rather than
+    // full price, so it reads correctly as "2 MORE months" on top of that,
+    // not as a claim that this stacks with the monthly bonus itself.
+    NSDictionary *upsellConfig = @{
+        kTierStandard: @{
+            @"annualTier":  kTierStandardAnnual,
+            @"tierTitle": NSLocalizedString(@"EZCoinStore.Tier.Standard", @"Standard tier name"), @"monthlyPrice": @"$10.00", @"annualPrice": @"$89.99", @"savings": @"$30",
+        },
+        kTierPro: @{
+            @"annualTier":  kTierProAnnual,
+            @"tierTitle": NSLocalizedString(@"EZCoinStore.Tier.Pro", @"Pro tier name"), @"monthlyPrice": @"$15.00", @"annualPrice": @"$134.99", @"savings": @"$45",
+        },
+        kTierUltra: @{
+            @"annualTier":  kTierUltraAnnual,
+            @"tierTitle": NSLocalizedString(@"EZCoinStore.Tier.Ultra", @"Ultra tier name"), @"monthlyPrice": @"$20.00", @"annualPrice": @"$179.99", @"savings": @"$60",
+        },
+        kTierPower: @{
+            @"annualTier":  kTierPowerAnnual,
+            @"tierTitle": NSLocalizedString(@"EZCoinStore.Tier.Power", @"Power tier name"), @"monthlyPrice": @"$49.99", @"annualPrice": @"$449.99", @"savings": @"$150",
+        },
+        kTierEnterprise: @{
+            @"annualTier":  kTierEnterpriseAnnual,
+            @"tierTitle": NSLocalizedString(@"EZCoinStore.Tier.Enterprise", @"Enterprise tier name"), @"monthlyPrice": @"$99.99", @"annualPrice": @"$899.99", @"savings": @"$300",
+        },
+    };
+
+    NSDictionary *config = upsellConfig[monthlyTier];
+    if (!config) {
+        // Shouldn't happen -- the tap-handler condition above only routes
+        // tiers that have an entry here. Fail safe to a normal monthly
+        // subscribe rather than silently doing nothing.
+        [self.spinner startAnimating];
+        self.tableView.userInteractionEnabled = NO;
+        [self startSubscriptionForTier:monthlyTier token:token];
+        return;
+    }
+
+    NSString *annualTier       = config[@"annualTier"];
+    NSString *title = [NSString stringWithFormat:NSLocalizedString(@"EZCoinStore.Upsell.AnnualTitleFormat", @"Annual offer title"), config[@"tierTitle"]];
+    NSString *monthlyButtonText = [NSString stringWithFormat:NSLocalizedString(@"EZCoinStore.Upsell.MonthlyButtonFormat", @"Monthly option button"), config[@"monthlyPrice"]];
+    NSString *annualButtonText = self.isPromoActive
+        ? [NSString stringWithFormat:NSLocalizedString(@"EZCoinStore.Upsell.AnnualButtonPromoFormat", @"Annual promotional option button"), config[@"annualPrice"]]
+        : [NSString stringWithFormat:NSLocalizedString(@"EZCoinStore.Upsell.AnnualButtonFormat", @"Annual option button"), config[@"annualPrice"], config[@"savings"]];
+
+    NSString *message = NSLocalizedString(@"EZCoinStore.Upsell.Message", @"Pay yearly and save 25% vs monthly message");
+
+    // Tint the card's title/border with the tapped tier's own accent color
+    // (matching buildItems) rather than always using plain gold, so the
+    // upsell still visually ties back to the card the user just tapped.
+    // Enterprise's accent is black in buildItems, which wouldn't read
+    // against this card's dark background, so it falls back to gold here.
+    NSDictionary *tierAccents = @{
+        kTierStandard:  [UIColor systemPurpleColor],
+        kTierPro:       [UIColor systemOrangeColor],
+        kTierUltra:     [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:1.0],
+        kTierPower:     [UIColor systemIndigoColor],
+        kTierEnterprise:[UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:1.0],
+    };
+    UIColor *accent = tierAccents[monthlyTier] ?: [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:1.0];
+
+    UIView *overlay = [[UIView alloc] initWithFrame:self.view.bounds];
+    overlay.backgroundColor  = [UIColor colorWithWhite:0 alpha:0.75];
+    overlay.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    overlay.alpha            = 0;
+    overlay.tag              = 9911;
+    [self.view addSubview:overlay];
+
+    UIView *card = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 300, 400)];
+    card.center             = CGPointMake(self.view.bounds.size.width / 2, self.view.bounds.size.height / 2);
+    card.backgroundColor    = [UIColor colorWithRed:0.08 green:0.08 blue:0.14 alpha:1.0];
+    card.layer.cornerRadius = 24;
+    card.layer.borderWidth  = 1.5;
+    card.layer.borderColor  = [accent colorWithAlphaComponent:0.6].CGColor;
+    card.transform          = CGAffineTransformMakeScale(0.7, 0.7);
+    [overlay addSubview:card];
+
+    UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 28, 260, 50)];
+    titleLabel.text          = title;
+    titleLabel.font          = [UIFont boldSystemFontOfSize:20];
+    titleLabel.textColor     = accent;
+    titleLabel.textAlignment = NSTextAlignmentCenter;
+    titleLabel.numberOfLines = 2;
+    [card addSubview:titleLabel];
+
+    UILabel *messageLabel = [[UILabel alloc] initWithFrame:CGRectMake(24, 84, 252, 44)];
+    messageLabel.text          = message;
+    messageLabel.font          = [UIFont systemFontOfSize:14];
+    messageLabel.textColor     = [UIColor secondaryLabelColor];
+    messageLabel.textAlignment = NSTextAlignmentCenter;
+    messageLabel.numberOfLines = 2;
+    [card addSubview:messageLabel];
+
+    // Primary CTA — annual, styled like the celebration screen's gold
+    // dismiss button so it reads as the recommended choice.
+    UIButton *annualButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    annualButton.frame              = CGRectMake(30, 150, 240, 56);
+    annualButton.backgroundColor    = accent;
+    annualButton.layer.cornerRadius = 14;
+    annualButton.titleLabel.font    = [UIFont boldSystemFontOfSize:16];
+    annualButton.titleLabel.numberOfLines = 2;
+    annualButton.titleLabel.textAlignment = NSTextAlignmentCenter;
+    [annualButton setTitle:annualButtonText forState:UIControlStateNormal];
+    [annualButton setTitleColor:[UIColor blackColor] forState:UIControlStateNormal];
+    [annualButton addAction:[UIAction actionWithHandler:^(UIAction *action) {
+        [self dismissAnnualUpsellThen:^{
+            [self.spinner startAnimating];
+            self.tableView.userInteractionEnabled = NO;
+            [self startSubscriptionForTier:annualTier token:token];
+        }];
+    }] forControlEvents:UIControlEventTouchUpInside];
+    [card addSubview:annualButton];
+
+    UILabel *orLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 214, 260, 18)];
+    orLabel.text          = NSLocalizedString(@"EZCoinStore.Upsell.Or", @"'or' divider text");
+    orLabel.font          = [UIFont systemFontOfSize:12];
+    orLabel.textColor     = [UIColor tertiaryLabelColor];
+    orLabel.textAlignment = NSTextAlignmentCenter;
+    [card addSubview:orLabel];
+
+    // Secondary option — monthly, outlined rather than filled so it doesn't
+    // compete visually with the annual CTA above it.
+    UIButton *monthlyButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    monthlyButton.frame                  = CGRectMake(30, 240, 240, 56);
+    monthlyButton.backgroundColor        = [UIColor clearColor];
+    monthlyButton.layer.cornerRadius     = 14;
+    monthlyButton.layer.borderWidth      = 1.5;
+    monthlyButton.layer.borderColor      = [UIColor colorWithWhite:1 alpha:0.2].CGColor;
+    monthlyButton.titleLabel.font        = [UIFont boldSystemFontOfSize:16];
+    monthlyButton.titleLabel.numberOfLines = 2;
+    monthlyButton.titleLabel.textAlignment = NSTextAlignmentCenter;
+    [monthlyButton setTitle:monthlyButtonText forState:UIControlStateNormal];
+    [monthlyButton setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+    [monthlyButton addAction:[UIAction actionWithHandler:^(UIAction *action) {
+        [self dismissAnnualUpsellThen:^{
+            [self.spinner startAnimating];
+            self.tableView.userInteractionEnabled = NO;
+            [self startSubscriptionForTier:monthlyTier token:token];
+        }];
+    }] forControlEvents:UIControlEventTouchUpInside];
+    [card addSubview:monthlyButton];
+
+    UIButton *cancelButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    cancelButton.frame       = CGRectMake(30, 316, 240, 40);
+    cancelButton.titleLabel.font = [UIFont systemFontOfSize:14];
+    [cancelButton setTitle:NSLocalizedString(@"EZCoinStore.Cancel", @"Cancel button") forState:UIControlStateNormal];
+    [cancelButton setTitleColor:[UIColor secondaryLabelColor] forState:UIControlStateNormal];
+    [cancelButton addAction:[UIAction actionWithHandler:^(UIAction *action) {
+        [self dismissAnnualUpsellThen:nil];
+    }] forControlEvents:UIControlEventTouchUpInside];
+    [card addSubview:cancelButton];
+
+    [UIView animateWithDuration:0.4
+                          delay:0
+         usingSpringWithDamping:0.7
+          initialSpringVelocity:0.5
+                        options:0
+                     animations:^{
+        overlay.alpha    = 1;
+        card.transform    = CGAffineTransformIdentity;
+    } completion:nil];
+
+}
+
+// Fades and removes the annual-upsell overlay, then runs completion (if
+// given) once it's fully gone -- so checkout doesn't visually start on top
+// of the closing animation.
+- (void)dismissAnnualUpsellThen:(void (^ _Nullable)(void))completion {
+
+    UIView *overlay = [self.view viewWithTag:9911];
+    [UIView animateWithDuration:0.25 animations:^{
+        overlay.alpha = 0;
+    } completion:^(BOOL done) {
+        [overlay removeFromSuperview];
+        if (completion) completion();
+    }];
 
 }
 
@@ -1995,43 +2295,23 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
 
 - (void)startTopUpForPackageID:(NSString *)packageID coins:(NSInteger)coins token:(NSString *)token {
 
-    NSDictionary *packagePrices = @{
+    // amount and coins are no longer sent -- create-paypal-order resolves
+    // both server-side from package_id alone now, so a jailbroken client
+    // can't submit a mismatched amount/coins pair for a real package_id.
+    NSURL *orderURL = [NSURL URLWithString:[kStoreSupabaseURL
+        stringByAppendingString:@"/functions/v1/create-paypal-order"]];
 
-        @"TOPUP_400": @"5.00",
+    NSMutableURLRequest *orderRequest = [NSMutableURLRequest requestWithURL:orderURL];
+    orderRequest.HTTPMethod      = @"POST";
+    orderRequest.timeoutInterval = 15;
+    [orderRequest setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+    [orderRequest setValue:[NSString stringWithFormat:@"Bearer %@", token]
+        forHTTPHeaderField:@"Authorization"];
 
-        @"TOPUP_900": @"10.00",
-
-    };
-
-    NSString *amount = packagePrices[packageID] ?: @"5.00";
-
-    NSURL *orderURL = [NSURL URLWithString:[kStoreSupabaseURL
-
-        stringByAppendingString:@"/functions/v1/create-paypal-order"]];
-
-    NSMutableURLRequest *orderRequest = [NSMutableURLRequest requestWithURL:orderURL];
-
-    orderRequest.HTTPMethod      = @"POST";
-
-    orderRequest.timeoutInterval = 15;
-
-    [orderRequest setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
-
-    [orderRequest setValue:[NSString stringWithFormat:@"Bearer %@", token]
-
-        forHTTPHeaderField:@"Authorization"];
-
-    orderRequest.HTTPBody = [NSJSONSerialization dataWithJSONObject:@{
-
-        @"user_id":    [EZAuthManager shared].userId ?: @"",
-
-        @"package_id": packageID,
-
-        @"amount":     amount,
-
-        @"coins":      @(coins),
-
-    } options:0 error:nil];
+    orderRequest.HTTPBody = [NSJSONSerialization dataWithJSONObject:@{
+        @"user_id":    [EZAuthManager shared].userId ?: @"",
+        @"package_id": packageID,
+    } options:0 error:nil];
 
     [[[NSURLSession sharedSession] dataTaskWithRequest:orderRequest
 
@@ -2341,17 +2621,20 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
 
         NSString     *tier        = [EZEntitlementManager shared].currentTier ?: @"basic";
 
-        NSDictionary *tierCoinMap = @{
-
-            @"basic":    @400,
-
-            @"standard": @900,
-
-            @"pro":      @1600,
-
-            @"ultra":    @2500,
-
-        };
+        NSDictionary *tierCoinMap = @{
+            @"basic":             @400,
+            @"basic_weekly":      @400,
+            @"standard":          @900,
+            @"standard_annual":   @10800,
+            @"pro":               @1600,
+            @"pro_annual":        @19200,
+            @"ultra":             @2500,
+            @"ultra_annual":      @30000,
+            @"power":             @6250,
+            @"power_annual":      @75000,
+            @"enterprise":        @12500,
+            @"enterprise_annual": @150000,
+        };
 
         NSInteger includedCoins = [tierCoinMap[tier.lowercaseString] integerValue] ?: 400;
 
