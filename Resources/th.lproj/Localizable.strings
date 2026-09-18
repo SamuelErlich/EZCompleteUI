@@ -305,3 +305,10 @@
 "EZCoinStore.Tier.BasicWeekly" = "Basic รายสัปดาห์";
 "EZCoinStore.Tier.BasicWeeklyPrice" = "$5/สัปดาห์ • 400 เหรียญ/สัปดาห์";
 "EZCoinStore.Tier.BasicWeeklySubtitle" = "แพ็กเกจเริ่มต้นที่ยอดเยี่ยม";
+"EZCoinStore.Cancel" = "ยกเลิก";
+
+/* แกลเลอรีรูปภาพ */
+"EZGallery.AskQuestion" = "ถามคำถาม";
+"EZGallery.EditWithAI" = "แก้ไขด้วย AI";
+"EZGallery.UseInVideoGame" = "ใช้ในวิดีโอเกม";
+"EZGallery.EditPromptPlaceholder" = "อธิบายการแก้ไขของคุณ…";

@@ -305,3 +305,10 @@
 "EZCoinStore.Tier.BasicWeekly" = "Basic hằng tuần";
 "EZCoinStore.Tier.BasicWeeklyPrice" = "$5/tuần • 400 xu/tuần";
 "EZCoinStore.Tier.BasicWeeklySubtitle" = "Gói khởi đầu tuyệt vời";
+"EZCoinStore.Cancel" = "Hủy";
+
+/* Thư viện ảnh */
+"EZGallery.AskQuestion" = "Đặt câu hỏi";
+"EZGallery.EditWithAI" = "Chỉnh sửa bằng AI";
+"EZGallery.UseInVideoGame" = "Dùng trong trò chơi điện tử";
+"EZGallery.EditPromptPlaceholder" = "Mô tả các chỉnh sửa của bạn…";

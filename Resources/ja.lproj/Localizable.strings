@@ -305,3 +305,10 @@
 "EZCoinStore.Tier.BasicWeekly" = "Basic 週間プラン";
 "EZCoinStore.Tier.BasicWeeklyPrice" = "$5/週 • 400コイン/週";
 "EZCoinStore.Tier.BasicWeeklySubtitle" = "初めての方に最適なパッケージ";
+"EZCoinStore.Cancel" = "キャンセル";
+
+/* フォトギャラリー */
+"EZGallery.AskQuestion" = "質問する";
+"EZGallery.EditWithAI" = "AIで編集";
+"EZGallery.UseInVideoGame" = "ゲームで使用";
+"EZGallery.EditPromptPlaceholder" = "編集内容を説明…";

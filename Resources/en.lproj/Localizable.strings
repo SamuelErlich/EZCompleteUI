@@ -338,3 +338,10 @@
 "EZCoinStore.Tier.BasicWeekly" = "Basic Weekly";
 "EZCoinStore.Tier.BasicWeeklyPrice" = "$5/wk • 400 coins/week";
 "EZCoinStore.Tier.BasicWeeklySubtitle" = "A Great Starter Package";
+"EZCoinStore.Cancel" = "Cancel";
+
+/* Photo gallery */
+"EZGallery.AskQuestion" = "Ask a Question";
+"EZGallery.EditWithAI" = "Edit with AI";
+"EZGallery.UseInVideoGame" = "Use in Video Game";
+"EZGallery.EditPromptPlaceholder" = "Describe your edits…";

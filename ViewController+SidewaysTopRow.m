@@ -50,6 +50,7 @@ static const void *kTableTopConstraint = &kTableTopConstraint;
     NSDictionary<NSString *, NSString *> *buttonLabels = @{
         @"speakButton":          @"Speak",
         @"webSearchButton":      @"Web Search",
+        @"helperDirectAnswersButton": @"Helper Direct Answers",
         @"addChatButton":        @"New Chat",
         @"memoriesButton":       @"Memories",
         @"textToSpeechButton":   @"TTS",
@@ -79,6 +80,7 @@ static const void *kTableTopConstraint = &kTableTopConstraint;
         @"supportRequestButton",
         @"textToSpeechButton",
         @"webSearchButton",
+        @"helperDirectAnswersButton",
         @"settingsButton",
         @"addChatButton",
         @"cloningButton",

@@ -305,3 +305,10 @@
 "EZCoinStore.Tier.BasicWeekly" = "Basic wöchentlich";
 "EZCoinStore.Tier.BasicWeeklyPrice" = "$5/Woche • 400 Münzen/Woche";
 "EZCoinStore.Tier.BasicWeeklySubtitle" = "Ein tolles Einstiegspaket";
+"EZCoinStore.Cancel" = "Abbrechen";
+
+/* Fotogalerie */
+"EZGallery.AskQuestion" = "Eine Frage stellen";
+"EZGallery.EditWithAI" = "Mit KI bearbeiten";
+"EZGallery.UseInVideoGame" = "In Videospiel verwenden";
+"EZGallery.EditPromptPlaceholder" = "Beschreibe deine Änderungen…";

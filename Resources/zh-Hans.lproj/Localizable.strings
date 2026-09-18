@@ -305,3 +305,10 @@
 "EZCoinStore.Tier.BasicWeekly" = "Basic 周度套餐";
 "EZCoinStore.Tier.BasicWeeklyPrice" = "$5/周 • 400 金币/周";
 "EZCoinStore.Tier.BasicWeeklySubtitle" = "超值入门套餐";
+"EZCoinStore.Cancel" = "取消";
+
+/* 照片图库 */
+"EZGallery.AskQuestion" = "提问";
+"EZGallery.EditWithAI" = "使用 AI 编辑";
+"EZGallery.UseInVideoGame" = "在电子游戏中使用";
+"EZGallery.EditPromptPlaceholder" = "描述你的编辑需求…";

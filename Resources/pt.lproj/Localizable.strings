@@ -327,3 +327,10 @@
 "EZCoinStore.Tier.BasicWeekly" = "Basic semanal";
 "EZCoinStore.Tier.BasicWeeklyPrice" = "$5/semana • 400 moedas/semana";
 "EZCoinStore.Tier.BasicWeeklySubtitle" = "Um ótimo pacote inicial";
+"EZCoinStore.Cancel" = "Cancelar";
+
+/* Galeria de fotos */
+"EZGallery.AskQuestion" = "Fazer uma pergunta";
+"EZGallery.EditWithAI" = "Editar com IA";
+"EZGallery.UseInVideoGame" = "Usar no videogame";
+"EZGallery.EditPromptPlaceholder" = "Descreva suas edições…";

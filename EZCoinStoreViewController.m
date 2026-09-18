@@ -14,67 +14,67 @@
 
 // Subscription architecture:
 
-//   The app never holds PayPal plan IDs. Each subscription tier is identified
+//   The app never holds PayPal plan IDs. Each subscription tier is identified
 
-//   by a name ("basic", "standard", "pro", "ultra") and the edge function
+//   by a name ("basic", "standard", "pro", "ultra") and the edge function
 
-//   (create-paypal-subscription) resolves the real plan_id from server-side
+//   (create-paypal-subscription) resolves the real plan_id from server-side
 
-//   env vars. This keeps plan IDs out of the binary, which is especially
+//   env vars. This keeps plan IDs out of the binary, which is especially
 
-//   important given the jailbreak audience — plan IDs in the binary can be
+//   important given the jailbreak audience — plan IDs in the binary can be
 
-//   read and potentially misused via method hooks.
+//   read and potentially misused via method hooks.
 
 //
 
 // Recent changes:
 
-//   - Removed hardcoded PayPal plan ID constants (kPlanBasic, kPlanStandard,
+//   - Removed hardcoded PayPal plan ID constants (kPlanBasic, kPlanStandard,
 
-//     kPlanPro, kPlanUltra). Subscription items now store tier names instead.
+//     kPlanPro, kPlanUltra). Subscription items now store tier names instead.
 
-//     The edge function resolves the real plan_id from environment variables.
+//     The edge function resolves the real plan_id from environment variables.
 
-//     Previously, sandbox plan IDs were baked into the binary causing "failed
+//     Previously, sandbox plan IDs were baked into the binary causing "failed
 
-//     to open store" errors when the backend switched to live mode.
+//     to open store" errors when the backend switched to live mode.
 
-//   - createPayPalSubscriptionForPlanID:token: renamed to
+//   - createPayPalSubscriptionForPlanID:token: renamed to
 
-//     createPayPalSubscriptionForTier:token: and updated to send { tier, user_id }
+//     createPayPalSubscriptionForTier:token: and updated to send { tier, user_id }
 
-//     instead of { plan_id, user_id } to match the updated edge function contract.
+//     instead of { plan_id, user_id } to match the updated edge function contract.
 
-//   - startSubscriptionForPlanID:token: renamed to startSubscriptionForTier:token:
+//   - startSubscriptionForPlanID:token: renamed to startSubscriptionForTier:token:
 
-//   - pendingPlanID property renamed to pendingTierName to reflect the new
+//   - pendingPlanID property renamed to pendingTierName to reflect the new
 
-//     tier-name-based architecture (property remains reserved for future retry logic)
+//     tier-name-based architecture (property remains reserved for future retry logic)
 
-//   - Free coins every 6 hours: 5 per claim for free users, 10 per claim for active subscribers (any tier)
+//   - Free coins every 6 hours: 5 per claim for free users, 10 per claim for active subscribers (any tier)
 
-//   - Floating "Free Coins" button added top-left, mirroring the Ledger button on the right
+//   - Floating "Free Coins" button added top-left, mirroring the Ledger button on the right
 
-//   - Ledger button and its methods wrapped in #if DEBUG — absent in Release/production builds
+//   - Ledger button and its methods wrapped in #if DEBUG — absent in Release/production builds
 
-//   - Coin eligibility is always verified server-side (claim-daily-coins edge function)
+//   - Coin eligibility is always verified server-side (claim-daily-coins edge function)
 
-//   - Successful claim triggers the same coin celebration overlay used for purchases
+//   - Successful claim triggers the same coin celebration overlay used for purchases
 
-//   - Button shows a live ticking countdown (e.g. "Next: 4h 22m", "Next: 3m 45s", "Next: 12s")
+//   - Button shows a live ticking countdown (e.g. "Next: 4h 22m", "Next: 3m 45s", "Next: 12s")
 
-//     driven by an NSTimer that fires every second; timer starts when the server confirms
+//     driven by an NSTimer that fires every second; timer starts when the server confirms
 
-//     coins were already claimed and stops automatically when the countdown reaches zero,
+//     coins were already claimed and stops automatically when the countdown reaches zero,
 
-//     when coins become available, or when the view disappears
+//     when coins become available, or when the view disappears
 
-//   - Short local variable names (pad, w, h, req, url, card, etc.) renamed for readability
+//   - Short local variable names (pad, w, h, req, url, card, etc.) renamed for readability
 
-//   - Replaced NSISO8601DateFormatter with NSDateFormatter (crash fix: SIGABRT on iOS 15 / jailbreak)
+//   - Replaced NSISO8601DateFormatter with NSDateFormatter (crash fix: SIGABRT on iOS 15 / jailbreak)
 
-//   - All JSON value reads now use NSNull-safe helpers (crash fix: JSON null → [NSNull null] → ___forwarding___)
+//   - All JSON value reads now use NSNull-safe helpers (crash fix: JSON null → [NSNull null] → ___forwarding___)
 
 #import <QuartzCore/QuartzCore.h>
 
@@ -110,17 +110,17 @@
 
 static BOOL jsonBool(NSDictionary *json, NSString *key) {
 
-    id value = json[key];
+    id value = json[key];
 
-    return (value && value != (id)[NSNull null]) ? [value boolValue] : NO;
+    return (value && value != (id)[NSNull null]) ? [value boolValue] : NO;
 
 }
 
 static NSInteger jsonInteger(NSDictionary *json, NSString *key) {
 
-    id value = json[key];
+    id value = json[key];
 
-    return (value && value != (id)[NSNull null]) ? [value integerValue] : 0;
+    return (value && value != (id)[NSNull null]) ? [value integerValue] : 0;
 
 }
 
@@ -128,9 +128,9 @@ static NSInteger jsonInteger(NSDictionary *json, NSString *key) {
 
 static NSString *jsonString(NSDictionary *json, NSString *key) {
 
-    id value = json[key];
+    id value = json[key];
 
-    return [value isKindOfClass:[NSString class]] ? value : nil;
+    return [value isKindOfClass:[NSString class]] ? value : nil;
 
 }
 
@@ -148,53 +148,53 @@ static NSString *jsonString(NSDictionary *json, NSString *key) {
 
 static NSDate *dateFromISO8601String(id isoStringOrNull) {
 
-    // Reject nil, [NSNull null], and any non-string type that JSON might produce
+    // Reject nil, [NSNull null], and any non-string type that JSON might produce
 
-    if (![isoStringOrNull isKindOfClass:[NSString class]]) return nil;
+    if (![isoStringOrNull isKindOfClass:[NSString class]]) return nil;
 
-    NSString *isoString = (NSString *)isoStringOrNull;
+    NSString *isoString = (NSString *)isoStringOrNull;
 
-    if (isoString.length == 0) return nil;
+    if (isoString.length == 0) return nil;
 
-    // Two formats to cover what Supabase / the edge function may return:
+    // Two formats to cover what Supabase / the edge function may return:
 
-    //   Format A (JavaScript toISOString): "2026-06-09T20:28:18.000Z"
+    //   Format A (JavaScript toISOString): "2026-06-09T20:28:18.000Z"
 
-    //   Format B (PostgreSQL timestamptz): "2026-06-09T20:28:18+00:00"
+    //   Format B (PostgreSQL timestamptz): "2026-06-09T20:28:18+00:00"
 
-    static NSDateFormatter *formatterWithMilliseconds    = nil;
+    static NSDateFormatter *formatterWithMilliseconds    = nil;
 
-    static NSDateFormatter *formatterWithoutMilliseconds = nil;
+    static NSDateFormatter *formatterWithoutMilliseconds = nil;
 
-    static dispatch_once_t  onceToken;
+    static dispatch_once_t  onceToken;
 
-    dispatch_once(&onceToken, ^{
+    dispatch_once(&onceToken, ^{
 
-        NSLocale *posixLocale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
+        NSLocale *posixLocale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
 
-        formatterWithMilliseconds            = [[NSDateFormatter alloc] init];
+        formatterWithMilliseconds            = [[NSDateFormatter alloc] init];
 
-        formatterWithMilliseconds.locale     = posixLocale;
+        formatterWithMilliseconds.locale     = posixLocale;
 
-        formatterWithMilliseconds.dateFormat = @"yyyy-MM-dd'T'HH:mm:ss.SSSZZZZZ";
+        formatterWithMilliseconds.dateFormat = @"yyyy-MM-dd'T'HH:mm:ss.SSSZZZZZ";
 
-        formatterWithoutMilliseconds            = [[NSDateFormatter alloc] init];
+        formatterWithoutMilliseconds            = [[NSDateFormatter alloc] init];
 
-        formatterWithoutMilliseconds.locale     = posixLocale;
+        formatterWithoutMilliseconds.locale     = posixLocale;
 
-        formatterWithoutMilliseconds.dateFormat = @"yyyy-MM-dd'T'HH:mm:ssZZZZZ";
+        formatterWithoutMilliseconds.dateFormat = @"yyyy-MM-dd'T'HH:mm:ssZZZZZ";
 
-    });
+    });
 
-    NSDate *parsedDate = [formatterWithMilliseconds dateFromString:isoString];
+    NSDate *parsedDate = [formatterWithMilliseconds dateFromString:isoString];
 
-    return parsedDate ?: [formatterWithoutMilliseconds dateFromString:isoString];
+    return parsedDate ?: [formatterWithoutMilliseconds dateFromString:isoString];
 
 }
 
 // ── Supabase / PayPal constants ───────────────────────────────────────────────
 
-static NSString *const kStoreSupabaseURL   = @"https://spuoimtqofhbdzosrbng.supabase.co";
+static NSString *const kStoreSupabaseURL   = @"https://spuoimtqofhbdzosrbng.supabase.co";
 
 // Daily coins endpoint — see supabase/functions/claim-daily-coins/index.ts
 
@@ -210,13 +210,13 @@ static NSString *const kDailyCoinsEndpoint = @"/functions/v1/claim-daily-coins";
 
 // set the matching PAYPAL_PLAN_* env var in Supabase.
 
-static NSString *const kTierBasic    = @"basic";
+static NSString *const kTierBasic    = @"basic";
 
 static NSString *const kTierStandard = @"standard";
 
-static NSString *const kTierPro      = @"pro";
+static NSString *const kTierPro      = @"pro";
 
-static NSString *const kTierUltra    = @"ultra";
+static NSString *const kTierUltra    = @"ultra";
 
 static NSString *const kTierBasicWeekly = @"basic_weekly";
 
@@ -262,33 +262,33 @@ static CGFloat const kPromoBannerTopPadding = 0.0;
 
 typedef NS_ENUM(NSUInteger, EZStoreItemType) {
 
-    EZStoreItemTypeSubscription,
+    EZStoreItemTypeSubscription,
 
-    EZStoreItemTypeTopUp,
+    EZStoreItemTypeTopUp,
 
 };
 
 @interface EZStoreItem : NSObject
 
-@property (nonatomic, copy)   NSString        *title;
+@property (nonatomic, copy)   NSString        *title;
 
-@property (nonatomic, copy)   NSString        *subtitle;       // e.g. "400 coins / month"
+@property (nonatomic, copy)   NSString        *subtitle;       // e.g. "400 coins / month"
 
-@property (nonatomic, copy)   NSString        *priceString;    // e.g. "$5.00 / mo"
+@property (nonatomic, copy)   NSString        *priceString;    // e.g. "$5.00 / mo"
 
-@property (nonatomic, copy)   NSString        *planOrPackageID;
+@property (nonatomic, copy)   NSString        *planOrPackageID;
 
-@property (nonatomic, assign) EZStoreItemType  type;
+@property (nonatomic, assign) EZStoreItemType  type;
 
-@property (nonatomic, assign) NSInteger        coins;
+@property (nonatomic, assign) NSInteger        coins;
 
-@property (nonatomic, assign) BOOL             isCurrentPlan;
+@property (nonatomic, assign) BOOL             isCurrentPlan;
 
-@property (nonatomic, strong) UIColor         *accentColor;
+@property (nonatomic, strong) UIColor         *accentColor;
 
-@property (nonatomic, copy)   NSString        *badgeText;      // e.g. "BEST VALUE" — nil for none
+@property (nonatomic, copy)   NSString        *badgeText;      // e.g. "BEST VALUE" — nil for none
 
-@property (nonatomic, copy)   NSString        *badgeFootnoteText; // small disclaimer under badgeText — nil for none
+@property (nonatomic, copy)   NSString        *badgeFootnoteText; // small disclaimer under badgeText — nil for none
 
 @end
 
@@ -300,23 +300,23 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
 
 @interface EZStoreCell : UITableViewCell
 
-@property (nonatomic, strong) UIView      *cardView;
+@property (nonatomic, strong) UIView      *cardView;
 
 @property (nonatomic, strong) UIImageView *coinImageView;
 
-@property (nonatomic, strong) UILabel     *titleLabel;
+@property (nonatomic, strong) UILabel     *titleLabel;
 
-@property (nonatomic, strong) UILabel     *subtitleLabel;
+@property (nonatomic, strong) UILabel     *subtitleLabel;
 
-@property (nonatomic, strong) UILabel     *priceLabel;
+@property (nonatomic, strong) UILabel     *priceLabel;
 
-@property (nonatomic, strong) UILabel     *badgeLabel;
+@property (nonatomic, strong) UILabel     *badgeLabel;
 
-@property (nonatomic, strong) UILabel     *footnoteLabel;
+@property (nonatomic, strong) UILabel     *footnoteLabel;
 
-@property (nonatomic, strong) UIButton    *actionButton;
+@property (nonatomic, strong) UIButton    *actionButton;
 
-@property (nonatomic, copy)   void (^onAction)(void);
+@property (nonatomic, copy)   void (^onAction)(void);
 
 - (void)configureWithItem:(EZStoreItem *)item coinImage:(UIImage * _Nullable)coinImage;
 
@@ -326,239 +326,239 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
 
 - (instancetype)initWithStyle:(UITableViewCellStyle)style reuseIdentifier:(NSString *)reuseIdentifier {
 
-    self = [super initWithStyle:style reuseIdentifier:reuseIdentifier];
+    self = [super initWithStyle:style reuseIdentifier:reuseIdentifier];
 
-    if (self) {
+    if (self) {
 
-        self.backgroundColor = [UIColor clearColor];
+        self.backgroundColor = [UIColor clearColor];
 
-        self.selectionStyle  = UITableViewCellSelectionStyleNone;
+        self.selectionStyle  = UITableViewCellSelectionStyleNone;
 
-        self.cardView = [[UIView alloc] init];
+        self.cardView = [[UIView alloc] init];
 
-        self.cardView.layer.cornerRadius  = 16;
+        self.cardView.layer.cornerRadius  = 16;
 
-        self.cardView.layer.borderWidth   = 1;
+        self.cardView.layer.borderWidth   = 1;
 
-        self.cardView.layer.borderColor   = [UIColor colorWithWhite:1 alpha:0.08].CGColor;
+        self.cardView.layer.borderColor   = [UIColor colorWithWhite:1 alpha:0.08].CGColor;
 
-        self.cardView.layer.shadowColor   = [UIColor blackColor].CGColor;
+        self.cardView.layer.shadowColor   = [UIColor blackColor].CGColor;
 
-        self.cardView.layer.shadowOpacity = 0.25;
+        self.cardView.layer.shadowOpacity = 0.25;
 
-        self.cardView.layer.shadowOffset  = CGSizeMake(0, 4);
+        self.cardView.layer.shadowOffset  = CGSizeMake(0, 4);
 
-        self.cardView.layer.shadowRadius  = 10;
+        self.cardView.layer.shadowRadius  = 10;
 
-        [self.contentView addSubview:self.cardView];
+        [self.contentView addSubview:self.cardView];
 
-        self.coinImageView = [[UIImageView alloc] init];
+        self.coinImageView = [[UIImageView alloc] init];
 
-        self.coinImageView.contentMode = UIViewContentModeScaleAspectFit;
+        self.coinImageView.contentMode = UIViewContentModeScaleAspectFit;
 
-        [self.cardView addSubview:self.coinImageView];
+        [self.cardView addSubview:self.coinImageView];
 
-        self.titleLabel = [[UILabel alloc] init];
+        self.titleLabel = [[UILabel alloc] init];
 
-        self.titleLabel.font      = [UIFont boldSystemFontOfSize:17];
+        self.titleLabel.font      = [UIFont boldSystemFontOfSize:17];
 
-        self.titleLabel.textColor = [UIColor labelColor];
+        self.titleLabel.textColor = [UIColor labelColor];
 
-        [self.cardView addSubview:self.titleLabel];
+        [self.cardView addSubview:self.titleLabel];
 
-        self.subtitleLabel = [[UILabel alloc] init];
+        self.subtitleLabel = [[UILabel alloc] init];
 
-        self.subtitleLabel.font          = [UIFont systemFontOfSize:13];
+        self.subtitleLabel.font          = [UIFont systemFontOfSize:13];
 
-        self.subtitleLabel.textColor     = [UIColor secondaryLabelColor];
+        self.subtitleLabel.textColor     = [UIColor secondaryLabelColor];
 
-        self.subtitleLabel.numberOfLines = 2;
+        self.subtitleLabel.numberOfLines = 2;
 
-        [self.cardView addSubview:self.subtitleLabel];
+        [self.cardView addSubview:self.subtitleLabel];
 
-        self.priceLabel = [[UILabel alloc] init];
+        self.priceLabel = [[UILabel alloc] init];
 
-        self.priceLabel.font          = [UIFont boldSystemFontOfSize:15];
+        self.priceLabel.font          = [UIFont boldSystemFontOfSize:15];
 
-        self.priceLabel.textAlignment = NSTextAlignmentRight;
+        self.priceLabel.textAlignment = NSTextAlignmentRight;
 
-        [self.cardView addSubview:self.priceLabel];
+        [self.cardView addSubview:self.priceLabel];
 
-        self.badgeLabel = [[UILabel alloc] init];
+        self.badgeLabel = [[UILabel alloc] init];
 
-        self.badgeLabel.font                        = [UIFont boldSystemFontOfSize:10];
+        self.badgeLabel.font                        = [UIFont boldSystemFontOfSize:10];
 
-        self.badgeLabel.textColor                   = [UIColor whiteColor];
+        self.badgeLabel.textColor                   = [UIColor whiteColor];
 
-        self.badgeLabel.textAlignment               = NSTextAlignmentCenter;
+        self.badgeLabel.textAlignment               = NSTextAlignmentCenter;
 
-        self.badgeLabel.layer.cornerRadius          = 8;
+        self.badgeLabel.layer.cornerRadius          = 8;
 
-        self.badgeLabel.layer.masksToBounds         = YES;
+        self.badgeLabel.layer.masksToBounds         = YES;
 
-        self.badgeLabel.hidden                      = YES;
+        self.badgeLabel.hidden                      = YES;
 
-        self.badgeLabel.adjustsFontSizeToFitWidth   = YES;
+        self.badgeLabel.adjustsFontSizeToFitWidth   = YES;
 
-        self.badgeLabel.minimumScaleFactor          = 0.6; // room for longer text like "+2500 FREE Coins*"
+        self.badgeLabel.minimumScaleFactor          = 0.6; // room for longer text like "+2500 FREE Coins*"
 
-        [self.cardView addSubview:self.badgeLabel];
+        [self.cardView addSubview:self.badgeLabel];
 
-        // Small disclaimer shown under badgeLabel for subscription promo
+        // Small disclaimer shown under badgeLabel for subscription promo
 
-        // items only (e.g. "*Extra coins are a one time bonus..."). Hidden
+        // items only (e.g. "*Extra coins are a one time bonus..."). Hidden
 
-        // whenever an item has no badgeFootnoteText.
+        // whenever an item has no badgeFootnoteText.
 
-        self.footnoteLabel = [[UILabel alloc] init];
+        self.footnoteLabel = [[UILabel alloc] init];
 
-        self.footnoteLabel.font          = [UIFont systemFontOfSize:9 weight:UIFontWeightMedium];
+        self.footnoteLabel.font          = [UIFont systemFontOfSize:9 weight:UIFontWeightMedium];
 
-        self.footnoteLabel.textColor     = [UIColor colorWithWhite:1.0 alpha:0.82];
+        self.footnoteLabel.textColor     = [UIColor colorWithWhite:1.0 alpha:0.82];
 
-        self.footnoteLabel.textAlignment = NSTextAlignmentCenter;
+        self.footnoteLabel.textAlignment = NSTextAlignmentCenter;
 
-        self.footnoteLabel.numberOfLines = 3;
+        self.footnoteLabel.numberOfLines = 3;
 
-        self.footnoteLabel.hidden        = YES;
+        self.footnoteLabel.hidden        = YES;
 
-        [self.cardView addSubview:self.footnoteLabel];
+        [self.cardView addSubview:self.footnoteLabel];
 
-        self.actionButton = [UIButton buttonWithType:UIButtonTypeSystem];
+        self.actionButton = [UIButton buttonWithType:UIButtonTypeSystem];
 
-        self.actionButton.layer.cornerRadius  = 10;
+        self.actionButton.layer.cornerRadius  = 10;
 
-        self.actionButton.titleLabel.font     = [UIFont boldSystemFontOfSize:14];
+        self.actionButton.titleLabel.font     = [UIFont boldSystemFontOfSize:14];
 
-        [self.actionButton setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+        [self.actionButton setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
 
-        [self.actionButton addTarget:self
+        [self.actionButton addTarget:self
 
-                              action:@selector(actionTapped)
+                              action:@selector(actionTapped)
 
-                    forControlEvents:UIControlEventTouchUpInside];
+                    forControlEvents:UIControlEventTouchUpInside];
 
-        [self.cardView addSubview:self.actionButton];
+        [self.cardView addSubview:self.actionButton];
 
-    }
+    }
 
-    return self;
+    return self;
 
 }
 
 - (void)configureWithItem:(EZStoreItem *)item coinImage:(UIImage *)coinImage {
 
-    UIColor *accentColor = item.accentColor ?: [UIColor systemBlueColor];
+    UIColor *accentColor = item.accentColor ?: [UIColor systemBlueColor];
 
-    self.cardView.backgroundColor   = [accentColor colorWithAlphaComponent:0.12];
+    self.cardView.backgroundColor   = [accentColor colorWithAlphaComponent:0.12];
 
-    self.cardView.layer.borderColor = [accentColor colorWithAlphaComponent:0.3].CGColor;
+    self.cardView.layer.borderColor = [accentColor colorWithAlphaComponent:0.3].CGColor;
 
-    self.coinImageView.image  = coinImage;
+    self.coinImageView.image  = coinImage;
 
-    self.titleLabel.text      = item.title;
+    self.titleLabel.text      = item.title;
 
-    self.subtitleLabel.text   = item.subtitle;
+    self.subtitleLabel.text   = item.subtitle;
 
-    self.priceLabel.text      = item.priceString;
+    self.priceLabel.text      = item.priceString;
 
-    self.priceLabel.textColor = accentColor;
+    self.priceLabel.textColor = accentColor;
 
-    if (item.badgeText) {
+    if (item.badgeText) {
 
-        self.badgeLabel.hidden          = NO;
+        self.badgeLabel.hidden          = NO;
 
-        self.badgeLabel.text            = [NSString stringWithFormat:@" %@ ", item.badgeText];
+        self.badgeLabel.text            = [NSString stringWithFormat:@" %@ ", item.badgeText];
 
-        self.badgeLabel.backgroundColor = accentColor;
+        self.badgeLabel.backgroundColor = accentColor;
 
-    } else {
+    } else {
 
-        self.badgeLabel.hidden = YES;
+        self.badgeLabel.hidden = YES;
 
-    }
+    }
 
-    if (item.badgeFootnoteText) {
+    if (item.badgeFootnoteText) {
 
-        self.footnoteLabel.hidden = NO;
+        self.footnoteLabel.hidden = NO;
 
-        self.footnoteLabel.text   = item.badgeFootnoteText;
+        self.footnoteLabel.text   = item.badgeFootnoteText;
 
-    } else {
+    } else {
 
-        self.footnoteLabel.hidden = YES;
+        self.footnoteLabel.hidden = YES;
 
-    }
+    }
 
-    if (item.isCurrentPlan) {
+    if (item.isCurrentPlan) {
 
-        [self.actionButton setTitle:NSLocalizedString(@"EZCoinStore.CancelPlan", @"Cancel plan button title") forState:UIControlStateNormal];
+        [self.actionButton setTitle:NSLocalizedString(@"EZCoinStore.CancelPlan", @"Cancel plan button title") forState:UIControlStateNormal];
 
-        self.actionButton.backgroundColor = [UIColor systemRedColor];
+        self.actionButton.backgroundColor = [UIColor systemRedColor];
 
-        self.actionButton.enabled         = YES;
+        self.actionButton.enabled         = YES;
 
-    } else if (item.type == EZStoreItemTypeSubscription) {
+    } else if (item.type == EZStoreItemTypeSubscription) {
 
-        [self.actionButton setTitle:NSLocalizedString(@"EZCoinStore.Subscribe", @"Subscribe button title") forState:UIControlStateNormal];
+        [self.actionButton setTitle:NSLocalizedString(@"EZCoinStore.Subscribe", @"Subscribe button title") forState:UIControlStateNormal];
 
-        self.actionButton.backgroundColor = accentColor;
+        self.actionButton.backgroundColor = accentColor;
 
-        self.actionButton.enabled         = YES;
+        self.actionButton.enabled         = YES;
 
-    } else {
+    } else {
 
-        [self.actionButton setTitle:NSLocalizedString(@"EZCoinStore.BuyNow", @"Buy now button title") forState:UIControlStateNormal];
+        [self.actionButton setTitle:NSLocalizedString(@"EZCoinStore.BuyNow", @"Buy now button title") forState:UIControlStateNormal];
 
-        self.actionButton.backgroundColor = accentColor;
+        self.actionButton.backgroundColor = accentColor;
 
-        self.actionButton.enabled         = YES;
+        self.actionButton.enabled         = YES;
 
-    }
+    }
 
 }
 
 - (void)actionTapped {
 
-    if (self.onAction) self.onAction();
+    if (self.onAction) self.onAction();
 
 }
 
 - (void)layoutSubviews {
 
-    [super layoutSubviews];
+    [super layoutSubviews];
 
-    CGFloat cellPadding  = 12;
+    CGFloat cellPadding  = 12;
 
-    CGFloat cardWidth    = self.contentView.bounds.size.width - 32;
+    CGFloat cardWidth    = self.contentView.bounds.size.width - 32;
 
-    CGFloat cardHeight   = self.contentView.bounds.size.height - 16;
+    CGFloat cardHeight   = self.contentView.bounds.size.height - 16;
 
-    self.cardView.frame  = CGRectMake(16, 8, cardWidth, cardHeight);
+    self.cardView.frame  = CGRectMake(16, 8, cardWidth, cardHeight);
 
-    CGFloat coinSize = 52;
+    CGFloat coinSize = 52;
 
-    self.coinImageView.frame = CGRectMake(cellPadding, (cardHeight - coinSize) / 2, coinSize, coinSize);
+    self.coinImageView.frame = CGRectMake(cellPadding, (cardHeight - coinSize) / 2, coinSize, coinSize);
 
-    CGFloat textX = coinSize + cellPadding * 2;
+    CGFloat textX = coinSize + cellPadding * 2;
 
-    CGFloat textW = cardWidth - textX - 90 - cellPadding;
+    CGFloat textW = cardWidth - textX - 90 - cellPadding;
 
-    self.titleLabel.frame    = CGRectMake(textX, cellPadding, textW, 22);
+    self.titleLabel.frame    = CGRectMake(textX, cellPadding, textW, 22);
 
-    self.subtitleLabel.frame = CGRectMake(textX, cellPadding + 24, textW, 34);
+    self.subtitleLabel.frame = CGRectMake(textX, cellPadding + 24, textW, 34);
 
-    self.priceLabel.frame = CGRectMake(cardWidth - 90 - cellPadding, cellPadding, 90, 22);
+    self.priceLabel.frame = CGRectMake(cardWidth - 90 - cellPadding, cellPadding, 90, 22);
 
-    self.badgeLabel.frame = CGRectMake(cardWidth - 90 - cellPadding, cellPadding + 26, 90, 18);
+    self.badgeLabel.frame = CGRectMake(cardWidth - 90 - cellPadding, cellPadding + 26, 90, 18);
 
-    self.footnoteLabel.frame = CGRectMake(cardWidth - 90 - cellPadding, cellPadding + 46, 90, 30);
+    self.footnoteLabel.frame = CGRectMake(cardWidth - 90 - cellPadding, cellPadding + 46, 90, 30);
 
-    CGFloat buttonWidth  = cardWidth - textX - cellPadding;
+    CGFloat buttonWidth  = cardWidth - textX - cellPadding;
 
-    CGFloat buttonHeight = 40;
+    CGFloat buttonHeight = 40;
 
-    self.actionButton.frame = CGRectMake(textX, cardHeight - buttonHeight - cellPadding, buttonWidth, buttonHeight);
+    self.actionButton.frame = CGRectMake(textX, cardHeight - buttonHeight - cellPadding, buttonWidth, buttonHeight);
 
 }
 
@@ -568,43 +568,43 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
 
 @interface EZCoinStoreViewController () <UITableViewDelegate, UITableViewDataSource, SFSafariViewControllerDelegate>
 
-@property (nonatomic, strong) UITableView             *tableView;
+@property (nonatomic, strong) UITableView             *tableView;
 
-@property (nonatomic, strong) UIView                  *headerView;
+@property (nonatomic, strong) UIView                  *headerView;
 
-@property (nonatomic, strong) UIView                  *promoBannerView;
+@property (nonatomic, strong) UIView                  *promoBannerView;
 
-@property (nonatomic, assign) BOOL                     isPromoActive;   // Manual flag — see kPromoBannerHeight comment above
+@property (nonatomic, assign) BOOL                     isPromoActive;   // Manual flag — see kPromoBannerHeight comment above
 
-@property (nonatomic, strong) UILabel                 *balanceLabel;
+@property (nonatomic, strong) UILabel                 *balanceLabel;
 
-@property (nonatomic, strong) UILabel                 *warningLabel;
+@property (nonatomic, strong) UILabel                 *warningLabel;
 
-@property (nonatomic, strong) NSArray<EZStoreItem *>  *items;
+@property (nonatomic, strong) NSArray<EZStoreItem *>  *items;
 
-@property (nonatomic, strong) UIImage                 *coinImage;
+@property (nonatomic, strong) UIImage                 *coinImage;
 
-@property (nonatomic, strong) NSString                *pendingPurchaseType;  // @"subscription" or @"topup"
+@property (nonatomic, strong) NSString                *pendingPurchaseType;  // @"subscription" or @"topup"
 
-@property (nonatomic, strong) NSString                *pendingTierName;      // Reserved for subscription retry logic (currently unused)
+@property (nonatomic, strong) NSString                *pendingTierName;      // Reserved for subscription retry logic (currently unused)
 
-@property (nonatomic, strong) NSString                *pendingOrderID;
+@property (nonatomic, strong) NSString                *pendingOrderID;
 
-@property (nonatomic, strong) EZCoinPotView           *storePotView;
+@property (nonatomic, strong) EZCoinPotView           *storePotView;
 
 @property (nonatomic, strong) UIActivityIndicatorView *spinner;
 
 // Daily coins UI and state
 
-@property (nonatomic, strong) UIButton  *dailyCoinsButton;       // Floating button top-left
+@property (nonatomic, strong) UIButton  *dailyCoinsButton;       // Floating button top-left
 
-@property (nonatomic, assign) BOOL       isDailyCoinsAvailable;  // Whether the server says coins can be claimed now
+@property (nonatomic, assign) BOOL       isDailyCoinsAvailable;  // Whether the server says coins can be claimed now
 
-@property (nonatomic, strong) NSDate    *nextDailyClaimDate;     // ISO date from server; drives the countdown label
+@property (nonatomic, strong) NSDate    *nextDailyClaimDate;     // ISO date from server; drives the countdown label
 
-@property (nonatomic, assign) NSInteger  dailyCoinsPendingAmount; // 10 or 15 depending on membership; from server
+@property (nonatomic, assign) NSInteger  dailyCoinsPendingAmount; // 10 or 15 depending on membership; from server
 
-//@property (nonatomic, strong) NSTimer   *countdownTimer;         // Fires every second to tick the "Next: Xh Ym Xs" label
+//@property (nonatomic, strong) NSTimer   *countdownTimer;         // Fires every second to tick the "Next: Xh Ym Xs" label
 
 @end
 
@@ -612,63 +612,63 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
 
 - (void)viewDidLoad {
 
-    [super viewDidLoad];
+    [super viewDidLoad];
 
-    self.title = NSLocalizedString(@"EZCoinStore.Title", @"Coin store navigation title");
+    self.title = NSLocalizedString(@"EZCoinStore.Title", @"Coin store navigation title");
 
-    self.view.backgroundColor = [UIColor systemBackgroundColor];
+    self.view.backgroundColor = [UIColor systemBackgroundColor];
 
-    // No explicit close button — this VC is presented as a swipe-to-dismiss
+    // No explicit close button — this VC is presented as a swipe-to-dismiss
 
-    // sheet, and the left nav bar slot is used by the Daily Coins button
+    // sheet, and the left nav bar slot is used by the Daily Coins button
 
-    // instead (see addDailyCoinsButton).
+    // instead (see addDailyCoinsButton).
 
-    // "History" — user-facing coin usage log (right nav bar button)
+    // "History" — user-facing coin usage log (right nav bar button)
 
-    UIBarButtonItem *historyBarButton = [[UIBarButtonItem alloc]
+    UIBarButtonItem *historyBarButton = [[UIBarButtonItem alloc]
 
-        initWithImage:[UIImage systemImageNamed:@"clock.arrow.circlepath"]
+        initWithImage:[UIImage systemImageNamed:@"clock.arrow.circlepath"]
 
-                style:UIBarButtonItemStylePlain
+                style:UIBarButtonItemStylePlain
 
-               target:self
+               target:self
 
-               action:@selector(historyTapped)];
+               action:@selector(historyTapped)];
 
-    historyBarButton.tintColor = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:1.0];
+    historyBarButton.tintColor = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:1.0];
 
-    self.navigationItem.rightBarButtonItem = historyBarButton;
+    self.navigationItem.rightBarButtonItem = historyBarButton;
 
-    self.coinImage = [UIImage imageNamed:@"EZCoin"];
+    self.coinImage = [UIImage imageNamed:@"EZCoin"];
 
-    // ⚠️ Flip this manually to match whatever promo rows are active/unexpired
+    // ⚠️ Flip this manually to match whatever promo rows are active/unexpired
 
-    // in the `promotions` table right now. Turning this on shows the BOGO
+    // in the `promotions` table right now. Turning this on shows the BOGO
 
-    // banner + badges below; it does NOT itself grant any coins — the actual
+    // banner + badges below; it does NOT itself grant any coins — the actual
 
-    // bonus crediting is entirely server-side (capture-paypal-order /
+    // bonus crediting is entirely server-side (capture-paypal-order /
 
-    // paypal-webhook), so this flag being briefly out of sync with the DB
+    // paypal-webhook), so this flag being briefly out of sync with the DB
 
-    // only affects what the store *advertises*, never what gets paid out.
+    // only affects what the store *advertises*, never what gets paid out.
 
-    self.isPromoActive = YES;
+    self.isPromoActive = YES;
 
-    [self buildItems];
+    [self buildItems];
 
-    [self setupUI];
+    [self setupUI];
 
-    [self refreshBalance];
+    [self refreshBalance];
 
-    [self addDailyCoinsButton];
+    [self addDailyCoinsButton];
 
-    [self refreshDailyCoinsStatus];
+    [self refreshDailyCoinsStatus];
 
 #if DEBUG
 
-    [self addLedgerButton];
+    [self addLedgerButton];
 
 #endif
 
@@ -676,27 +676,27 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
 
 - (void)viewWillAppear:(BOOL)animated {
 
-    [super viewWillAppear:animated];
+    [super viewWillAppear:animated];
 
-    // Lightweight countdown refresh using already-cached timing data.
+    // Lightweight countdown refresh using already-cached timing data.
 
-    // No network call here — refreshDailyCoinsStatus handles that on load
+    // No network call here — refreshDailyCoinsStatus handles that on load
 
-    // and again after each refreshBalance.
+    // and again after each refreshBalance.
 
-    if (self.nextDailyClaimDate) {
+    if (self.nextDailyClaimDate) {
 
-        [self updateDailyCoinsButtonState];
+        [self updateDailyCoinsButtonState];
 
-    }
+    }
 
 }
 
 - (void)viewWillDisappear:(BOOL)animated {
 
-    [super viewWillDisappear:animated];
+    [super viewWillDisappear:animated];
 
-    [self stopCountdownTimer];
+    [self stopCountdownTimer];
 
 }
 
@@ -714,11 +714,11 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
 
 - (void)applyPromoBadgeIfNeededToItem:(EZStoreItem *)item {
 
-    if (!self.isPromoActive || item.isCurrentPlan) return;
+    if (!self.isPromoActive || item.isCurrentPlan) return;
 
-    item.badgeText   = NSLocalizedString(@"EZCoinStore.Badge.Buy1Get1", @"Buy one get one promo badge");
+    item.badgeText   = NSLocalizedString(@"EZCoinStore.Badge.Buy1Get1", @"Buy one get one promo badge");
 
-    item.accentColor = [UIColor colorWithRed:1.0 green:0.13 blue:0.35 alpha:1.0]; // hot pink/red — distinct from every other card color
+    item.accentColor = [UIColor colorWithRed:1.0 green:0.13 blue:0.35 alpha:1.0]; // hot pink/red — distinct from every other card color
 
 }
 
@@ -732,31 +732,31 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
 
 - (void)applySubscriptionPromoBadgeToItem:(EZStoreItem *)item {
 
-    if (!self.isPromoActive || item.isCurrentPlan) return;
+    if (!self.isPromoActive || item.isCurrentPlan) return;
 
-    item.badgeText         = [NSString stringWithFormat:NSLocalizedString(@"EZCoinStore.Promo.SubscriptionBadgeFormat", @"Subscription promo badge with bonus coins"), (long)item.coins];
+    item.badgeText         = [NSString stringWithFormat:NSLocalizedString(@"EZCoinStore.Promo.SubscriptionBadgeFormat", @"Subscription promo badge with bonus coins"), (long)item.coins];
 
-    item.badgeFootnoteText = NSLocalizedString(@"EZCoinStore.Promo.SubscriptionFootnote", @"Subscription promo footnote");
+    item.badgeFootnoteText = NSLocalizedString(@"EZCoinStore.Promo.SubscriptionFootnote", @"Subscription promo footnote");
 
-    item.accentColor       = [UIColor colorWithRed:1.0 green:0.13 blue:0.35 alpha:1.0]; // matches the top-up promo color
+    item.accentColor       = [UIColor colorWithRed:1.0 green:0.13 blue:0.35 alpha:1.0]; // matches the top-up promo color
 
 }
 
 - (void)buildItems {
 
-    NSString *currentTier   = [EZEntitlementManager shared].currentTier;
+    NSString *currentTier   = [EZEntitlementManager shared].currentTier;
 
-    NSString *currentStatus = [EZEntitlementManager shared].currentStatus;
+    NSString *currentStatus = [EZEntitlementManager shared].currentStatus;
 
-    // A plan only counts as "current" if the subscription is actually active.
+    // A plan only counts as "current" if the subscription is actually active.
 
-    // Cancelled/suspended/expired accounts should see the Subscribe button again.
+    // Cancelled/suspended/expired accounts should see the Subscribe button again.
 
-    BOOL isActive = [currentStatus isEqualToString:@"active"];
+    BOOL isActive = [currentStatus isEqualToString:@"active"];
 
-    NSMutableArray *items = [NSMutableArray array];
+    NSMutableArray *items = [NSMutableArray array];
 
-    // ── Subscription tiers ────────────────────────────────────────────────────
+    // ── Subscription tiers ────────────────────────────────────────────────────
 
     // "basic" is being retired as a new-signup option in favor of the
     // $4.99/wk tier below, but existing subscribers on the old $4.99/mo plan
@@ -787,95 +787,95 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
     [self applySubscriptionPromoBadgeToItem:basic];
     [items addObject:basic];
 
-    EZStoreItem *standard    = [EZStoreItem new];
+    EZStoreItem *standard    = [EZStoreItem new];
 
-    standard.title           = NSLocalizedString(@"EZCoinStore.Tier.Standard", @"Standard subscription tier name");
+    standard.title           = NSLocalizedString(@"EZCoinStore.Tier.Standard", @"Standard subscription tier name");
 
-    standard.subtitle        = NSLocalizedString(@"EZCoinStore.Tier.StandardSubtitle", @"Standard subscription description");
+    standard.subtitle        = NSLocalizedString(@"EZCoinStore.Tier.StandardSubtitle", @"Standard subscription description");
 
-    standard.priceString     = NSLocalizedString(@"EZCoinStore.Tier.StandardPrice", @"Standard subscription price");
+    standard.priceString     = NSLocalizedString(@"EZCoinStore.Tier.StandardPrice", @"Standard subscription price");
 
-    standard.planOrPackageID = kTierStandard;
+    standard.planOrPackageID = kTierStandard;
 
-    standard.type            = EZStoreItemTypeSubscription;
+    standard.type            = EZStoreItemTypeSubscription;
 
-    standard.coins           = 900;
+    standard.coins           = 900;
 
-    standard.accentColor     = [UIColor systemPurpleColor];
+    standard.accentColor     = [UIColor systemPurpleColor];
 
-    standard.isCurrentPlan = isActive && ([currentTier isEqualToString:@"standard"] || [currentTier isEqualToString:@"standard_annual"]);
+    standard.isCurrentPlan = isActive && ([currentTier isEqualToString:@"standard"] || [currentTier isEqualToString:@"standard_annual"]);
 
-    if (([currentTier isEqualToString:@"standard"] || [currentTier isEqualToString:@"standard_annual"]) && !isActive && currentStatus)
+    if (([currentTier isEqualToString:@"standard"] || [currentTier isEqualToString:@"standard_annual"]) && !isActive && currentStatus)
 
-        standard.badgeText   = currentStatus.uppercaseString;
+        standard.badgeText   = currentStatus.uppercaseString;
 
-    else if (!standard.isCurrentPlan)
+    else if (!standard.isCurrentPlan)
 
-        standard.badgeText   = NSLocalizedString(@"EZCoinStore.Badge.Popular", @"Popular badge");
+        standard.badgeText   = NSLocalizedString(@"EZCoinStore.Badge.Popular", @"Popular badge");
 
-    [self applySubscriptionPromoBadgeToItem:standard]; // takes priority over POPULAR
+    [self applySubscriptionPromoBadgeToItem:standard]; // takes priority over POPULAR
 
-    [items addObject:standard];
+    [items addObject:standard];
 
-    EZStoreItem *pro    = [EZStoreItem new];
+    EZStoreItem *pro    = [EZStoreItem new];
 
-    pro.title           = NSLocalizedString(@"EZCoinStore.Tier.Pro", @"Pro subscription tier name");
+    pro.title           = NSLocalizedString(@"EZCoinStore.Tier.Pro", @"Pro subscription tier name");
 
-    pro.subtitle        = NSLocalizedString(@"EZCoinStore.Tier.ProSubtitle", @"Pro subscription description");
+    pro.subtitle        = NSLocalizedString(@"EZCoinStore.Tier.ProSubtitle", @"Pro subscription description");
 
-    pro.priceString     = NSLocalizedString(@"EZCoinStore.Tier.ProPrice", @"Pro subscription price");
+    pro.priceString     = NSLocalizedString(@"EZCoinStore.Tier.ProPrice", @"Pro subscription price");
 
-    pro.planOrPackageID = kTierPro;
+    pro.planOrPackageID = kTierPro;
 
-    pro.type            = EZStoreItemTypeSubscription;
+    pro.type            = EZStoreItemTypeSubscription;
 
-    pro.coins           = 1600;
+    pro.coins           = 1600;
 
-    pro.accentColor     = [UIColor systemOrangeColor];
+    pro.accentColor     = [UIColor systemOrangeColor];
 
-    pro.isCurrentPlan = isActive && ([currentTier isEqualToString:@"pro"] || [currentTier isEqualToString:@"pro_annual"]);
+    pro.isCurrentPlan = isActive && ([currentTier isEqualToString:@"pro"] || [currentTier isEqualToString:@"pro_annual"]);
 
-    if (([currentTier isEqualToString:@"pro"] || [currentTier isEqualToString:@"pro_annual"]) && !isActive && currentStatus)
+    if (([currentTier isEqualToString:@"pro"] || [currentTier isEqualToString:@"pro_annual"]) && !isActive && currentStatus)
 
-        pro.badgeText    = currentStatus.uppercaseString;
+        pro.badgeText    = currentStatus.uppercaseString;
 
-    else if (!pro.isCurrentPlan)
+    else if (!pro.isCurrentPlan)
 
-        pro.badgeText    = NSLocalizedString(@"EZCoinStore.Badge.BestValue", @"Best value badge");
+        pro.badgeText    = NSLocalizedString(@"EZCoinStore.Badge.BestValue", @"Best value badge");
 
-    [self applySubscriptionPromoBadgeToItem:pro]; // now included — takes priority over BEST VALUE
+    [self applySubscriptionPromoBadgeToItem:pro]; // now included — takes priority over BEST VALUE
 
-    [items addObject:pro];
+    [items addObject:pro];
 
-    EZStoreItem *ultra    = [EZStoreItem new];
+    EZStoreItem *ultra    = [EZStoreItem new];
 
-    ultra.title           = NSLocalizedString(@"EZCoinStore.Tier.Ultra", @"Ultra subscription tier name");
+    ultra.title           = NSLocalizedString(@"EZCoinStore.Tier.Ultra", @"Ultra subscription tier name");
 
-    ultra.subtitle        = NSLocalizedString(@"EZCoinStore.Tier.UltraSubtitle", @"Ultra subscription description");
+    ultra.subtitle        = NSLocalizedString(@"EZCoinStore.Tier.UltraSubtitle", @"Ultra subscription description");
 
-    ultra.priceString     = NSLocalizedString(@"EZCoinStore.Tier.UltraPrice", @"Ultra subscription price");
+    ultra.priceString     = NSLocalizedString(@"EZCoinStore.Tier.UltraPrice", @"Ultra subscription price");
 
-    ultra.planOrPackageID = kTierUltra;
+    ultra.planOrPackageID = kTierUltra;
 
-    ultra.type            = EZStoreItemTypeSubscription;
+    ultra.type            = EZStoreItemTypeSubscription;
 
-    ultra.coins           = 2500;
+    ultra.coins           = 2500;
 
-    ultra.accentColor     = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:1.0]; // gold
+    ultra.accentColor     = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:1.0]; // gold
 
-    ultra.isCurrentPlan = isActive && ([currentTier isEqualToString:@"ultra"] || [currentTier isEqualToString:@"ultra_annual"]);
+    ultra.isCurrentPlan = isActive && ([currentTier isEqualToString:@"ultra"] || [currentTier isEqualToString:@"ultra_annual"]);
 
-    if (([currentTier isEqualToString:@"ultra"] || [currentTier isEqualToString:@"ultra_annual"]) && !isActive && currentStatus)
+    if (([currentTier isEqualToString:@"ultra"] || [currentTier isEqualToString:@"ultra_annual"]) && !isActive && currentStatus)
 
-        ultra.badgeText   = currentStatus.uppercaseString;
+        ultra.badgeText   = currentStatus.uppercaseString;
 
-    else
+    else
 
-        ultra.badgeText   = NSLocalizedString(@"EZCoinStore.Badge.Ultra", @"Ultra badge");
+        ultra.badgeText   = NSLocalizedString(@"EZCoinStore.Badge.Ultra", @"Ultra badge");
 
-    [self applySubscriptionPromoBadgeToItem:ultra]; // now included — takes priority over ULTRA
+    [self applySubscriptionPromoBadgeToItem:ultra]; // now included — takes priority over ULTRA
 
-    [items addObject:ultra];
+    [items addObject:ultra];
 
     // Power and Enterprise both offer an annual option, presented via an
     // upsell shown after the user taps Subscribe (see tableView:didSelectRowAtIndexPath:)
@@ -915,49 +915,49 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
     [self applySubscriptionPromoBadgeToItem:enterprise];
     [items addObject:enterprise];
 
-    // ── One-time top-ups ──────────────────────────────────────────────────────
+    // ── One-time top-ups ──────────────────────────────────────────────────────
 
-    EZStoreItem *topup1    = [EZStoreItem new];
+    EZStoreItem *topup1    = [EZStoreItem new];
 
-    topup1.title           = NSLocalizedString(@"EZCoinStore.TopUp.Starter", @"Coin starter pack title");
+    topup1.title           = NSLocalizedString(@"EZCoinStore.TopUp.Starter", @"Coin starter pack title");
 
-    topup1.subtitle        = NSLocalizedString(@"EZCoinStore.TopUp.StarterSubtitle", @"Coin starter pack description");
+    topup1.subtitle        = NSLocalizedString(@"EZCoinStore.TopUp.StarterSubtitle", @"Coin starter pack description");
 
-    topup1.priceString     = @"$5.00";
+    topup1.priceString     = @"$5.00";
 
-    topup1.planOrPackageID = @"TOPUP_400";
+    topup1.planOrPackageID = @"TOPUP_400";
 
-    topup1.type            = EZStoreItemTypeTopUp;
+    topup1.type            = EZStoreItemTypeTopUp;
 
-    topup1.coins           = 400;
+    topup1.coins           = 400;
 
-    topup1.accentColor     = [UIColor systemTealColor];
+    topup1.accentColor     = [UIColor systemTealColor];
 
-    [self applyPromoBadgeIfNeededToItem:topup1];
+    [self applyPromoBadgeIfNeededToItem:topup1];
 
-    [items addObject:topup1];
+    [items addObject:topup1];
 
-    EZStoreItem *topup2    = [EZStoreItem new];
+    EZStoreItem *topup2    = [EZStoreItem new];
 
-    topup2.title           = NSLocalizedString(@"EZCoinStore.TopUp.Value", @"Coin value pack title");
+    topup2.title           = NSLocalizedString(@"EZCoinStore.TopUp.Value", @"Coin value pack title");
 
-    topup2.subtitle        = NSLocalizedString(@"EZCoinStore.TopUp.ValueSubtitle", @"Coin value pack description");
+    topup2.subtitle        = NSLocalizedString(@"EZCoinStore.TopUp.ValueSubtitle", @"Coin value pack description");
 
-    topup2.priceString     = @"$10.00";
+    topup2.priceString     = @"$10.00";
 
-    topup2.planOrPackageID = @"TOPUP_900";
+    topup2.planOrPackageID = @"TOPUP_900";
 
-    topup2.type            = EZStoreItemTypeTopUp;
+    topup2.type            = EZStoreItemTypeTopUp;
 
-    topup2.coins           = 900;
+    topup2.coins           = 900;
 
-    topup2.accentColor     = [UIColor systemGreenColor];
+    topup2.accentColor     = [UIColor systemGreenColor];
 
-    topup2.badgeText       = NSLocalizedString(@"EZCoinStore.Badge.Save10", @"Savings badge");
+    topup2.badgeText       = NSLocalizedString(@"EZCoinStore.Badge.Save10", @"Savings badge");
 
-    [self applyPromoBadgeIfNeededToItem:topup2]; // takes priority over SAVE 10%
+    [self applyPromoBadgeIfNeededToItem:topup2]; // takes priority over SAVE 10%
 
-    [items addObject:topup2];
+    [items addObject:topup2];
     EZStoreItem *topup3    = [EZStoreItem new];
     topup3.title           = NSLocalizedString(@"EZCoinStore.TopUp.Ultra", @"Ultra coin pack title");
     topup3.subtitle        = NSLocalizedString(@"EZCoinStore.TopUp.UltraSubtitle", @"Ultra coin pack description");
@@ -994,7 +994,7 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
     [self applyPromoBadgeIfNeededToItem:topup5];
     [items addObject:topup5];
 
-    self.items = [items copy];
+    self.items = [items copy];
 
 }
 
@@ -1012,228 +1012,228 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
 
 - (UIView *)buildPromoBannerView {
 
-    self.promoBannerView = [[UIView alloc]
+    self.promoBannerView = [[UIView alloc]
 
-        initWithFrame:CGRectMake(0, kPromoBannerTopPadding, self.view.bounds.size.width, kPromoBannerHeight)];
+        initWithFrame:CGRectMake(0, kPromoBannerTopPadding, self.view.bounds.size.width, kPromoBannerHeight)];
 
-    self.promoBannerView.clipsToBounds = YES;
+    self.promoBannerView.clipsToBounds = YES;
 
-    CAGradientLayer *gradientLayer = [CAGradientLayer layer];
+    CAGradientLayer *gradientLayer = [CAGradientLayer layer];
 
-    gradientLayer.frame  = self.promoBannerView.bounds;
+    gradientLayer.frame  = self.promoBannerView.bounds;
 
-    gradientLayer.colors = @[
+    gradientLayer.colors = @[
 
-        (id)[UIColor colorWithRed:1.0 green:0.15 blue:0.30 alpha:1.0].CGColor,
+        (id)[UIColor colorWithRed:1.0 green:0.15 blue:0.30 alpha:1.0].CGColor,
 
-        (id)[UIColor colorWithRed:1.0 green:0.45 blue:0.05 alpha:1.0].CGColor,
+        (id)[UIColor colorWithRed:1.0 green:0.45 blue:0.05 alpha:1.0].CGColor,
 
-    ];
+    ];
 
-    gradientLayer.startPoint = CGPointMake(0, 0.5);
+    gradientLayer.startPoint = CGPointMake(0, 0.5);
 
-    gradientLayer.endPoint   = CGPointMake(1, 0.5);
+    gradientLayer.endPoint   = CGPointMake(1, 0.5);
 
-    [self.promoBannerView.layer insertSublayer:gradientLayer atIndex:0];
+    [self.promoBannerView.layer insertSublayer:gradientLayer atIndex:0];
 
-    UILabel *headlineLabel = [[UILabel alloc]
+    UILabel *headlineLabel = [[UILabel alloc]
 
-        initWithFrame:CGRectMake(12, 10, self.view.bounds.size.width - 24, 30)];
+        initWithFrame:CGRectMake(12, 10, self.view.bounds.size.width - 24, 30)];
 
-    headlineLabel.text          = NSLocalizedString(@"EZCoinStore.Promo.Headline", @"Promo banner headline");
+    headlineLabel.text          = NSLocalizedString(@"EZCoinStore.Promo.Headline", @"Promo banner headline");
 
-    headlineLabel.font          = [UIFont boldSystemFontOfSize:23];
+    headlineLabel.font          = [UIFont boldSystemFontOfSize:23];
 
-    headlineLabel.textColor     = [UIColor whiteColor];
+    headlineLabel.textColor     = [UIColor whiteColor];
 
-    headlineLabel.textAlignment = NSTextAlignmentCenter;
+    headlineLabel.textAlignment = NSTextAlignmentCenter;
 
-    headlineLabel.adjustsFontSizeToFitWidth = YES;
+    headlineLabel.adjustsFontSizeToFitWidth = YES;
 
-    [self.promoBannerView addSubview:headlineLabel];
+    [self.promoBannerView addSubview:headlineLabel];
 
-    UILabel *subtextLabel = [[UILabel alloc]
+    UILabel *subtextLabel = [[UILabel alloc]
 
-        initWithFrame:CGRectMake(12, 44, self.view.bounds.size.width - 24, 36)];
+        initWithFrame:CGRectMake(12, 44, self.view.bounds.size.width - 24, 36)];
 
-    subtextLabel.text          = NSLocalizedString(@"EZCoinStore.Promo.Subtitle", @"Promo banner subtitle");
+    subtextLabel.text          = NSLocalizedString(@"EZCoinStore.Promo.Subtitle", @"Promo banner subtitle");
 
-    subtextLabel.font          = [UIFont boldSystemFontOfSize:15];
+    subtextLabel.font          = [UIFont boldSystemFontOfSize:15];
 
-    subtextLabel.textColor     = [UIColor colorWithWhite:1.0 alpha:0.92];
+    subtextLabel.textColor     = [UIColor colorWithWhite:1.0 alpha:0.92];
 
-    subtextLabel.textAlignment = NSTextAlignmentCenter;
+    subtextLabel.textAlignment = NSTextAlignmentCenter;
 
-    subtextLabel.numberOfLines = 2;
+    subtextLabel.numberOfLines = 2;
 
-    subtextLabel.adjustsFontSizeToFitWidth = YES;
+    subtextLabel.adjustsFontSizeToFitWidth = YES;
 
-    [self.promoBannerView addSubview:subtextLabel];
+    [self.promoBannerView addSubview:subtextLabel];
 
-    // Slow, gentle pulse — enough to catch the eye scrolling past, not
+    // Slow, gentle pulse — enough to catch the eye scrolling past, not
 
-    // frantic enough to look like a rendering glitch.
+    // frantic enough to look like a rendering glitch.
 
-    CABasicAnimation *pulseAnimation = [CABasicAnimation animationWithKeyPath:@"transform.scale"];
+    CABasicAnimation *pulseAnimation = [CABasicAnimation animationWithKeyPath:@"transform.scale"];
 
-    pulseAnimation.fromValue          = @1.0;
+    pulseAnimation.fromValue          = @1.0;
 
-    pulseAnimation.toValue            = @1.05;
+    pulseAnimation.toValue            = @1.05;
 
-    pulseAnimation.duration           = 0.85;
+    pulseAnimation.duration           = 0.85;
 
-    pulseAnimation.autoreverses       = YES;
+    pulseAnimation.autoreverses       = YES;
 
-    pulseAnimation.repeatCount        = HUGE_VALF;
+    pulseAnimation.repeatCount        = HUGE_VALF;
 
-    pulseAnimation.timingFunction     = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
+    pulseAnimation.timingFunction     = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
 
-    [headlineLabel.layer addAnimation:pulseAnimation forKey:@"promoPulse"];
+    [headlineLabel.layer addAnimation:pulseAnimation forKey:@"promoPulse"];
 
-    return self.promoBannerView;
+    return self.promoBannerView;
 
 }
 
 - (void)setupUI {
 
-    // When the promo banner is showing, everything else in the header shifts
+    // When the promo banner is showing, everything else in the header shifts
 
-    // down by kPromoBannerHeight so nothing overlaps it.
+    // down by kPromoBannerHeight so nothing overlaps it.
 
-    CGFloat promoOffset = self.isPromoActive ? kPromoBannerHeight : 0;
+    CGFloat promoOffset = self.isPromoActive ? kPromoBannerHeight : 0;
 
-    CGFloat headerHeight = 62 + promoOffset;
+    CGFloat headerHeight = 62 + promoOffset;
 
-    // Leave enough clearance above the balance label for the floating
+    // Leave enough clearance above the balance label for the floating
 
-    // daily-coins countdown button (pinned to the safe area top-left).
+    // daily-coins countdown button (pinned to the safe area top-left).
 
-    self.headerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, self.view.bounds.size.width, headerHeight)];
+    self.headerView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, self.view.bounds.size.width, headerHeight)];
 
-    self.headerView.backgroundColor = [UIColor colorWithRed:0.05 green:0.05 blue:0.12 alpha:1.0];
+    self.headerView.backgroundColor = [UIColor colorWithRed:0.05 green:0.05 blue:0.12 alpha:1.0];
 
-    if (self.isPromoActive) {
+    if (self.isPromoActive) {
 
-        [self.headerView addSubview:[self buildPromoBannerView]];
+        [self.headerView addSubview:[self buildPromoBannerView]];
 
-    }
+    }
 
-    self.balanceLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 8 + promoOffset, self.view.bounds.size.width, 22)];
+    self.balanceLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 8 + promoOffset, self.view.bounds.size.width, 22)];
 
-    self.balanceLabel.font          = [UIFont systemFontOfSize:15 weight:UIFontWeightMedium];
+    self.balanceLabel.font          = [UIFont systemFontOfSize:15 weight:UIFontWeightMedium];
 
-    self.balanceLabel.textColor     = [UIColor secondaryLabelColor];
+    self.balanceLabel.textColor     = [UIColor secondaryLabelColor];
 
-    self.balanceLabel.textAlignment = NSTextAlignmentCenter;
+    self.balanceLabel.textAlignment = NSTextAlignmentCenter;
 
-    self.balanceLabel.text          = NSLocalizedString(@"EZCoinStore.LoadingBalance", @"Balance loading text");
+    self.balanceLabel.text          = NSLocalizedString(@"EZCoinStore.LoadingBalance", @"Balance loading text");
 
-    [self.headerView addSubview:self.balanceLabel];
+    [self.headerView addSubview:self.balanceLabel];
 
-    // Low-coin warning banner — shown when the store is opened because
+    // Low-coin warning banner — shown when the store is opened because
 
-    // the user ran out mid-session (triggeringFeatureName is set by the caller)
+    // the user ran out mid-session (triggeringFeatureName is set by the caller)
 
-    self.warningLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 34 + promoOffset, self.view.bounds.size.width, 28)];
+    self.warningLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 34 + promoOffset, self.view.bounds.size.width, 28)];
 
-    self.warningLabel.backgroundColor = [UIColor systemRedColor];
+    self.warningLabel.backgroundColor = [UIColor systemRedColor];
 
-    self.warningLabel.font            = [UIFont boldSystemFontOfSize:13];
+    self.warningLabel.font            = [UIFont boldSystemFontOfSize:13];
 
-    self.warningLabel.textColor       = [UIColor whiteColor];
+    self.warningLabel.textColor       = [UIColor whiteColor];
 
-    self.warningLabel.textAlignment   = NSTextAlignmentCenter;
+    self.warningLabel.textAlignment   = NSTextAlignmentCenter;
 
-    self.warningLabel.hidden          = !self.showLowCoinsWarning;
+    self.warningLabel.hidden          = !self.showLowCoinsWarning;
 
-    if (self.showLowCoinsWarning) {
+    if (self.showLowCoinsWarning) {
 
-        NSString *featureName = self.triggeringFeatureName ?: NSLocalizedString(@"EZCoinStore.ThisFeature", @"Fallback feature name in low balance warning");
+        NSString *featureName = self.triggeringFeatureName ?: NSLocalizedString(@"EZCoinStore.ThisFeature", @"Fallback feature name in low balance warning");
 
-        self.warningLabel.text = [NSString stringWithFormat:
+        self.warningLabel.text = [NSString stringWithFormat:
 
-            NSLocalizedString(@"EZCoinStore.NotEnoughCoins", @"Low balance warning with feature name"), featureName];
+            NSLocalizedString(@"EZCoinStore.NotEnoughCoins", @"Low balance warning with feature name"), featureName];
 
-    }
+    }
 
-    [self.headerView addSubview:self.warningLabel];
+    [self.headerView addSubview:self.warningLabel];
 
-    self.tableView = [[UITableView alloc] initWithFrame:self.view.bounds style:UITableViewStylePlain];
+    self.tableView = [[UITableView alloc] initWithFrame:self.view.bounds style:UITableViewStylePlain];
 
-    self.tableView.delegate         = self;
+    self.tableView.delegate         = self;
 
-    self.tableView.dataSource       = self;
+    self.tableView.dataSource       = self;
 
-    self.tableView.backgroundColor  = [UIColor systemBackgroundColor];
+    self.tableView.backgroundColor  = [UIColor systemBackgroundColor];
 
-    self.tableView.separatorStyle   = UITableViewCellSeparatorStyleNone;
+    self.tableView.separatorStyle   = UITableViewCellSeparatorStyleNone;
 
-    self.tableView.tableHeaderView  = self.headerView;
+    self.tableView.tableHeaderView  = self.headerView;
 
-    self.tableView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    self.tableView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
 
-    [self.tableView registerClass:[EZStoreCell class] forCellReuseIdentifier:@"EZStoreCell"];
+    [self.tableView registerClass:[EZStoreCell class] forCellReuseIdentifier:@"EZStoreCell"];
 
-    [self.view addSubview:self.tableView];
+    [self.view addSubview:self.tableView];
 
-    self.spinner = [[UIActivityIndicatorView alloc]
+    self.spinner = [[UIActivityIndicatorView alloc]
 
-        initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
+        initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
 
-    self.spinner.center           = self.view.center;
+    self.spinner.center           = self.view.center;
 
-    self.spinner.hidesWhenStopped = YES;
+    self.spinner.hidesWhenStopped = YES;
 
-    [self.view addSubview:self.spinner];
+    [self.view addSubview:self.spinner];
 
 }
 
 - (void)refreshBalance {
 
-    [[EZEntitlementManager shared] refreshBalanceWithCompletion:^(NSInteger balance) {
+    [[EZEntitlementManager shared] refreshBalanceWithCompletion:^(NSInteger balance) {
 
-        NSString *tier   = [EZEntitlementManager shared].currentTier;
+        NSString *tier   = [EZEntitlementManager shared].currentTier;
 
-        NSString *status = [EZEntitlementManager shared].currentStatus;
+        NSString *status = [EZEntitlementManager shared].currentStatus;
 
-        NSString *planDisplay;
+        NSString *planDisplay;
 
-    BOOL hasTier = tier.length > 0 &&
-        [tier caseInsensitiveCompare:@"null"] != NSOrderedSame;
+    BOOL hasTier = tier.length > 0 &&
+        [tier caseInsensitiveCompare:@"null"] != NSOrderedSame;
 
-        if ([status isEqualToString:@"coins_only"] || !hasTier) {
+        if ([status isEqualToString:@"coins_only"] || !hasTier) {
 
-            planDisplay = NSLocalizedString(@"EZCoinStore.NoActiveSubscription", @"No active subscription status");
+            planDisplay = NSLocalizedString(@"EZCoinStore.NoActiveSubscription", @"No active subscription status");
 
-        } else if (status.length && ![status isEqualToString:@"active"]) {
+        } else if (status.length && ![status isEqualToString:@"active"]) {
 
-            planDisplay = [NSString stringWithFormat:@"%@ (%@)",
+            planDisplay = [NSString stringWithFormat:@"%@ (%@)",
 
-                           tier.capitalizedString, status.capitalizedString];
+                           tier.capitalizedString, status.capitalizedString];
 
-        } else {
+        } else {
 
-            planDisplay = tier.capitalizedString;
+            planDisplay = tier.capitalizedString;
 
-        }
+        }
 
-        self.balanceLabel.text = [NSString stringWithFormat:
+        self.balanceLabel.text = [NSString stringWithFormat:
 
-            NSLocalizedString(@"EZCoinStore.BalanceFormat", @"Balance and plan display format"), (long)balance, planDisplay];
+            NSLocalizedString(@"EZCoinStore.BalanceFormat", @"Balance and plan display format"), (long)balance, planDisplay];
 
-        [self buildItems];
+        [self buildItems];
 
-        [self.tableView reloadData];
+        [self.tableView reloadData];
 
-        // Re-check daily coin availability after every balance refresh.
+        // Re-check daily coin availability after every balance refresh.
 
-        // Handles the edge case where the user's membership tier changed since
+        // Handles the edge case where the user's membership tier changed since
 
-        // the last check (e.g. they just subscribed or their plan was cancelled).
+        // the last check (e.g. they just subscribed or their plan was cancelled).
 
-        [self refreshDailyCoinsStatus];
+        [self refreshDailyCoinsStatus];
 
-    }];
+    }];
 
 }
 
@@ -1241,101 +1241,101 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView {
 
-    return 2;
+    return 2;
 
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
 
-    if (section == 0) return 6; // subscription tiers
+    if (section == 0) return 6; // subscription tiers
 
-    return 5;                   // top-up packages
+    return 5;                   // top-up packages
 
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
 
-    return section == 0 ? NSLocalizedString(@"EZCoinStore.Section.Subscriptions", @"Subscriptions section header") : NSLocalizedString(@"EZCoinStore.Section.OneTimeTopUps", @"One-time top-ups section header");
+    return section == 0 ? NSLocalizedString(@"EZCoinStore.Section.Subscriptions", @"Subscriptions section header") : NSLocalizedString(@"EZCoinStore.Section.OneTimeTopUps", @"One-time top-ups section header");
 
 }
 
 - (UIView *)tableView:(UITableView *)tableView viewForHeaderInSection:(NSInteger)section {
 
-    UIView *sectionHeaderView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, tableView.bounds.size.width, 36)];
+    UIView *sectionHeaderView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, tableView.bounds.size.width, 36)];
 
-    sectionHeaderView.backgroundColor = [UIColor clearColor];
+    sectionHeaderView.backgroundColor = [UIColor clearColor];
 
-    UILabel *sectionTitleLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 8, 300, 20)];
+    UILabel *sectionTitleLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 8, 300, 20)];
 
-    sectionTitleLabel.text                    = section == 0 ? NSLocalizedString(@"EZCoinStore.Section.Subscriptions", @"Subscriptions section header") : NSLocalizedString(@"EZCoinStore.Section.OneTimeTopUps", @"One-time top-ups section header");
+    sectionTitleLabel.text                    = section == 0 ? NSLocalizedString(@"EZCoinStore.Section.Subscriptions", @"Subscriptions section header") : NSLocalizedString(@"EZCoinStore.Section.OneTimeTopUps", @"One-time top-ups section header");
 
-    sectionTitleLabel.font                    = [UIFont boldSystemFontOfSize:11];
+    sectionTitleLabel.font                    = [UIFont boldSystemFontOfSize:11];
 
-    sectionTitleLabel.textColor               = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:0.8];
+    sectionTitleLabel.textColor               = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:0.8];
 
-    sectionTitleLabel.adjustsFontSizeToFitWidth = YES;
+    sectionTitleLabel.adjustsFontSizeToFitWidth = YES;
 
-    [sectionHeaderView addSubview:sectionTitleLabel];
+    [sectionHeaderView addSubview:sectionTitleLabel];
 
-    UIView *goldDividerLine = [[UIView alloc] initWithFrame:CGRectMake(20, 30, tableView.bounds.size.width - 40, 0.5)];
+    UIView *goldDividerLine = [[UIView alloc] initWithFrame:CGRectMake(20, 30, tableView.bounds.size.width - 40, 0.5)];
 
-    goldDividerLine.backgroundColor = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:0.3];
+    goldDividerLine.backgroundColor = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:0.3];
 
-    [sectionHeaderView addSubview:goldDividerLine];
+    [sectionHeaderView addSubview:goldDividerLine];
 
-    return sectionHeaderView;
+    return sectionHeaderView;
 
 }
 
 - (CGFloat)tableView:(UITableView *)tableView heightForHeaderInSection:(NSInteger)section {
 
-    return 36;
+    return 36;
 
 }
 
 - (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath {
 
-    // Subscription cards (section 0) need extra room only when the promo
+    // Subscription cards (section 0) need extra room only when the promo
 
-    // badge + footnote are showing; top-ups (section 1) still just show the
+    // badge + footnote are showing; top-ups (section 1) still just show the
 
-    // short "BUY 1 GET 1" badge and never need the taller layout.
+    // short "BUY 1 GET 1" badge and never need the taller layout.
 
-    if (indexPath.section == 0 && self.isPromoActive) {
+    if (indexPath.section == 0 && self.isPromoActive) {
 
-        return 182;
+        return 182;
 
-    }
+    }
 
-        return 168;
+        return 168;
 
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
 
-    EZStoreCell *cell = [tableView dequeueReusableCellWithIdentifier:@"EZStoreCell"
+    EZStoreCell *cell = [tableView dequeueReusableCellWithIdentifier:@"EZStoreCell"
 
-                                                        forIndexPath:indexPath];
+                                                        forIndexPath:indexPath];
 
-    NSInteger itemIndex = indexPath.section == 0 ? indexPath.row : 6 + indexPath.row;
+    NSInteger itemIndex = indexPath.section == 0 ? indexPath.row : 6 + indexPath.row;
 
-    if (itemIndex < (NSInteger)self.items.count) {
+    if (itemIndex < (NSInteger)self.items.count) {
 
-        EZStoreItem *item = self.items[itemIndex];
+        EZStoreItem *item = self.items[itemIndex];
 
-        [cell configureWithItem:item coinImage:self.coinImage];
+        [cell configureWithItem:item coinImage:self.coinImage];
 
-        __weak typeof(self) weakSelf = self;
+        __weak typeof(self) weakSelf = self;
 
-        cell.onAction = ^{
+        cell.onAction = ^{
 
-            [weakSelf handlePurchaseForItem:item];
+            [weakSelf handlePurchaseForItem:item];
 
-        };
+        };
 
-    }
+    }
 
-    return cell;
+    return cell;
 
 }
 
@@ -1351,45 +1351,45 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
 
 - (void)addDailyCoinsButton {
 
-    self.dailyCoinsButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    self.dailyCoinsButton = [UIButton buttonWithType:UIButtonTypeSystem];
 
-    [self.dailyCoinsButton setTitle:NSLocalizedString(@"EZCoinStore.DailyCoins", @"Daily coins button title") forState:UIControlStateNormal];
+    [self.dailyCoinsButton setTitle:NSLocalizedString(@"EZCoinStore.DailyCoins", @"Daily coins button title") forState:UIControlStateNormal];
 
-    self.dailyCoinsButton.contentEdgeInsets = UIEdgeInsetsMake(0, 0, 0, 0);
+    self.dailyCoinsButton.contentEdgeInsets = UIEdgeInsetsMake(0, 0, 0, 0);
 
-    self.dailyCoinsButton.titleLabel.font   = [UIFont systemFontOfSize:15.0];
+    self.dailyCoinsButton.titleLabel.font   = [UIFont systemFontOfSize:15.0];
 
-    // Muted until the server confirms eligibility
+    // Muted until the server confirms eligibility
 
-    self.dailyCoinsButton.tintColor = [UIColor secondaryLabelColor];
+    self.dailyCoinsButton.tintColor = [UIColor secondaryLabelColor];
 
-    self.dailyCoinsButton.enabled   = NO;
+    self.dailyCoinsButton.enabled   = NO;
 
-    [self.dailyCoinsButton addTarget:self
+    [self.dailyCoinsButton addTarget:self
 
-                              action:@selector(dailyCoinsTapped:)
+                              action:@selector(dailyCoinsTapped:)
 
-                    forControlEvents:UIControlEventTouchUpInside];
+                    forControlEvents:UIControlEventTouchUpInside];
 
-    self.dailyCoinsButton.translatesAutoresizingMaskIntoConstraints = NO;
+    self.dailyCoinsButton.translatesAutoresizingMaskIntoConstraints = NO;
 
-    // Lives in the nav bar's left slot now — this is the space the close (X)
+    // Lives in the nav bar's left slot now — this is the space the close (X)
 
-    // button used to occupy. Frees the header content area entirely for the
+    // button used to occupy. Frees the header content area entirely for the
 
-    // promo banner instead of the two competing for the same cramped row.
+    // promo banner instead of the two competing for the same cramped row.
 
-    // translatesAutoresizingMaskIntoConstraints = NO (rather than a one-time
+    // translatesAutoresizingMaskIntoConstraints = NO (rather than a one-time
 
-    // sizeToFit) so the nav bar re-measures the button's intrinsicContentSize
+    // sizeToFit) so the nav bar re-measures the button's intrinsicContentSize
 
-    // as its title text changes every second from the countdown timer —
+    // as its title text changes every second from the countdown timer —
 
-    // otherwise a frozen frame would clip longer/shorter countdown strings.
+    // otherwise a frozen frame would clip longer/shorter countdown strings.
 
-    self.navigationItem.leftBarButtonItem =
+    self.navigationItem.leftBarButtonItem =
 
-        [[UIBarButtonItem alloc] initWithCustomView:self.dailyCoinsButton];
+        [[UIBarButtonItem alloc] initWithCustomView:self.dailyCoinsButton];
 
 }
 
@@ -1399,65 +1399,65 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
 
 - (void)updateDailyCoinsButtonState {
 
-    if (self.isDailyCoinsAvailable) {
+    if (self.isDailyCoinsAvailable) {
 
-        [self stopCountdownTimer];
+        [self stopCountdownTimer];
 
-        NSString *buttonTitle = self.dailyCoinsPendingAmount > 0
+        NSString *buttonTitle = self.dailyCoinsPendingAmount > 0
 
-            ? [NSString stringWithFormat:NSLocalizedString(@"EZCoinStore.DailyCoins.FreeFormat", @"Available daily coins button title"), (long)self.dailyCoinsPendingAmount]
+            ? [NSString stringWithFormat:NSLocalizedString(@"EZCoinStore.DailyCoins.FreeFormat", @"Available daily coins button title"), (long)self.dailyCoinsPendingAmount]
 
-            : NSLocalizedString(@"EZCoinStore.DailyCoins.Free", @"Available daily coins button title");
+            : NSLocalizedString(@"EZCoinStore.DailyCoins.Free", @"Available daily coins button title");
 
-        [self.dailyCoinsButton setTitle:buttonTitle forState:UIControlStateNormal];
+        [self.dailyCoinsButton setTitle:buttonTitle forState:UIControlStateNormal];
 
-        self.dailyCoinsButton.tintColor = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:1.0];
+        self.dailyCoinsButton.tintColor = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:1.0];
 
-        self.dailyCoinsButton.enabled   = YES;
+        self.dailyCoinsButton.enabled   = YES;
 
-    } else if (self.nextDailyClaimDate) {
+    } else if (self.nextDailyClaimDate) {
 
-        NSTimeInterval secondsRemaining = [self.nextDailyClaimDate timeIntervalSinceNow];
+        NSTimeInterval secondsRemaining = [self.nextDailyClaimDate timeIntervalSinceNow];
 
-        if (secondsRemaining > 0) {
+        if (secondsRemaining > 0) {
 
-            [self updateCountdownLabel:secondsRemaining];
+            [self updateCountdownLabel:secondsRemaining];
 
-            self.dailyCoinsButton.tintColor = [UIColor whiteColor];
+            self.dailyCoinsButton.tintColor = [UIColor whiteColor];
 
-            self.dailyCoinsButton.enabled   = NO;
+            self.dailyCoinsButton.enabled   = NO;
 
-            [self startCountdownTimer];
+            [self startCountdownTimer];
 
-        } else {
+        } else {
 
-            // Countdown hit zero — optimistically enable; server still verifies on tap
+            // Countdown hit zero — optimistically enable; server still verifies on tap
 
-            [self stopCountdownTimer];
+            [self stopCountdownTimer];
 
-            [self.dailyCoinsButton setTitle:NSLocalizedString(@"EZCoinStore.DailyCoins.Free", @"Available daily coins button title") forState:UIControlStateNormal];
+            [self.dailyCoinsButton setTitle:NSLocalizedString(@"EZCoinStore.DailyCoins.Free", @"Available daily coins button title") forState:UIControlStateNormal];
 
-            self.dailyCoinsButton.tintColor = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:1.0];
+            self.dailyCoinsButton.tintColor = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:1.0];
 
-            self.dailyCoinsButton.enabled   = YES;
+            self.dailyCoinsButton.enabled   = YES;
 
-            self.isDailyCoinsAvailable      = YES;
+            self.isDailyCoinsAvailable      = YES;
 
-        }
+        }
 
-    } else {
+    } else {
 
-        // No cached data yet — stays muted until first server response arrives
+        // No cached data yet — stays muted until first server response arrives
 
-        [self stopCountdownTimer];
+        [self stopCountdownTimer];
 
-        [self.dailyCoinsButton setTitle:NSLocalizedString(@"EZCoinStore.DailyCoins", @"Daily coins button title") forState:UIControlStateNormal];
+        [self.dailyCoinsButton setTitle:NSLocalizedString(@"EZCoinStore.DailyCoins", @"Daily coins button title") forState:UIControlStateNormal];
 
-        self.dailyCoinsButton.tintColor = [UIColor secondaryLabelColor];
+        self.dailyCoinsButton.tintColor = [UIColor secondaryLabelColor];
 
-        self.dailyCoinsButton.enabled   = NO;
+        self.dailyCoinsButton.enabled   = NO;
 
-    }
+    }
 
 }
 
@@ -1467,31 +1467,31 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
 
 - (void)updateCountdownLabel:(NSTimeInterval)secondsRemaining {
 
-    NSInteger totalSeconds = (NSInteger)secondsRemaining;
+    NSInteger totalSeconds = (NSInteger)secondsRemaining;
 
-    NSInteger hours        = totalSeconds / 3600;
+    NSInteger hours        = totalSeconds / 3600;
 
-    NSInteger minutes      = (totalSeconds % 3600) / 60;
+    NSInteger minutes      = (totalSeconds % 3600) / 60;
 
-    NSInteger seconds      = totalSeconds % 60;
+    NSInteger seconds      = totalSeconds % 60;
 
-    NSString *countdownText;
+    NSString *countdownText;
 
-    if (hours > 0) {
+    if (hours > 0) {
 
-        countdownText = [NSString stringWithFormat:NSLocalizedString(@"EZCoinStore.DailyCoins.NextHours", @"Daily coins countdown in hours and minutes"), (long)hours, (long)minutes];
+        countdownText = [NSString stringWithFormat:NSLocalizedString(@"EZCoinStore.DailyCoins.NextHours", @"Daily coins countdown in hours and minutes"), (long)hours, (long)minutes];
 
-    } else if (minutes > 0) {
+    } else if (minutes > 0) {
 
-        countdownText = [NSString stringWithFormat:NSLocalizedString(@"EZCoinStore.DailyCoins.NextMinutes", @"Daily coins countdown in minutes and seconds"), (long)minutes, (long)seconds];
+        countdownText = [NSString stringWithFormat:NSLocalizedString(@"EZCoinStore.DailyCoins.NextMinutes", @"Daily coins countdown in minutes and seconds"), (long)minutes, (long)seconds];
 
-    } else {
+    } else {
 
-        countdownText = [NSString stringWithFormat:NSLocalizedString(@"EZCoinStore.DailyCoins.NextSeconds", @"Daily coins countdown in seconds"), (long)seconds];
+        countdownText = [NSString stringWithFormat:NSLocalizedString(@"EZCoinStore.DailyCoins.NextSeconds", @"Daily coins countdown in seconds"), (long)seconds];
 
-    }
+    }
 
-    [self.dailyCoinsButton setTitle:countdownText forState:UIControlStateNormal];
+    [self.dailyCoinsButton setTitle:countdownText forState:UIControlStateNormal];
 
 }
 
@@ -1499,17 +1499,17 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
 
 - (void)startCountdownTimer {
 
-    if (self.countdownTimer) return; // Already ticking
+    if (self.countdownTimer) return; // Already ticking
 
-    self.countdownTimer = [NSTimer scheduledTimerWithTimeInterval:1.0
+    self.countdownTimer = [NSTimer scheduledTimerWithTimeInterval:1.0
 
-                                                           target:self
+                                                           target:self
 
-                                                         selector:@selector(countdownTimerFired:)
+                                                         selector:@selector(countdownTimerFired:)
 
-                                                         userInfo:nil
+                                                         userInfo:nil
 
-                                                          repeats:YES];
+                                                          repeats:YES];
 
 }
 
@@ -1517,9 +1517,9 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
 
 - (void)stopCountdownTimer {
 
-    [self.countdownTimer invalidate];
+    [self.countdownTimer invalidate];
 
-    self.countdownTimer = nil;
+    self.countdownTimer = nil;
 
 }
 
@@ -1527,31 +1527,31 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
 
 - (void)countdownTimerFired:(NSTimer *)timer {
 
-    if (!self.nextDailyClaimDate) {
+    if (!self.nextDailyClaimDate) {
 
-        [self stopCountdownTimer];
+        [self stopCountdownTimer];
 
-        return;
+        return;
 
-    }
+    }
 
-    NSTimeInterval secondsRemaining = [self.nextDailyClaimDate timeIntervalSinceNow];
+    NSTimeInterval secondsRemaining = [self.nextDailyClaimDate timeIntervalSinceNow];
 
-    if (secondsRemaining <= 0) {
+    if (secondsRemaining <= 0) {
 
-        // Time's up — flip to available and let updateDailyCoinsButtonState handle the rest
+        // Time's up — flip to available and let updateDailyCoinsButtonState handle the rest
 
-        [self stopCountdownTimer];
+        [self stopCountdownTimer];
 
-        self.isDailyCoinsAvailable = YES;
+        self.isDailyCoinsAvailable = YES;
 
-        [self updateDailyCoinsButtonState];
+        [self updateDailyCoinsButtonState];
 
-    } else {
+    } else {
 
-        [self updateCountdownLabel:secondsRemaining];
+        [self updateCountdownLabel:secondsRemaining];
 
-    }
+    }
 
 }
 
@@ -1561,49 +1561,49 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
 
 - (void)refreshDailyCoinsStatus {
 
-    NSString *token = [EZAuthManager shared].accessToken;
+    NSString *token = [EZAuthManager shared].accessToken;
 
-    if (!token) return; // Not signed in — button stays disabled
+    if (!token) return; // Not signed in — button stays disabled
 
-    NSURL *statusURL = [NSURL URLWithString:[[kStoreSupabaseURL
+    NSURL *statusURL = [NSURL URLWithString:[[kStoreSupabaseURL
 
-        stringByAppendingString:kDailyCoinsEndpoint]
+        stringByAppendingString:kDailyCoinsEndpoint]
 
-        stringByAppendingString:@"?check=1"]];
+        stringByAppendingString:@"?check=1"]];
 
-    NSMutableURLRequest *statusRequest = [NSMutableURLRequest requestWithURL:statusURL];
+    NSMutableURLRequest *statusRequest = [NSMutableURLRequest requestWithURL:statusURL];
 
-    statusRequest.HTTPMethod      = @"GET";
+    statusRequest.HTTPMethod      = @"GET";
 
-    statusRequest.timeoutInterval = 10;
+    statusRequest.timeoutInterval = 10;
 
-    [statusRequest setValue:[NSString stringWithFormat:@"Bearer %@", token]
+    [statusRequest setValue:[NSString stringWithFormat:@"Bearer %@", token]
 
-         forHTTPHeaderField:@"Authorization"];
+         forHTTPHeaderField:@"Authorization"];
 
-    [[[NSURLSession sharedSession] dataTaskWithRequest:statusRequest
+    [[[NSURLSession sharedSession] dataTaskWithRequest:statusRequest
 
-        completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+        completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
 
-        dispatch_async(dispatch_get_main_queue(), ^{
+        dispatch_async(dispatch_get_main_queue(), ^{
 
-            if (error || !data) return; // Silent failure; button stays in its current state
+            if (error || !data) return; // Silent failure; button stays in its current state
 
-            NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+            NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
 
-            if (!json) return;
+            if (!json) return;
 
-            self.isDailyCoinsAvailable   = jsonBool(json, @"available");
+            self.isDailyCoinsAvailable   = jsonBool(json, @"available");
 
-            self.dailyCoinsPendingAmount = jsonInteger(json, @"coins_to_award");
+            self.dailyCoinsPendingAmount = jsonInteger(json, @"coins_to_award");
 
-            self.nextDailyClaimDate      = dateFromISO8601String(jsonString(json, @"next_claim_at"));
+            self.nextDailyClaimDate      = dateFromISO8601String(jsonString(json, @"next_claim_at"));
 
-            [self updateDailyCoinsButtonState];
+            [self updateDailyCoinsButtonState];
 
-        });
+        });
 
-    }] resume];
+    }] resume];
 
 }
 
@@ -1611,13 +1611,13 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
 
 - (void)dailyCoinsTapped:(UIButton *)sender {
 
-    // Disable immediately to block double-taps while the request is in-flight
+    // Disable immediately to block double-taps while the request is in-flight
 
-    self.dailyCoinsButton.enabled = NO;
+    self.dailyCoinsButton.enabled = NO;
 
-    [self.dailyCoinsButton setTitle:NSLocalizedString(@"EZCoinStore.DailyCoins.Claiming", @"Daily coins claim in progress") forState:UIControlStateNormal];
+    [self.dailyCoinsButton setTitle:NSLocalizedString(@"EZCoinStore.DailyCoins.Claiming", @"Daily coins claim in progress") forState:UIControlStateNormal];
 
-    [self claimDailyCoins];
+    [self claimDailyCoins];
 
 }
 
@@ -1629,135 +1629,135 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
 
 - (void)claimDailyCoins {
 
-    NSString *token = [EZAuthManager shared].accessToken;
+    NSString *token = [EZAuthManager shared].accessToken;
 
-    if (!token) {
+    if (!token) {
 
-        [self showAlert:NSLocalizedString(@"EZCoinStore.Alert.NotSignedIn", @"Not signed in alert title") message:NSLocalizedString(@"EZCoinStore.Alert.SignInDailyCoins", @"Sign in message for daily coins")];
+        [self showAlert:NSLocalizedString(@"EZCoinStore.Alert.NotSignedIn", @"Not signed in alert title") message:NSLocalizedString(@"EZCoinStore.Alert.SignInDailyCoins", @"Sign in message for daily coins")];
 
-        self.isDailyCoinsAvailable = YES;
+        self.isDailyCoinsAvailable = YES;
 
-        [self updateDailyCoinsButtonState];
+        [self updateDailyCoinsButtonState];
 
-        return;
+        return;
 
-    }
+    }
 
-    NSURL *claimURL = [NSURL URLWithString:[kStoreSupabaseURL
+    NSURL *claimURL = [NSURL URLWithString:[kStoreSupabaseURL
 
-        stringByAppendingString:kDailyCoinsEndpoint]];
+        stringByAppendingString:kDailyCoinsEndpoint]];
 
-    NSMutableURLRequest *claimRequest = [NSMutableURLRequest requestWithURL:claimURL];
+    NSMutableURLRequest *claimRequest = [NSMutableURLRequest requestWithURL:claimURL];
 
-    claimRequest.HTTPMethod      = @"POST";
+    claimRequest.HTTPMethod      = @"POST";
 
-    claimRequest.timeoutInterval = 15;
+    claimRequest.timeoutInterval = 15;
 
-    [claimRequest setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+    [claimRequest setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
 
-    [claimRequest setValue:[NSString stringWithFormat:@"Bearer %@", token]
+    [claimRequest setValue:[NSString stringWithFormat:@"Bearer %@", token]
 
-        forHTTPHeaderField:@"Authorization"];
+        forHTTPHeaderField:@"Authorization"];
 
-    claimRequest.HTTPBody = [NSJSONSerialization dataWithJSONObject:@{} options:0 error:nil];
+    claimRequest.HTTPBody = [NSJSONSerialization dataWithJSONObject:@{} options:0 error:nil];
 
-    [[[NSURLSession sharedSession] dataTaskWithRequest:claimRequest
+    [[[NSURLSession sharedSession] dataTaskWithRequest:claimRequest
 
-        completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+        completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
 
-        dispatch_async(dispatch_get_main_queue(), ^{
+        dispatch_async(dispatch_get_main_queue(), ^{
 
-            if (error) {
+            if (error) {
 
-                // Network error — let them retry
+                // Network error — let them retry
 
-                [self showAlert:NSLocalizedString(@"EZCoinStore.Alert.NetworkError", @"Network error alert title")
+                [self showAlert:NSLocalizedString(@"EZCoinStore.Alert.NetworkError", @"Network error alert title")
 
-                        message:NSLocalizedString(@"EZCoinStore.Alert.ServerUnreachable", @"Server unreachable message")];
+                        message:NSLocalizedString(@"EZCoinStore.Alert.ServerUnreachable", @"Server unreachable message")];
 
-                self.isDailyCoinsAvailable = YES;
+                self.isDailyCoinsAvailable = YES;
 
-                [self updateDailyCoinsButtonState];
+                [self updateDailyCoinsButtonState];
 
-                return;
+                return;
 
-            }
+            }
 
-            NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data
+            NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data
 
-                                                                 options:0
+                                                                 options:0
 
-                                                                   error:nil];
+                                                                   error:nil];
 
-            NSHTTPURLResponse *httpResponse = (NSHTTPURLResponse *)response;
+            NSHTTPURLResponse *httpResponse = (NSHTTPURLResponse *)response;
 
-            if (httpResponse.statusCode == 200 && [json[@"success"] boolValue]) {
+            if (httpResponse.statusCode == 200 && [json[@"success"] boolValue]) {
 
-                NSInteger coinsAdded = jsonInteger(json, @"coins_added");
+                NSInteger coinsAdded = jsonInteger(json, @"coins_added");
 
-                NSInteger newBalance = jsonInteger(json, @"balance");
+                NSInteger newBalance = jsonInteger(json, @"balance");
 
-                // Record next-claim time from server so the countdown is accurate
+                // Record next-claim time from server so the countdown is accurate
 
-                self.nextDailyClaimDate    = dateFromISO8601String(jsonString(json, @"next_claim_at"));
+                self.nextDailyClaimDate    = dateFromISO8601String(jsonString(json, @"next_claim_at"));
 
-                self.isDailyCoinsAvailable = NO;
+                self.isDailyCoinsAvailable = NO;
 
-                // Reflect new balance immediately before the delayed full refresh
+                // Reflect new balance immediately before the delayed full refresh
 
-                [[EZEntitlementManager shared] applyKnownBalance:newBalance];
+                [[EZEntitlementManager shared] applyKnownBalance:newBalance];
 
-                [self updateDailyCoinsButtonState];
+                [self updateDailyCoinsButtonState];
 
-                [self showCoinCelebration:coinsAdded newBalance:newBalance];
+                [self showCoinCelebration:coinsAdded newBalance:newBalance];
 
-                [[NSNotificationCenter defaultCenter]
+                [[NSNotificationCenter defaultCenter]
 
-                    postNotificationName:@"EZSubscriptionUpdated" object:nil];
+                    postNotificationName:@"EZSubscriptionUpdated" object:nil];
 
-                // Delayed sync to pick up any secondary server-side processing
+                // Delayed sync to pick up any secondary server-side processing
 
-                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)),
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)),
 
-                               dispatch_get_main_queue(), ^{
+                               dispatch_get_main_queue(), ^{
 
-                    [self refreshBalance];
+                    [self refreshBalance];
 
-                });
+                });
 
-            } else if (httpResponse.statusCode == 429
+            } else if (httpResponse.statusCode == 429
 
-                       || [json[@"error"] isEqualToString:@"too_soon"]) {
+                       || [json[@"error"] isEqualToString:@"too_soon"]) {
 
-                // Server rejected the claim — update countdown from authoritative server time
+                // Server rejected the claim — update countdown from authoritative server time
 
-                self.nextDailyClaimDate    = dateFromISO8601String(jsonString(json, @"next_claim_at"));
+                self.nextDailyClaimDate    = dateFromISO8601String(jsonString(json, @"next_claim_at"));
 
-                self.isDailyCoinsAvailable = NO;
+                self.isDailyCoinsAvailable = NO;
 
-                [self updateDailyCoinsButtonState];
+                [self updateDailyCoinsButtonState];
 
-                [self showAlert:NSLocalizedString(@"EZCoinStore.Alert.AlreadyClaimed", @"Daily coins already claimed alert title")
+                [self showAlert:NSLocalizedString(@"EZCoinStore.Alert.AlreadyClaimed", @"Daily coins already claimed alert title")
 
-                        message:NSLocalizedString(@"EZCoinStore.Alert.AlreadyClaimedMessage", @"Daily coins cooldown message")];
+                        message:NSLocalizedString(@"EZCoinStore.Alert.AlreadyClaimedMessage", @"Daily coins cooldown message")];
 
-            } else {
+            } else {
 
-                // Unexpected server error — allow retry
+                // Unexpected server error — allow retry
 
-                NSString *serverError = jsonString(json, @"error") ?: NSLocalizedString(@"EZCoinStore.Alert.GenericRetry", @"Generic retry error message");
+                NSString *serverError = jsonString(json, @"error") ?: NSLocalizedString(@"EZCoinStore.Alert.GenericRetry", @"Generic retry error message");
 
-                [self showAlert:NSLocalizedString(@"EZCoinStore.Alert.Error", @"Generic error alert title") message:serverError];
+                [self showAlert:NSLocalizedString(@"EZCoinStore.Alert.Error", @"Generic error alert title") message:serverError];
 
-                self.isDailyCoinsAvailable = YES;
+                self.isDailyCoinsAvailable = YES;
 
-                [self updateDailyCoinsButtonState];
+                [self updateDailyCoinsButtonState];
 
-            }
+            }
 
-        });
+        });
 
-    }] resume];
+    }] resume];
 
 }
 
@@ -1771,55 +1771,55 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
 
 - (void)addLedgerButton {
 
-    UIButton *ledgerButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    UIButton *ledgerButton = [UIButton buttonWithType:UIButtonTypeSystem];
 
-    [ledgerButton setTitle:NSLocalizedString(@"EZCoinStore.Ledger", @"Debug ledger button title") forState:UIControlStateNormal];
+    [ledgerButton setTitle:NSLocalizedString(@"EZCoinStore.Ledger", @"Debug ledger button title") forState:UIControlStateNormal];
 
-    ledgerButton.translatesAutoresizingMaskIntoConstraints = NO;
+    ledgerButton.translatesAutoresizingMaskIntoConstraints = NO;
 
-    ledgerButton.contentEdgeInsets = UIEdgeInsetsMake(6, 10, 6, 10);
+    ledgerButton.contentEdgeInsets = UIEdgeInsetsMake(6, 10, 6, 10);
 
-    ledgerButton.titleLabel.font   = [UIFont systemFontOfSize:16.0];
+    ledgerButton.titleLabel.font   = [UIFont systemFontOfSize:16.0];
 
-    [ledgerButton addTarget:self
+    [ledgerButton addTarget:self
 
-                     action:@selector(ledgerButtonTapped:)
+                     action:@selector(ledgerButtonTapped:)
 
-           forControlEvents:UIControlEventTouchUpInside];
+           forControlEvents:UIControlEventTouchUpInside];
 
-    [self.view addSubview:ledgerButton];
+    [self.view addSubview:ledgerButton];
 
-    UILayoutGuide *safeArea = self.view.safeAreaLayoutGuide;
+    UILayoutGuide *safeArea = self.view.safeAreaLayoutGuide;
 
-    [NSLayoutConstraint activateConstraints:@[
+    [NSLayoutConstraint activateConstraints:@[
 
-        [ledgerButton.topAnchor      constraintEqualToAnchor:safeArea.topAnchor      constant:8.0],
+        [ledgerButton.topAnchor      constraintEqualToAnchor:safeArea.topAnchor      constant:8.0],
 
-        [ledgerButton.trailingAnchor constraintEqualToAnchor:safeArea.trailingAnchor constant:-12.0],
+        [ledgerButton.trailingAnchor constraintEqualToAnchor:safeArea.trailingAnchor constant:-12.0],
 
-    ]];
+    ]];
 
 }
 
 - (void)ledgerButtonTapped:(UIButton *)sender {
 
-    EZCoinLedgerViewController *ledgerVC = [[EZCoinLedgerViewController alloc] init];
+    EZCoinLedgerViewController *ledgerVC = [[EZCoinLedgerViewController alloc] init];
 
-    if (self.navigationController) {
+    if (self.navigationController) {
 
-        [self.navigationController pushViewController:ledgerVC animated:YES];
+        [self.navigationController pushViewController:ledgerVC animated:YES];
 
-    } else {
+    } else {
 
-        UINavigationController *ledgerNav = [[UINavigationController alloc]
+        UINavigationController *ledgerNav = [[UINavigationController alloc]
 
-            initWithRootViewController:ledgerVC];
+            initWithRootViewController:ledgerVC];
 
-        ledgerNav.modalPresentationStyle = UIModalPresentationFullScreen;
+        ledgerNav.modalPresentationStyle = UIModalPresentationFullScreen;
 
-        [self presentViewController:ledgerNav animated:YES completion:nil];
+        [self presentViewController:ledgerNav animated:YES completion:nil];
 
-    }
+    }
 
 }
 
@@ -1829,25 +1829,25 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
 
 - (void)historyTapped {
 
-    EZCoinUsageViewController *usageVC = [[EZCoinUsageViewController alloc] init];
+    EZCoinUsageViewController *usageVC = [[EZCoinUsageViewController alloc] init];
 
-    UINavigationController *usageNav = [[UINavigationController alloc]
+    UINavigationController *usageNav = [[UINavigationController alloc]
 
-        initWithRootViewController:usageVC];
+        initWithRootViewController:usageVC];
 
-    usageNav.modalPresentationStyle = UIModalPresentationPageSheet;
+    usageNav.modalPresentationStyle = UIModalPresentationPageSheet;
 
-    if (@available(iOS 15, *)) {
+    if (@available(iOS 15, *)) {
 
-        UISheetPresentationController *sheet = usageNav.sheetPresentationController;
+        UISheetPresentationController *sheet = usageNav.sheetPresentationController;
 
-        sheet.detents               = @[UISheetPresentationControllerDetent.largeDetent];
+        sheet.detents               = @[UISheetPresentationControllerDetent.largeDetent];
 
-        sheet.prefersGrabberVisible = YES;
+        sheet.prefersGrabberVisible = YES;
 
-    }
+    }
 
-    [self presentViewController:usageNav animated:YES completion:nil];
+    [self presentViewController:usageNav animated:YES completion:nil];
 
 }
 
@@ -1855,75 +1855,75 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
 
 - (void)handlePurchaseForItem:(EZStoreItem *)item {
 
-    NSString *token = [EZAuthManager shared].accessToken;
+    NSString *token = [EZAuthManager shared].accessToken;
 
-    if (!token) {
+    if (!token) {
 
-        [self showAlert:NSLocalizedString(@"EZCoinStore.Alert.NotLoggedIn", @"Not logged in alert title") message:NSLocalizedString(@"EZCoinStore.Alert.SignInFirst", @"Sign in first message")];
+        [self showAlert:NSLocalizedString(@"EZCoinStore.Alert.NotLoggedIn", @"Not logged in alert title") message:NSLocalizedString(@"EZCoinStore.Alert.SignInFirst", @"Sign in first message")];
 
-        return;
+        return;
 
-    }
+    }
 
-    // If the user taps their current active plan, offer to cancel it
+    // If the user taps their current active plan, offer to cancel it
 
-    if (item.isCurrentPlan && item.type == EZStoreItemTypeSubscription) {
+    if (item.isCurrentPlan && item.type == EZStoreItemTypeSubscription) {
 
-        UIAlertController *cancelAlert = [UIAlertController
+        UIAlertController *cancelAlert = [UIAlertController
 
-            alertControllerWithTitle:NSLocalizedString(@"EZCoinStore.Alert.CancelSubscription", @"Cancel subscription confirmation title")
+            alertControllerWithTitle:NSLocalizedString(@"EZCoinStore.Alert.CancelSubscription", @"Cancel subscription confirmation title")
 
-                             message:NSLocalizedString(@"EZCoinStore.Alert.CancelSubscriptionMessage", @"Cancel subscription confirmation message")
+                             message:NSLocalizedString(@"EZCoinStore.Alert.CancelSubscriptionMessage", @"Cancel subscription confirmation message")
 
-                      preferredStyle:UIAlertControllerStyleAlert];
+                      preferredStyle:UIAlertControllerStyleAlert];
 
-        [cancelAlert addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"EZCoinStore.KeepPlan", @"Keep subscription button title")
+        [cancelAlert addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"EZCoinStore.KeepPlan", @"Keep subscription button title")
 
-                                                        style:UIAlertActionStyleCancel
+                                                        style:UIAlertActionStyleCancel
 
-                                                      handler:nil]];
+                                                      handler:nil]];
 
-        [cancelAlert addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"EZCoinStore.CancelPlan", @"Cancel plan button title")
+        [cancelAlert addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"EZCoinStore.CancelPlan", @"Cancel plan button title")
 
-                                                        style:UIAlertActionStyleDestructive
+                                                        style:UIAlertActionStyleDestructive
 
-                                                      handler:^(UIAlertAction *action) {
+                                                      handler:^(UIAlertAction *action) {
 
-            [self.spinner startAnimating];
+            [self.spinner startAnimating];
 
-            self.tableView.userInteractionEnabled = NO;
+            self.tableView.userInteractionEnabled = NO;
 
-            [self cancelCurrentSubscriptionWithToken:token completion:^(BOOL success) {
+            [self cancelCurrentSubscriptionWithToken:token completion:^(BOOL success) {
 
-                [self.spinner stopAnimating];
+                [self.spinner stopAnimating];
 
-                self.tableView.userInteractionEnabled = YES;
+                self.tableView.userInteractionEnabled = YES;
 
-                if (success) {
+                if (success) {
 
-                    [self showAlert:NSLocalizedString(@"EZCoinStore.Alert.Cancelled", @"Subscription cancelled alert title")
+                    [self showAlert:NSLocalizedString(@"EZCoinStore.Alert.Cancelled", @"Subscription cancelled alert title")
 
-                            message:NSLocalizedString(@"EZCoinStore.Alert.CancelledMessage", @"Subscription cancelled message")];
+                            message:NSLocalizedString(@"EZCoinStore.Alert.CancelledMessage", @"Subscription cancelled message")];
 
-                    [self refreshBalance];
+                    [self refreshBalance];
 
-                } else {
+                } else {
 
-                    [self showAlert:NSLocalizedString(@"EZCoinStore.Alert.Error", @"Generic error alert title")
+                    [self showAlert:NSLocalizedString(@"EZCoinStore.Alert.Error", @"Generic error alert title")
 
-                            message:NSLocalizedString(@"EZCoinStore.Alert.CancelFailed", @"Subscription cancellation failure message")];
+                            message:NSLocalizedString(@"EZCoinStore.Alert.CancelFailed", @"Subscription cancellation failure message")];
 
-                }
+                }
 
-            }];
+            }];
 
-        }]];
+        }]];
 
-        [self presentViewController:cancelAlert animated:YES completion:nil];
+        [self presentViewController:cancelAlert animated:YES completion:nil];
 
-        return;
+        return;
 
-    }
+    }
 
     // Standard, Pro, Ultra, Power, and Enterprise all offer an annual option
     // at signup time via an upsell interstitial, rather than as separate
@@ -2153,141 +2153,141 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
 
 - (void)startSubscriptionForTier:(NSString *)tierName token:(NSString *)token {
 
-    NSString *currentTier   = [EZEntitlementManager shared].currentTier;
+    NSString *currentTier   = [EZEntitlementManager shared].currentTier;
 
-    NSString *currentStatus = [EZEntitlementManager shared].currentStatus;
+    NSString *currentStatus = [EZEntitlementManager shared].currentStatus;
 
-    // Only cancel an existing subscription if it's genuinely active.
+    // Only cancel an existing subscription if it's genuinely active.
 
-    // Cancelled/suspended/expired accounts go straight to checkout.
+    // Cancelled/suspended/expired accounts go straight to checkout.
 
-    BOOL hasActiveSub = currentTier.length > 0 && [currentStatus isEqualToString:@"active"];
+    BOOL hasActiveSub = currentTier.length > 0 && [currentStatus isEqualToString:@"active"];
 
-    if (hasActiveSub) {
+    if (hasActiveSub) {
 
-        [self cancelCurrentSubscriptionWithToken:token completion:^(BOOL success) {
+        [self cancelCurrentSubscriptionWithToken:token completion:^(BOOL success) {
 
-            // Proceed to new plan regardless — PayPal handles the new charge
+            // Proceed to new plan regardless — PayPal handles the new charge
 
-            [self createPayPalSubscriptionForTier:tierName token:token];
+            [self createPayPalSubscriptionForTier:tierName token:token];
 
-        }];
+        }];
 
-    } else {
+    } else {
 
-        [self createPayPalSubscriptionForTier:tierName token:token];
+        [self createPayPalSubscriptionForTier:tierName token:token];
 
-    }
+    }
 
 }
 
 - (void)cancelCurrentSubscriptionWithToken:(NSString *)token
 
-                                completion:(void(^)(BOOL success))completion {
+                                completion:(void(^)(BOOL success))completion {
 
-    NSURL *cancelURL = [NSURL URLWithString:[kStoreSupabaseURL
+    NSURL *cancelURL = [NSURL URLWithString:[kStoreSupabaseURL
 
-        stringByAppendingString:@"/functions/v1/cancel-paypal-subscription"]];
+        stringByAppendingString:@"/functions/v1/cancel-paypal-subscription"]];
 
-    NSMutableURLRequest *cancelRequest = [NSMutableURLRequest requestWithURL:cancelURL];
+    NSMutableURLRequest *cancelRequest = [NSMutableURLRequest requestWithURL:cancelURL];
 
-    cancelRequest.HTTPMethod      = @"POST";
+    cancelRequest.HTTPMethod      = @"POST";
 
-    cancelRequest.timeoutInterval = 15;
+    cancelRequest.timeoutInterval = 15;
 
-    [cancelRequest setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+    [cancelRequest setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
 
-    [cancelRequest setValue:[NSString stringWithFormat:@"Bearer %@", token]
+    [cancelRequest setValue:[NSString stringWithFormat:@"Bearer %@", token]
 
-         forHTTPHeaderField:@"Authorization"];
+         forHTTPHeaderField:@"Authorization"];
 
-    cancelRequest.HTTPBody = [NSJSONSerialization dataWithJSONObject:@{} options:0 error:nil];
+    cancelRequest.HTTPBody = [NSJSONSerialization dataWithJSONObject:@{} options:0 error:nil];
 
-    [[[NSURLSession sharedSession] dataTaskWithRequest:cancelRequest
+    [[[NSURLSession sharedSession] dataTaskWithRequest:cancelRequest
 
-        completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+        completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
 
-        dispatch_async(dispatch_get_main_queue(), ^{
+        dispatch_async(dispatch_get_main_queue(), ^{
 
-            completion(!error);
+            completion(!error);
 
-        });
+        });
 
-    }] resume];
+    }] resume];
 
 }
 
 - (void)createPayPalSubscriptionForTier:(NSString *)tierName token:(NSString *)token {
 
-    // Sends the tier name, not a plan ID. The edge function resolves the real
+    // Sends the tier name, not a plan ID. The edge function resolves the real
 
-    // PayPal plan_id from server-side env vars so it never lives in the binary.
+    // PayPal plan_id from server-side env vars so it never lives in the binary.
 
-    NSURL *createSubURL = [NSURL URLWithString:[kStoreSupabaseURL
+    NSURL *createSubURL = [NSURL URLWithString:[kStoreSupabaseURL
 
-        stringByAppendingString:@"/functions/v1/create-paypal-subscription"]];
+        stringByAppendingString:@"/functions/v1/create-paypal-subscription"]];
 
-    NSMutableURLRequest *createSubRequest = [NSMutableURLRequest requestWithURL:createSubURL];
+    NSMutableURLRequest *createSubRequest = [NSMutableURLRequest requestWithURL:createSubURL];
 
-    createSubRequest.HTTPMethod      = @"POST";
+    createSubRequest.HTTPMethod      = @"POST";
 
-    createSubRequest.timeoutInterval = 15;
+    createSubRequest.timeoutInterval = 15;
 
-    [createSubRequest setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+    [createSubRequest setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
 
-    [createSubRequest setValue:[NSString stringWithFormat:@"Bearer %@", token]
+    [createSubRequest setValue:[NSString stringWithFormat:@"Bearer %@", token]
 
-            forHTTPHeaderField:@"Authorization"];
+            forHTTPHeaderField:@"Authorization"];
 
-    createSubRequest.HTTPBody = [NSJSONSerialization dataWithJSONObject:@{
+    createSubRequest.HTTPBody = [NSJSONSerialization dataWithJSONObject:@{
 
-        @"tier":    tierName,
+        @"tier":    tierName,
 
-        @"user_id": [EZAuthManager shared].userId ?: @""
+        @"user_id": [EZAuthManager shared].userId ?: @""
 
-    } options:0 error:nil];
+    } options:0 error:nil];
 
-    [[[NSURLSession sharedSession] dataTaskWithRequest:createSubRequest
+    [[[NSURLSession sharedSession] dataTaskWithRequest:createSubRequest
 
-        completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+        completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
 
-        dispatch_async(dispatch_get_main_queue(), ^{
+        dispatch_async(dispatch_get_main_queue(), ^{
 
-            [self.spinner stopAnimating];
+            [self.spinner stopAnimating];
 
-            self.tableView.userInteractionEnabled = YES;
+            self.tableView.userInteractionEnabled = YES;
 
-            if (error) { [self showAlert:NSLocalizedString(@"EZCoinStore.Alert.Error", @"Generic error alert title") message:error.localizedDescription]; return; }
+            if (error) { [self showAlert:NSLocalizedString(@"EZCoinStore.Alert.Error", @"Generic error alert title") message:error.localizedDescription]; return; }
 
-            NSDictionary *json       = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+            NSDictionary *json       = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
 
-            NSString     *approveURL = json[@"approve_url"];
+            NSString     *approveURL = json[@"approve_url"];
 
-            if (!approveURL) {
+            if (!approveURL) {
 
-                [self showAlert:NSLocalizedString(@"EZCoinStore.Alert.Error", @"Generic error alert title") message:NSLocalizedString(@"EZCoinStore.Alert.CheckoutStartFailed", @"Checkout start failure message")];
+                [self showAlert:NSLocalizedString(@"EZCoinStore.Alert.Error", @"Generic error alert title") message:NSLocalizedString(@"EZCoinStore.Alert.CheckoutStartFailed", @"Checkout start failure message")];
 
-                return;
+                return;
 
-            }
+            }
 
-            self.pendingPurchaseType = @"subscription";
+            self.pendingPurchaseType = @"subscription";
 
-            SFSafariViewController *safari = [[SFSafariViewController alloc]
+            SFSafariViewController *safari = [[SFSafariViewController alloc]
 
-                initWithURL:[NSURL URLWithString:approveURL]];
+                initWithURL:[NSURL URLWithString:approveURL]];
 
-            safari.delegate                = self;
+            safari.delegate                = self;
 
-            safari.preferredBarTintColor     = [UIColor colorWithRed:0.05 green:0.05 blue:0.12 alpha:1.0];
+            safari.preferredBarTintColor     = [UIColor colorWithRed:0.05 green:0.05 blue:0.12 alpha:1.0];
 
-            safari.preferredControlTintColor = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:1.0];
+            safari.preferredControlTintColor = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:1.0];
 
-            [self presentViewController:safari animated:YES completion:nil];
+            [self presentViewController:safari animated:YES completion:nil];
 
-        });
+        });
 
-    }] resume];
+    }] resume];
 
 }
 
@@ -2313,49 +2313,49 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
         @"package_id": packageID,
     } options:0 error:nil];
 
-    [[[NSURLSession sharedSession] dataTaskWithRequest:orderRequest
+    [[[NSURLSession sharedSession] dataTaskWithRequest:orderRequest
 
-        completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+        completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
 
-        dispatch_async(dispatch_get_main_queue(), ^{
+        dispatch_async(dispatch_get_main_queue(), ^{
 
-            [self.spinner stopAnimating];
+            [self.spinner stopAnimating];
 
-            self.tableView.userInteractionEnabled = YES;
+            self.tableView.userInteractionEnabled = YES;
 
-            if (error) { [self showAlert:NSLocalizedString(@"EZCoinStore.Alert.Error", @"Generic error alert title") message:error.localizedDescription]; return; }
+            if (error) { [self showAlert:NSLocalizedString(@"EZCoinStore.Alert.Error", @"Generic error alert title") message:error.localizedDescription]; return; }
 
-            NSDictionary *json       = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+            NSDictionary *json       = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
 
-            NSString     *approveURL = json[@"approve_url"];
+            NSString     *approveURL = json[@"approve_url"];
 
-            if (!approveURL) {
+            if (!approveURL) {
 
-                [self showAlert:NSLocalizedString(@"EZCoinStore.Alert.Error", @"Generic error alert title") message:NSLocalizedString(@"EZCoinStore.Alert.CheckoutStartFailed", @"Checkout start failure message")];
+                [self showAlert:NSLocalizedString(@"EZCoinStore.Alert.Error", @"Generic error alert title") message:NSLocalizedString(@"EZCoinStore.Alert.CheckoutStartFailed", @"Checkout start failure message")];
 
-                return;
+                return;
 
-            }
+            }
 
-            self.pendingPurchaseType = @"topup";
+            self.pendingPurchaseType = @"topup";
 
-            self.pendingOrderID      = json[@"order_id"];
+            self.pendingOrderID      = json[@"order_id"];
 
-            SFSafariViewController *safari = [[SFSafariViewController alloc]
+            SFSafariViewController *safari = [[SFSafariViewController alloc]
 
-                initWithURL:[NSURL URLWithString:approveURL]];
+                initWithURL:[NSURL URLWithString:approveURL]];
 
-            safari.delegate                = self;
+            safari.delegate                = self;
 
-            safari.preferredBarTintColor     = [UIColor colorWithRed:0.05 green:0.05 blue:0.12 alpha:1.0];
+            safari.preferredBarTintColor     = [UIColor colorWithRed:0.05 green:0.05 blue:0.12 alpha:1.0];
 
-            safari.preferredControlTintColor = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:1.0];
+            safari.preferredControlTintColor = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:1.0];
 
-            [self presentViewController:safari animated:YES completion:nil];
+            [self presentViewController:safari animated:YES completion:nil];
 
-        });
+        });
 
-    }] resume];
+    }] resume];
 
 }
 
@@ -2363,135 +2363,135 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
 
 - (void)safariViewControllerDidFinish:(SFSafariViewController *)controller {
 
-    if ([self.pendingPurchaseType isEqualToString:@"topup"] && self.pendingOrderID.length > 0) {
+    if ([self.pendingPurchaseType isEqualToString:@"topup"] && self.pendingOrderID.length > 0) {
 
-        // Capture the order directly — more reliable than a webhook for one-time payments
+        // Capture the order directly — more reliable than a webhook for one-time payments
 
-        [self captureOrderWithID:self.pendingOrderID];
+        [self captureOrderWithID:self.pendingOrderID];
 
-        self.pendingOrderID = nil;
+        self.pendingOrderID = nil;
 
-    } else {
+    } else {
 
-        // Subscription — wait for webhook then refresh
+        // Subscription — wait for webhook then refresh
 
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)),
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)),
 
-                       dispatch_get_main_queue(), ^{
+                       dispatch_get_main_queue(), ^{
 
-            [self refreshBalance];
+            [self refreshBalance];
 
-            [[NSNotificationCenter defaultCenter]
+            [[NSNotificationCenter defaultCenter]
 
-                postNotificationName:@"EZSubscriptionUpdated" object:nil];
+                postNotificationName:@"EZSubscriptionUpdated" object:nil];
 
-        });
+        });
 
-    }
+    }
 
-    self.pendingPurchaseType = nil;
+    self.pendingPurchaseType = nil;
 
 }
 
 - (void)captureOrderWithID:(NSString *)orderID {
 
-    NSString *token = [EZAuthManager shared].accessToken;
+    NSString *token = [EZAuthManager shared].accessToken;
 
-    if (!token || !orderID) return;
+    if (!token || !orderID) return;
 
-    [self.spinner startAnimating];
+    [self.spinner startAnimating];
 
-    self.tableView.userInteractionEnabled = NO;
+    self.tableView.userInteractionEnabled = NO;
 
-    NSURL *captureURL = [NSURL URLWithString:[kStoreSupabaseURL
+    NSURL *captureURL = [NSURL URLWithString:[kStoreSupabaseURL
 
-        stringByAppendingString:@"/functions/v1/capture-paypal-order"]];
+        stringByAppendingString:@"/functions/v1/capture-paypal-order"]];
 
-    NSMutableURLRequest *captureRequest = [NSMutableURLRequest requestWithURL:captureURL];
+    NSMutableURLRequest *captureRequest = [NSMutableURLRequest requestWithURL:captureURL];
 
-    captureRequest.HTTPMethod      = @"POST";
+    captureRequest.HTTPMethod      = @"POST";
 
-    captureRequest.timeoutInterval = 20;
+    captureRequest.timeoutInterval = 20;
 
-    [captureRequest setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+    [captureRequest setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
 
-    [captureRequest setValue:[NSString stringWithFormat:@"Bearer %@", token]
+    [captureRequest setValue:[NSString stringWithFormat:@"Bearer %@", token]
 
-          forHTTPHeaderField:@"Authorization"];
+          forHTTPHeaderField:@"Authorization"];
 
-    captureRequest.HTTPBody = [NSJSONSerialization dataWithJSONObject:@{
+    captureRequest.HTTPBody = [NSJSONSerialization dataWithJSONObject:@{
 
-        @"order_id": orderID
+        @"order_id": orderID
 
-    } options:0 error:nil];
+    } options:0 error:nil];
 
-    [[[NSURLSession sharedSession] dataTaskWithRequest:captureRequest
+    [[[NSURLSession sharedSession] dataTaskWithRequest:captureRequest
 
-        completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+        completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
 
-        dispatch_async(dispatch_get_main_queue(), ^{
+        dispatch_async(dispatch_get_main_queue(), ^{
 
-            [self.spinner stopAnimating];
+            [self.spinner stopAnimating];
 
-            self.tableView.userInteractionEnabled = YES;
+            self.tableView.userInteractionEnabled = YES;
 
-            if (error) {
+            if (error) {
 
-                [self showAlert:NSLocalizedString(@"EZCoinStore.Alert.Error", @"Generic error alert title")
+                [self showAlert:NSLocalizedString(@"EZCoinStore.Alert.Error", @"Generic error alert title")
 
-                        message:NSLocalizedString(@"EZCoinStore.Alert.PurchaseConfirmFailed", @"Purchase confirmation failure message")];
+                        message:NSLocalizedString(@"EZCoinStore.Alert.PurchaseConfirmFailed", @"Purchase confirmation failure message")];
 
-                [self refreshBalance];
+                [self refreshBalance];
 
-                return;
+                return;
 
-            }
+            }
 
-            NSDictionary      *json         = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+            NSDictionary      *json         = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
 
-            NSHTTPURLResponse *httpResponse = (NSHTTPURLResponse *)response;
+            NSHTTPURLResponse *httpResponse = (NSHTTPURLResponse *)response;
 
-            if (httpResponse.statusCode == 200 && jsonBool(json, @"success")) {
+            if (httpResponse.statusCode == 200 && jsonBool(json, @"success")) {
 
-                NSInteger coinsAdded = jsonInteger(json, @"coins_added");
+                NSInteger coinsAdded = jsonInteger(json, @"coins_added");
 
-                NSInteger newBalance = jsonInteger(json, @"balance");
+                NSInteger newBalance = jsonInteger(json, @"balance");
 
-                // Trust the capture response — apply balance directly so
+                // Trust the capture response — apply balance directly so
 
-                // a racing refreshBalance can't overwrite it with a stale value.
+                // a racing refreshBalance can't overwrite it with a stale value.
 
-                [[EZEntitlementManager shared] applyKnownBalance:newBalance];
+                [[EZEntitlementManager shared] applyKnownBalance:newBalance];
 
-                [self showCoinCelebration:coinsAdded newBalance:newBalance];
+                [self showCoinCelebration:coinsAdded newBalance:newBalance];
 
-                [[NSNotificationCenter defaultCenter]
+                [[NSNotificationCenter defaultCenter]
 
-                    postNotificationName:@"EZSubscriptionUpdated" object:nil];
+                    postNotificationName:@"EZSubscriptionUpdated" object:nil];
 
-                // Delayed refresh to sync any server-side changes after upsert settles
+                // Delayed refresh to sync any server-side changes after upsert settles
 
-                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)),
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)),
 
-                               dispatch_get_main_queue(), ^{
+                               dispatch_get_main_queue(), ^{
 
-                    [self refreshBalance];
+                    [self refreshBalance];
 
-                });
+                });
 
-            } else {
+            } else {
 
-                NSString *errorMessage = jsonString(json, @"error") ?: NSLocalizedString(@"EZCoinStore.Alert.PurchaseNotConfirmed", @"Purchase not confirmed fallback message");
+                NSString *errorMessage = jsonString(json, @"error") ?: NSLocalizedString(@"EZCoinStore.Alert.PurchaseNotConfirmed", @"Purchase not confirmed fallback message");
 
-                [self showAlert:NSLocalizedString(@"EZCoinStore.Alert.PurchaseIssue", @"Purchase issue alert title") message:errorMessage];
+                [self showAlert:NSLocalizedString(@"EZCoinStore.Alert.PurchaseIssue", @"Purchase issue alert title") message:errorMessage];
 
-                [self refreshBalance];
+                [self refreshBalance];
 
-            }
+            }
 
-        });
+        });
 
-    }] resume];
+    }] resume];
 
 }
 
@@ -2501,125 +2501,125 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
 
 - (void)showCoinCelebration:(NSInteger)coinsAdded newBalance:(NSInteger)newBalance {
 
-    UIView *overlay = [[UIView alloc] initWithFrame:self.view.bounds];
+    UIView *overlay = [[UIView alloc] initWithFrame:self.view.bounds];
 
-    overlay.backgroundColor  = [UIColor colorWithWhite:0 alpha:0.75];
+    overlay.backgroundColor  = [UIColor colorWithWhite:0 alpha:0.75];
 
-    overlay.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    overlay.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
 
-    overlay.alpha            = 0;
+    overlay.alpha            = 0;
 
-    overlay.tag              = 9901;
+    overlay.tag              = 9901;
 
-    [self.view addSubview:overlay];
+    [self.view addSubview:overlay];
 
-    UIView *celebrationCard = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 280, 320)];
+    UIView *celebrationCard = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 280, 320)];
 
-    celebrationCard.center             = CGPointMake(self.view.bounds.size.width / 2,
+    celebrationCard.center             = CGPointMake(self.view.bounds.size.width / 2,
 
-                                                     self.view.bounds.size.height / 2);
+                                                     self.view.bounds.size.height / 2);
 
-    celebrationCard.backgroundColor    = [UIColor colorWithRed:0.08 green:0.08 blue:0.14 alpha:1.0];
+    celebrationCard.backgroundColor    = [UIColor colorWithRed:0.08 green:0.08 blue:0.14 alpha:1.0];
 
-    celebrationCard.layer.cornerRadius = 24;
+    celebrationCard.layer.cornerRadius = 24;
 
-    celebrationCard.layer.borderWidth  = 1.5;
+    celebrationCard.layer.borderWidth  = 1.5;
 
-    celebrationCard.layer.borderColor  = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:0.6].CGColor;
+    celebrationCard.layer.borderColor  = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:0.6].CGColor;
 
-    celebrationCard.transform          = CGAffineTransformMakeScale(0.7, 0.7);
+    celebrationCard.transform          = CGAffineTransformMakeScale(0.7, 0.7);
 
-    [overlay addSubview:celebrationCard];
+    [overlay addSubview:celebrationCard];
 
-    EZCoinPotView *coinPot = [[EZCoinPotView alloc] initWithFrame:CGRectMake(90, 20, 100, 110)];
+    EZCoinPotView *coinPot = [[EZCoinPotView alloc] initWithFrame:CGRectMake(90, 20, 100, 110)];
 
-    coinPot.coinImage = self.coinImage;
+    coinPot.coinImage = self.coinImage;
 
-    [celebrationCard addSubview:coinPot];
+    [celebrationCard addSubview:coinPot];
 
-    self.storePotView = coinPot;
+    self.storePotView = coinPot;
 
-    UILabel *headlineLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 138, 240, 30)];
+    UILabel *headlineLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 138, 240, 30)];
 
-    headlineLabel.text          = NSLocalizedString(@"EZCoinStore.Celebration.CoinsAdded", @"Coin celebration headline");
+    headlineLabel.text          = NSLocalizedString(@"EZCoinStore.Celebration.CoinsAdded", @"Coin celebration headline");
 
-    headlineLabel.font          = [UIFont boldSystemFontOfSize:20];
+    headlineLabel.font          = [UIFont boldSystemFontOfSize:20];
 
-    headlineLabel.textColor     = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:1.0];
+    headlineLabel.textColor     = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:1.0];
 
-    headlineLabel.textAlignment = NSTextAlignmentCenter;
+    headlineLabel.textAlignment = NSTextAlignmentCenter;
 
-    [celebrationCard addSubview:headlineLabel];
+    [celebrationCard addSubview:headlineLabel];
 
-    UILabel *amountLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 172, 240, 28)];
+    UILabel *amountLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 172, 240, 28)];
 
-    amountLabel.text          = [NSString stringWithFormat:NSLocalizedString(@"EZCoinStore.Celebration.AmountFormat", @"Coin celebration amount"), (long)coinsAdded];
+    amountLabel.text          = [NSString stringWithFormat:NSLocalizedString(@"EZCoinStore.Celebration.AmountFormat", @"Coin celebration amount"), (long)coinsAdded];
 
-    amountLabel.font          = [UIFont boldSystemFontOfSize:26];
+    amountLabel.font          = [UIFont boldSystemFontOfSize:26];
 
-    amountLabel.textColor     = [UIColor whiteColor];
+    amountLabel.textColor     = [UIColor whiteColor];
 
-    amountLabel.textAlignment = NSTextAlignmentCenter;
+    amountLabel.textAlignment = NSTextAlignmentCenter;
 
-    [celebrationCard addSubview:amountLabel];
+    [celebrationCard addSubview:amountLabel];
 
-    UILabel *newBalanceLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 204, 240, 22)];
+    UILabel *newBalanceLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 204, 240, 22)];
 
-    newBalanceLabel.text          = [NSString stringWithFormat:NSLocalizedString(@"EZCoinStore.Celebration.NewBalanceFormat", @"Coin celebration new balance"), (long)newBalance];
+    newBalanceLabel.text          = [NSString stringWithFormat:NSLocalizedString(@"EZCoinStore.Celebration.NewBalanceFormat", @"Coin celebration new balance"), (long)newBalance];
 
-    newBalanceLabel.font          = [UIFont systemFontOfSize:14];
+    newBalanceLabel.font          = [UIFont systemFontOfSize:14];
 
-    newBalanceLabel.textColor     = [UIColor secondaryLabelColor];
+    newBalanceLabel.textColor     = [UIColor secondaryLabelColor];
 
-    newBalanceLabel.textAlignment = NSTextAlignmentCenter;
+    newBalanceLabel.textAlignment = NSTextAlignmentCenter;
 
-    [celebrationCard addSubview:newBalanceLabel];
+    [celebrationCard addSubview:newBalanceLabel];
 
-    UIButton *dismissButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    UIButton *dismissButton = [UIButton buttonWithType:UIButtonTypeSystem];
 
-    dismissButton.frame                  = CGRectMake(40, 248, 200, 44);
+    dismissButton.frame                  = CGRectMake(40, 248, 200, 44);
 
-    dismissButton.backgroundColor        = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:1.0];
+    dismissButton.backgroundColor        = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:1.0];
 
-    dismissButton.layer.cornerRadius     = 12;
+    dismissButton.layer.cornerRadius     = 12;
 
-    dismissButton.titleLabel.font        = [UIFont boldSystemFontOfSize:16];
+    dismissButton.titleLabel.font        = [UIFont boldSystemFontOfSize:16];
 
-    dismissButton.tag                    = 9900;
+    dismissButton.tag                    = 9900;
 
-    [dismissButton setTitle:NSLocalizedString(@"EZCoinStore.Celebration.Sweet", @"Coin celebration dismiss button") forState:UIControlStateNormal];
+    [dismissButton setTitle:NSLocalizedString(@"EZCoinStore.Celebration.Sweet", @"Coin celebration dismiss button") forState:UIControlStateNormal];
 
-    [dismissButton setTitleColor:[UIColor blackColor] forState:UIControlStateNormal];
+    [dismissButton setTitleColor:[UIColor blackColor] forState:UIControlStateNormal];
 
-    [dismissButton addTarget:self
+    [dismissButton addTarget:self
 
-                      action:@selector(dismissCelebration:)
+                      action:@selector(dismissCelebration:)
 
-            forControlEvents:UIControlEventTouchUpInside];
+            forControlEvents:UIControlEventTouchUpInside];
 
-    [celebrationCard addSubview:dismissButton];
+    [celebrationCard addSubview:dismissButton];
 
-    [UIView animateWithDuration:0.4
+    [UIView animateWithDuration:0.4
 
-                          delay:0
+                          delay:0
 
-         usingSpringWithDamping:0.7
+         usingSpringWithDamping:0.7
 
-          initialSpringVelocity:0.5
+          initialSpringVelocity:0.5
 
-                        options:0
+                        options:0
 
-                     animations:^{
+                     animations:^{
 
-        overlay.alpha             = 1;
+        overlay.alpha             = 1;
 
-        celebrationCard.transform = CGAffineTransformIdentity;
+        celebrationCard.transform = CGAffineTransformIdentity;
 
-    } completion:^(BOOL done) {
+    } completion:^(BOOL done) {
 
-        // Set pot to the pre-credit fill level, then animate coins flying in
+        // Set pot to the pre-credit fill level, then animate coins flying in
 
-        NSString     *tier        = [EZEntitlementManager shared].currentTier ?: @"basic";
+        NSString     *tier        = [EZEntitlementManager shared].currentTier ?: @"basic";
 
         NSDictionary *tierCoinMap = @{
             @"basic":             @400,
@@ -2636,35 +2636,35 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
             @"enterprise_annual": @150000,
         };
 
-        NSInteger includedCoins = [tierCoinMap[tier.lowercaseString] integerValue] ?: 400;
+        NSInteger includedCoins = [tierCoinMap[tier.lowercaseString] integerValue] ?: 400;
 
-        [coinPot updateBalance:newBalance - coinsAdded includedCoins:includedCoins animated:NO];
+        [coinPot updateBalance:newBalance - coinsAdded includedCoins:includedCoins animated:NO];
 
-        [coinPot animateCoinToss:coinsAdded completion:^{
+        [coinPot animateCoinToss:coinsAdded completion:^{
 
-            [coinPot updateBalance:newBalance includedCoins:includedCoins animated:YES];
+            [coinPot updateBalance:newBalance includedCoins:includedCoins animated:YES];
 
-        }];
+        }];
 
-    }];
+    }];
 
 }
 
 - (void)dismissCelebration:(UIButton *)sender {
 
-    UIView *overlay = [self.view viewWithTag:9901];
+    UIView *overlay = [self.view viewWithTag:9901];
 
-    [UIView animateWithDuration:0.25 animations:^{
+    [UIView animateWithDuration:0.25 animations:^{
 
-        overlay.alpha = 0;
+        overlay.alpha = 0;
 
-    } completion:^(BOOL done) {
+    } completion:^(BOOL done) {
 
-        [overlay removeFromSuperview];
+        [overlay removeFromSuperview];
 
-        self.storePotView = nil;
+        self.storePotView = nil;
 
-    }];
+    }];
 
 }
 
@@ -2672,25 +2672,25 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
 
 - (void)showAlert:(NSString *)title message:(NSString *)message {
 
-    dispatch_async(dispatch_get_main_queue(), ^{
+    dispatch_async(dispatch_get_main_queue(), ^{
 
-        UIAlertController *alert = [UIAlertController
+        UIAlertController *alert = [UIAlertController
 
-            alertControllerWithTitle:title
+            alertControllerWithTitle:title
 
-                             message:message
+                             message:message
 
-                      preferredStyle:UIAlertControllerStyleAlert];
+                      preferredStyle:UIAlertControllerStyleAlert];
 
-        [alert addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"EZCoinStore.OK", @"Alert confirmation button")
+        [alert addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"EZCoinStore.OK", @"Alert confirmation button")
 
-                                                  style:UIAlertActionStyleDefault
+                                                  style:UIAlertActionStyleDefault
 
-                                                handler:nil]];
+                                                handler:nil]];
 
-        [self presentViewController:alert animated:YES completion:nil];
+        [self presentViewController:alert animated:YES completion:nil];
 
-    });
+    });
 
 }
 

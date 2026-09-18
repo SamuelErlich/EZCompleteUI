@@ -305,3 +305,10 @@
 "EZCoinStore.Tier.BasicWeekly" = "باقة Basic الأسبوعية";
 "EZCoinStore.Tier.BasicWeeklyPrice" = "$5/أسبوع • 400 عملة/أسبوع";
 "EZCoinStore.Tier.BasicWeeklySubtitle" = "باقة بداية رائعة";
+"EZCoinStore.Cancel" = "إلغاء";
+
+/* معرض الصور */
+"EZGallery.AskQuestion" = "اطرح سؤالاً";
+"EZGallery.EditWithAI" = "تعديل بالذكاء الاصطناعي";
+"EZGallery.UseInVideoGame" = "استخدم في لعبة فيديو";
+"EZGallery.EditPromptPlaceholder" = "صف تعديلاتك…";

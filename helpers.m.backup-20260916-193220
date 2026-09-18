@@ -81,26 +81,9 @@ static const NSInteger kMemorySearchRankerMaxTokens = 1200;
 
 // When the Stage 1 triage says "UNCERTAIN", we fetch this many recent turns
 // from the active thread and send them to triage for a second opinion.
-static NSString * const kTriageUncertainTurnFetchKey = @"TriageUncertainTurns";
-static NSInteger kTriageUncertainTurnFetch = 3;
-static NSString * const kHelperDirectAnswersEnabledKey = @"HelperDirectAnswersEnabled";
+static const NSInteger kTriageUncertainTurnFetch = 3;
 
-/// Reload this preference for every prompt so a change in the input control
-/// takes effect on the very next triage pass.
-static NSInteger _triageUncertainTurnFetchCount(void) {
-    NSInteger count = [[NSUserDefaults standardUserDefaults]
-        integerForKey:kTriageUncertainTurnFetchKey];
-    kTriageUncertainTurnFetch = MAX(0, MIN(15, count));
-    return kTriageUncertainTurnFetch;
-}
 
-/// Helper direct answers are opt-out so existing installs retain their current
-/// routing behavior until the lightning-bolt setting is turned off.
-static BOOL _helperDirectAnswersEnabled(void) {
-    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    id storedValue = [defaults objectForKey:kHelperDirectAnswersEnabledKey];
-    return storedValue == nil || [storedValue boolValue];
-}
 // ─────────────────────────────────────────────────────────────────────────────
 // EZContextResult — implementation
 //
@@ -1179,7 +1162,7 @@ NSString *EZThreadSearchMemory(NSString *searchQuery, NSString *jwtToken) {
 
     // No JWT — can't call the ranker. Return the 5 most recent entries raw.
     if (jwtToken.length == 0) {
-        return loadMemoryContext(kTriageUncertainTurnFetch);
+        return loadMemoryContext(5);
     }
 
     // ── PHASE 1: Keyword scoring ──────────────────────────────────────────────
@@ -1675,7 +1658,7 @@ NSArray<NSDictionary *> * _Nullable EZThreadLoadContext(NSString *threadID, NSIn
     NSUInteger totalTurns        = allTurns.count;
 
     // Step 1: Lock in the 4 most recent turns unconditionally.
-    NSInteger recentTurnCount = MIN(kTriageUncertainTurnFetch, (NSInteger)totalTurns);
+    NSInteger recentTurnCount = MIN(4, (NSInteger)totalTurns);
     NSMutableSet<NSNumber *> *includedIndices = [NSMutableSet set];
     NSInteger budgetUsed = 0;
 
@@ -2046,7 +2029,7 @@ static NSDictionary * _Nullable _runMemoryRanker(NSString *userPrompt,
         @"  \"confidence\": <float 0.0-1.0>,\n"
         @"  \"direct_answer\": \"<full answer if SIMPLE, else null>\",\n"
         @"  \"best_chat_key\": \"<chatKey value from the most relevant [chatKey=...] tag, or null>\",\n"
-        @"  \"selected_memories\": \"<up to 4 most relevant memory lines verbatim, newline-separated>\",\n"
+        @"  \"selected_memories\": \"<1-3 most relevant memory lines verbatim, newline-separated>\",\n"
         @"  \"reason\": \"<one sentence>\"\n"
         @"}";
 
@@ -2113,8 +2096,6 @@ void analyzePromptForContext(NSString *userPrompt,
     NSCParameterAssert(userPrompt);
     NSCParameterAssert(jwtToken);
     NSCParameterAssert(completion);
-    _triageUncertainTurnFetchCount();
-    BOOL allowHelperDirectAnswers = _helperDirectAnswersEnabled();
     EZLog(EZLogLevelInfo, @"TRIAGE", @"Stage 1 — initial triage...");
 
     // All pipeline work happens on a background thread so the UI stays responsive.
@@ -2173,8 +2154,7 @@ void analyzePromptForContext(NSString *userPrompt,
         // Rejected answers fall through to memory retrieval.
         if ([verdict isEqualToString:@"SIMPLE"] &&
             confidence >= kDirectAnswerConfidenceThreshold &&
-            directAnswer.length > 0 &&
-            allowHelperDirectAnswers) {
+            directAnswer.length > 0) {
             NSDictionary *validatorResult = _runDirectAnswerValidator(userPrompt, directAnswer, jwtToken);
             BOOL validatorApproved = [validatorResult[@"is_valid"] respondsToSelector:@selector(boolValue)]
                 ? [validatorResult[@"is_valid"] boolValue] : NO;
@@ -2262,8 +2242,7 @@ void analyzePromptForContext(NSString *userPrompt,
                 // SHORT-CIRCUIT A′: re-eval says simple — validator-gated direct answer.
                 if ([verdict isEqualToString:@"SIMPLE"] &&
                     confidence >= kDirectAnswerConfidenceThreshold &&
-                    directAnswer.length > 0 &&
-                    allowHelperDirectAnswers) {
+                    directAnswer.length > 0) {
                     NSDictionary *validatorResult = _runDirectAnswerValidator(userPrompt, directAnswer, jwtToken);
                     BOOL validatorApproved = [validatorResult[@"is_valid"] respondsToSelector:@selector(boolValue)]
                         ? [validatorResult[@"is_valid"] boolValue] : NO;
@@ -2369,7 +2348,7 @@ void analyzePromptForContext(NSString *userPrompt,
                                  @"ranked_memories": rankedMemories ?: @""});
             EZLog(EZLogLevelWarning, @"TRIAGE", @"Stage 3 ranker failed — injecting keyword memories as fallback");
             NSString *enrichedPrompt = [NSString stringWithFormat:
-                @"[Possibly relevant memories:]\n%@\n\n[User message]\n%@", rankedMemories, userPrompt];
+                @"[Relevant memory context:]\n%@\n\n[User message]\n%@", rankedMemories, userPrompt];
             result.tier            = EZRoutingTierMemory;
             result.needsContext    = YES;
             result.finalPrompt     = enrichedPrompt;
@@ -2409,8 +2388,7 @@ void analyzePromptForContext(NSString *userPrompt,
         // send anything to the main model.
         if ([rankerVerdict isEqualToString:@"SIMPLE"] &&
             rankerConfidence >= kDirectAnswerConfidenceThreshold &&
-            rankerAnswer.length > 0 &&
-            allowHelperDirectAnswers) {
+            rankerAnswer.length > 0) {
             _logHelperDecision(@"Stage3-ShortCircuit",
                                @"RankerDirectAnswer",
                                @{@"answer": rankerAnswer ?: @"",
@@ -2434,7 +2412,7 @@ void analyzePromptForContext(NSString *userPrompt,
                                  @"ranker_verdict": rankerVerdict ?: @"",
                                  @"confidence": @(rankerConfidence)});
             NSString *enrichedPrompt = [NSString stringWithFormat:
-                @"[Possibly relevant memories:]\n%@\n\n[User message]\n%@", memoriesToUse, userPrompt];
+                @"[Relevant memory context:]\n%@\n\n[User message]\n%@", memoriesToUse, userPrompt];
             result.tier            = EZRoutingTierMemory;
             result.needsContext    = YES;
             result.finalPrompt     = enrichedPrompt;

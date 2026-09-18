@@ -632,13 +632,8 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
 @property (nonatomic, strong) UIButton      *clearButton;
 /// Appears in input area when an image model is active — opens image parameter sheet.
 @property (nonatomic, strong) UIButton      *imageSettingsButton;
-/// Shows and edits the number of turns supplied to triage after UNCERTAIN.
-@property (nonatomic, strong) UILabel       *triageUncertainTurnsLabel;
-@property (nonatomic, strong) UIStepper     *triageUncertainTurnsStepper;
 @property (nonatomic, strong) UIButton      *dictateButton;
 @property (nonatomic, strong) UIButton      *webSearchButton;
-/// Lightning bolt: permits helper models to answer directly when enabled.
-@property (nonatomic, strong) UIButton      *helperDirectAnswersButton;
 @property (nonatomic, strong) UIButton      *historyButton;
 @property (nonatomic, strong) UIButton      *addChatButton;
 @property (nonatomic, strong) UIButton      *memoriesButton;
@@ -783,10 +778,6 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
                     errorText:(nullable NSString *)errorText;
 - (void)persistImagePath:(NSString *)path prompt:(NSString *)prompt;
 - (void)callImageEdit:(NSString *)prompt imagePath:(NSString *)imagePath;
-- (void)triageUncertainTurnsChanged:(UIStepper *)sender;
-- (void)toggleHelperDirectAnswers;
-- (void)updateHelperDirectAnswersButton;
-- (void)callChatCompletionsWithRetryCount:(NSInteger)retryCount;
 
 @end
 @interface ViewController (EZPrivateForward)
@@ -880,21 +871,29 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
                              ?: self.models[0];
     self.webSearchEnabled  = [[NSUserDefaults standardUserDefaults] boolForKey:@"webSearchEnabled"];
 
-    // Triage re-evaluates uncertain prompts with this many prior turns.
-    // Store an explicit initial value so both the control and helpers.m agree
-    // that a fresh install starts at three rather than NSUserDefaults' zero.
+    // Set a sensible default system message if the user hasn't configured one yet.
+    // This avoids the model claiming it "can't" do things it absolutely can.
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    if ([defaults objectForKey:@"TriageUncertainTurns"] == nil) {
-        [defaults setInteger:3 forKey:@"TriageUncertainTurns"];
-    }
-    if ([defaults objectForKey:@"HelperDirectAnswersEnabled"] == nil) {
-        [defaults setBool:YES forKey:@"HelperDirectAnswersEnabled"];
+    if (![defaults stringForKey:@"systemMessage"].length) {
+        [defaults setObject:
+            @"You are a capable AI assistant with access to the user's conversation history and memories. "
+           "When a user asks what's new with the app, or what changed, check the changelog in yourepo."
+                 "You can get the changelog by doing a web search or going to    https://i0s-tweak3r-betas.yourepo.com/pack/ezcompleteui"
+             "When the user references a previous file, image, or conversation, use the context provided. "
+             "When providing code, always do so inside a codeblock, with the language and filename(or snippet name),"
+              "as that will both create a code block and a new file the user can export."
+          "You can create pdf files same way as codeblock just put EZPDF as language"
+          "Or EZDOCX for a document that can be edited, like an rtf. Can also make CSV by"
+         "making a codeblock with EZXCEL as the scripting language,"
+             "You can display images by providing their exact local file path."
+             "Be direct, specific and concise in responses, unless directed otherwise."
+                     forKey:@"systemMessage"];
     }
 
     // Restore persisted image/attachment paths so they survive app restarts.
     // This is the key fix for "reopen image" failing — lastImageLocalPath was
     // always nil after relaunch, so the intent check fell through to generation.
-    NSUserDefaults *d = defaults;
+    NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
     NSString *savedImagePath = [d stringForKey:@"lastImageLocalPath"];
     if (savedImagePath.length > 0 &&
         [[NSFileManager defaultManager] fileExistsAtPath:savedImagePath]) {
@@ -1369,10 +1368,6 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
     self.webSearchButton = [self _iconButton:@"globe" tint:nil
                                       action:@selector(toggleWebSearch)];
     [self updateWebSearchButtonTint];
-    self.helperDirectAnswersButton = [self _iconButton:@"bolt.fill" tint:nil
-                                                action:@selector(toggleHelperDirectAnswers)];
-    self.helperDirectAnswersButton.accessibilityLabel = @"Helper direct answers";
-    [self updateHelperDirectAnswersButton];
     // Settings
     self.settingsButton  = [self _iconButton:@"gearshape.fill" tint:nil
                                       action:@selector(openSettings)];
@@ -1395,7 +1390,7 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
     // Full-width stack — equalSpacing distributes buttons edge to edge
     UIStackView *topStack = [[UIStackView alloc] initWithArrangedSubviews:@[
         self.addChatButton, self.historyButton, self.clipboardButton,
-        self.speakButton, self.webSearchButton, self.helperDirectAnswersButton, self.coinPotView,
+        self.speakButton, self.webSearchButton, self.coinPotView,
         self.renameButton, self.clearButton, self.memoriesButton, self.cloningButton, self.supportRequestButton,
         self.textToSpeechButton, self.galleryButton]];
     topStack.distribution = UIStackViewDistributionEqualSpacing;
@@ -1582,33 +1577,6 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
     self.imageSettingsButton.translatesAutoresizingMaskIntoConstraints = NO;
     [self.inputContainer addSubview:self.imageSettingsButton];
 
-    // Compact triage-turn control in the input container's upper-right.
-    // Its numeric label makes the stepper's current value visible at a glance.
-    self.triageUncertainTurnsLabel = [[UILabel alloc] init];
-    self.triageUncertainTurnsLabel.font =
-        [UIFont monospacedDigitSystemFontOfSize:12 weight:UIFontWeightSemibold];
-    self.triageUncertainTurnsLabel.textAlignment = NSTextAlignmentRight;
-    self.triageUncertainTurnsLabel.textColor = [UIColor secondaryLabelColor];
-    self.triageUncertainTurnsLabel.translatesAutoresizingMaskIntoConstraints = NO;
-    [self.inputContainer addSubview:self.triageUncertainTurnsLabel];
-
-    NSInteger triageTurns = [[NSUserDefaults standardUserDefaults]
-        integerForKey:@"TriageUncertainTurns"];
-    triageTurns = MAX(0, MIN(15, triageTurns));
-    self.triageUncertainTurnsStepper = [[UIStepper alloc] init];
-    self.triageUncertainTurnsStepper.minimumValue = 0;
-    self.triageUncertainTurnsStepper.maximumValue = 15;
-    self.triageUncertainTurnsStepper.stepValue = 1;
-    self.triageUncertainTurnsStepper.value = MAX(0, MIN(15, triageTurns));
-    self.triageUncertainTurnsStepper.accessibilityLabel =
-        @"Turns for uncertain triage";
-    self.triageUncertainTurnsStepper.translatesAutoresizingMaskIntoConstraints = NO;
-    [self.triageUncertainTurnsStepper addTarget:self
-                                         action:@selector(triageUncertainTurnsChanged:)
-                               forControlEvents:UIControlEventValueChanged];
-    [self.inputContainer addSubview:self.triageUncertainTurnsStepper];
-    self.triageUncertainTurnsLabel.text = [NSString stringWithFormat:@"%ld", (long)triageTurns];
-
     self.containerBottomConstraint =
         [self.inputContainer.bottomAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor];
 
@@ -1632,13 +1600,6 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
         [self.imageSettingsButton.leadingAnchor constraintEqualToAnchor:self.modelButton.trailingAnchor constant:8],
         [self.imageSettingsButton.widthAnchor constraintEqualToConstant:32],
         [self.imageSettingsButton.heightAnchor constraintEqualToConstant:32],
-        [self.triageUncertainTurnsStepper.trailingAnchor constraintEqualToAnchor:self.inputContainer.trailingAnchor constant:-12],
-        [self.triageUncertainTurnsStepper.centerYAnchor constraintEqualToAnchor:self.modelButton.centerYAnchor],
-        [self.triageUncertainTurnsLabel.trailingAnchor constraintEqualToAnchor:self.triageUncertainTurnsStepper.leadingAnchor constant:-4],
-        [self.triageUncertainTurnsLabel.centerYAnchor constraintEqualToAnchor:self.triageUncertainTurnsStepper.centerYAnchor],
-        [self.triageUncertainTurnsLabel.widthAnchor constraintEqualToConstant:24],
-        [self.modelButton.trailingAnchor constraintLessThanOrEqualToAnchor:self.triageUncertainTurnsLabel.leadingAnchor constant:-6],
-        [self.imageSettingsButton.trailingAnchor constraintLessThanOrEqualToAnchor:self.triageUncertainTurnsLabel.leadingAnchor constant:-6],
         [self.attachButton.leadingAnchor constraintEqualToAnchor:self.inputContainer.leadingAnchor constant:12],
         [self.attachButton.topAnchor constraintEqualToAnchor:self.modelButton.bottomAnchor constant:12],
         [self.dictateButton.leadingAnchor constraintEqualToAnchor:self.attachButton.trailingAnchor constant:6],
@@ -1676,20 +1637,6 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
     dismissTap.cancelsTouchesInView = NO;
     dismissTap.delegate = self;
     [self.view addGestureRecognizer:dismissTap];
-}
-
-/// Persists the setting used by helpers.m when triage needs more conversation
-/// context. The helper reloads this value at the start of every prompt.
-- (void)triageUncertainTurnsChanged:(UIStepper *)sender {
-    NSInteger turns = MAX(0, MIN(15, (NSInteger)sender.value));
-    sender.value = turns;
-    self.triageUncertainTurnsLabel.text =
-        [NSString stringWithFormat:@"%ld", (long)turns];
-    self.triageUncertainTurnsLabel.accessibilityLabel =
-        [NSString stringWithFormat:@"%ld turns for uncertain triage", (long)turns];
-    [[NSUserDefaults standardUserDefaults] setInteger:turns
-                                               forKey:@"TriageUncertainTurns"];
-    EZLogf(EZLogLevelInfo, @"TRIAGE", @"Uncertain triage turn count set to %ld", (long)turns);
 }
 
 - (UIButton *)_iconButton:(NSString *)sfSymbol tint:(nullable UIColor *)tint action:(SEL)action {
@@ -1841,32 +1788,6 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
 - (void)updateWebSearchButtonTint {
     [self.webSearchButton setTintColor:self.webSearchEnabled
         ? [UIColor systemGreenColor] : [UIColor systemGrayColor]];
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// MARK: - Helper Direct-Answer Toggle
-// ─────────────────────────────────────────────────────────────────────────────
-
-- (void)toggleHelperDirectAnswers {
-    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    BOOL enabled = ![defaults boolForKey:@"HelperDirectAnswersEnabled"];
-    [defaults setBool:enabled forKey:@"HelperDirectAnswersEnabled"];
-    [self updateHelperDirectAnswersButton];
-    [self appendToChat:[NSString stringWithFormat:@"[System: Helper direct answers %@]",
-                        enabled ? @"ON ⚡" : @"OFF"]];
-    EZLogf(EZLogLevelInfo, @"TRIAGE", @"Helper direct answers %@",
-           enabled ? @"enabled" : @"disabled");
-}
-
-- (void)updateHelperDirectAnswersButton {
-    BOOL enabled = [[NSUserDefaults standardUserDefaults]
-        boolForKey:@"HelperDirectAnswersEnabled"];
-    [self.helperDirectAnswersButton setTintColor:enabled
-        ? [UIColor systemYellowColor] : [UIColor systemGrayColor]];
-    self.helperDirectAnswersButton.accessibilityValue = enabled ? @"On" : @"Off";
-    self.helperDirectAnswersButton.accessibilityHint = enabled
-        ? @"Tap to require the main model to answer every prompt"
-        : @"Tap to allow helper models to answer directly";
 }
 
     // ─────────────────────────────────────────────────────────────────────────────
@@ -3006,11 +2927,6 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
                 NSString *editPath = self.pendingImagePaths.lastObject ?: self.lastImageLocalPath;
                 [self.pendingImagePaths removeAllObjects];
                 [self callImageEdit:text imagePath:editPath];
-            } else if ([intent isEqualToString:@"chat"]) {
-                self.selectedModel = @"gpt-5.6-luna";
-                [self.modelButton setTitle:@"Model: gpt-5.6-luna" forState:UIControlStateNormal];
-                [self appendToChat:@"[System: Switched to gpt-5.6-luna for this text request]"];
-                [self callChatCompletions];
             } else {
                 EZLogf(EZLogLevelInfo, @"IMAGE", @"Intent=generate");
                 [self exitImageEditModeIfNeeded];
@@ -3065,13 +2981,7 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
                    (long)result.tier, result.confidence,
                    (long)result.estimatedTokens, result.reason);
 
-            // Helpers classify only the short typed question, never the full
-            // attached-file payload or image bytes. A helper direct answer
-            // would therefore bypass the main model without seeing either.
-            BOOL hasAttachedFileContext = ![fullPrompt isEqualToString:text];
-            BOOL hasPendingImageAttachment = self.pendingImagePaths.count > 0;
-            if (result.tier == EZRoutingTierDirect && result.shortCircuitAnswer.length > 0 &&
-                !hasAttachedFileContext && !hasPendingImageAttachment) {
+            if (result.tier == EZRoutingTierDirect && result.shortCircuitAnswer.length > 0) {
                 NSString *answer = result.shortCircuitAnswer;
                 self.lastAIResponse = answer;
                 [self.chatContext addObject:@{@"role": @"assistant", @"content": answer}];
@@ -3096,42 +3006,19 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
                 return;
             }
 
-            // Triage/memory routing enriches the short typed question. When a
-            // file was attached, replace that trailing question with the full
-            // expanded prompt so the attached file's extracted text reaches
-            // ez-chat instead of being silently discarded by this replacement.
-            NSString *promptForMainModel = result.finalPrompt;
-            if (hasAttachedFileContext && result.tier >= EZRoutingTierMemory) {
-                NSRange typedQuestionRange = [promptForMainModel rangeOfString:text
-                                                                       options:NSBackwardsSearch];
-                if (typedQuestionRange.location != NSNotFound &&
-                    NSMaxRange(typedQuestionRange) == promptForMainModel.length) {
-                    NSMutableString *withFileContext = [promptForMainModel mutableCopy];
-                    [withFileContext replaceCharactersInRange:typedQuestionRange
-                                                    withString:fullPrompt];
-                    promptForMainModel = [withFileContext copy];
-                } else {
-                    // Defensive fallback for a future helper prompt format:
-                    // preserve the file context even if its user-message
-                    // marker changes, rather than ever dropping it.
-                    promptForMainModel = [NSString stringWithFormat:
-                        @"%@\n\n[Attached file context]\n%@", promptForMainModel, fullPrompt];
-                }
-            }
-
             if (result.tier == EZRoutingTierFullHistory &&
                 result.injectedHistory.count > 0) {
                 if (self.chatContext.count > 0) [self.chatContext removeLastObject];
                 NSMutableArray *rebuilt = [NSMutableArray array];
                 [rebuilt addObjectsFromArray:result.injectedHistory];
                 [rebuilt addObjectsFromArray:self.chatContext];
-                [rebuilt addObject:@{@"role": @"user", @"content": promptForMainModel}];
+                [rebuilt addObject:@{@"role": @"user", @"content": result.finalPrompt}];
                 self.chatContext = rebuilt;
                 [self appendToChat:@"[System: Full chat history injected ✓]"];
             } else if (result.tier >= EZRoutingTierMemory) {
                 if (self.chatContext.count > 0) [self.chatContext removeLastObject];
                 [self.chatContext addObject:@{@"role": @"user",
-                                              @"content": promptForMainModel}];
+                                              @"content": result.finalPrompt}];
                 [self appendToChat:@"[System: Memory context included ✓]"];
             }
 
@@ -3273,12 +3160,6 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
 }
 
 - (void)callChatCompletions {
-    [self callChatCompletionsWithRetryCount:0];
-}
-
-/// Sends one already-assembled chat turn. A retry reuses chatContext, which
-/// already contains the submitted prompt and its attached-file/image content.
-- (void)callChatCompletionsWithRetryCount:(NSInteger)retryCount {
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
 
     // GPT-5.x models and GPT-6 Astra use the Responses API.
@@ -3310,28 +3191,10 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
             self.selectedModel]];
     }
 
-    NSString *userPreferences = [defaults stringForKey:@"modelPreferences"];
+    NSString *sys = [defaults stringForKey:@"systemMessage"];
     NSArray *cleanContext = [self sanitizedContextForAPI:self.chatContext
                                      modelSupportsVision:[self modelSupportsVision:self.selectedModel]
                                          useResponsesAPI:useResponsesAPI];
-
-    // The original GPT-4 alias is limited to an 8K context window. Keep the
-    // newest turns (including the just-submitted prompt) within a conservative
-    // character budget before calculating its output allowance. Newer GPT-4
-    // variants have much larger windows and do not need history pruning here.
-    if ([self.selectedModel isEqualToString:@"gpt-4"]) {
-        static const NSInteger kLegacyGPT4CharacterBudget = 18000;
-        NSMutableArray *newestFirst = [NSMutableArray array];
-        NSInteger retainedCharacters = 0;
-        for (NSDictionary *message in cleanContext.reverseObjectEnumerator) {
-            id content = message[@"content"];
-            NSInteger characters = [content isKindOfClass:[NSString class]] ? [content length] : 0;
-            if (newestFirst.count > 0 && retainedCharacters + characters > kLegacyGPT4CharacterBudget) continue;
-            [newestFirst addObject:message];
-            retainedCharacters += characters;
-        }
-        cleanContext = newestFirst.reverseObjectEnumerator.allObjects;
-    }
 
     // Token estimation: sum content character lengths across all messages,
     // then divide by 4 (standard ~4 chars/token heuristic).
@@ -3355,22 +3218,6 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     NSInteger inputEstimate  = contentCharCount / 4;
     NSInteger outputEstimate = isGPT5 ? 1500 : 800;
     NSInteger totalEstimate  = inputEstimate + outputEstimate;
-
-    // Legacy `gpt-4` has an 8,192-token context window.  ez-chat previously
-    // defaulted every model to an 8,000-token completion, which is impossible
-    // once even a short prompt is included.  Reserve conservative room for the
-    // messages and server instructions, then pass an explicit safe completion
-    // limit to the edge function.
-    NSInteger maxCompletionTokens = 8000;
-    if ([self.selectedModel isEqualToString:@"gpt-4"]) {
-        NSInteger conservativeInputEstimate = MAX(inputEstimate, (contentCharCount + 2) / 3);
-        maxCompletionTokens = MIN(6000, MAX(256, 8192 - conservativeInputEstimate - 512));
-    } else if ([self.selectedModel hasPrefix:@"gpt-4"]) {
-        // GPT-4 mini and GPT-4 Turbo deployments cap one completion at 4,096
-        // tokens. Use that safe ceiling for all non-legacy GPT-4 variants,
-        // rather than inheriting ez-chat's historical 8,000-token default.
-        maxCompletionTokens = 4096;
-    }
 
     // featureTier is only used for logging context in ez-chat.
     // Actual coin cost is computed per exact model string server-side.
@@ -3422,9 +3269,8 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     ezBody[@"model"]            = self.selectedModel;
     ezBody[@"messages"]         = cleanContext;
     ezBody[@"estimated_tokens"] = @(totalEstimate);
-    ezBody[@"max_tokens"]        = @(maxCompletionTokens);
     ezBody[@"feature_tier"]     = featureTier;
-    if (userPreferences.length > 0) ezBody[@"user_preferences"] = userPreferences;
+    if (sys.length > 0)         ezBody[@"system"] = sys;
     if (useWebSearch)           ezBody[@"web_search"] = @YES;
     if (capturedPrompt.length > 0) {
         NSUInteger cap = MIN(capturedPrompt.length, 120);
@@ -3437,46 +3283,28 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     if (safetyIdentifier.length > 0) ezBody[@"safety_identifier"] = safetyIdentifier;
 
     NSString *token = [EZAuthManager shared].accessToken;
-    if (!token) { [self handleAPIError:@"Not signed in"]; return; }
+    if (!token) {
+        [self appendToChat:@"[Error: Not signed in]"];
+        return;
+    }
 
     NSURL *ezURL = [NSURL URLWithString:@"https://spuoimtqofhbdzosrbng.supabase.co/functions/v1/ez-chat"];
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:ezURL];
     request.HTTPMethod = @"POST";
     BOOL isHeavyReasoningModel = [self.selectedModel isEqualToString:@"gpt-5.6-sol"] ||
                                   [self.selectedModel isEqualToString:@"gpt-6-astra"];
-    // Leave headroom beyond ez-chat's server-side OpenAI deadline. Previously
-    // the 90s/180s client deadlines could cancel a request the server was still
-    // legitimately processing, producing the misleading local timeout error.
-    if ((isGPT5 && useWebSearch) || isHeavyReasoningModel) request.timeoutInterval = 350;
-    else if (isGPT5)                                        request.timeoutInterval = 350;
-    else                                                     request.timeoutInterval = 250;
+    if ((isGPT5 && useWebSearch) || isHeavyReasoningModel) request.timeoutInterval = 240;
+    else if (isGPT5)                                        request.timeoutInterval = 180;
+    else                                                     request.timeoutInterval = 90;
     [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
     [request setValue:[NSString stringWithFormat:@"Bearer %@", token] forHTTPHeaderField:@"Authorization"];
     request.HTTPBody = [NSJSONSerialization dataWithJSONObject:ezBody options:0 error:nil];
 
     EZLogf(EZLogLevelInfo, @"API", @"→ ez-chat [%@]%@", self.selectedModel, useWebSearch ? @" +web" : @"");
-    dispatch_async(dispatch_get_main_queue(), ^{ self.sendButton.enabled = NO; });
 
     [[[NSURLSession sharedSession] dataTaskWithRequest:request
         completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
         dispatch_async(dispatch_get_main_queue(), ^{ [self hideGPT5StatusBanner]; });
-
-        BOOL isTransientConnectionError = error &&
-            (error.code == NSURLErrorTimedOut ||
-             error.code == NSURLErrorNetworkConnectionLost ||
-             error.code == NSURLErrorCannotConnectToHost ||
-             error.code == NSURLErrorNotConnectedToInternet);
-        if (isTransientConnectionError && retryCount < 1) {
-            EZLogf(EZLogLevelWarning, @"API", @"Transient chat failure (%@); retrying once", error.localizedDescription);
-            dispatch_async(dispatch_get_main_queue(), ^{
-                [self appendToChat:@"[System: Connection interrupted — retrying your request automatically...]"];
-                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)),
-                               dispatch_get_main_queue(), ^{
-                    [self callChatCompletionsWithRetryCount:retryCount + 1];
-                });
-            });
-            return;
-        }
 
         if (error) { [self handleAPIError:error.localizedDescription]; return; }
 
@@ -3488,19 +3316,6 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
         id errObj = json[@"error"];
         if (errObj && ![errObj isKindOfClass:[NSNull class]]) {
             NSString *errMsg = [errObj isKindOfClass:[NSString class]] ? errObj : @"API error";
-            // ez-chat returns this only after its own OpenAI deadline and
-            // refund path. Retrying the preserved client request is safe.
-            if ([errMsg isEqualToString:@"Request timed out"] && retryCount < 1) {
-                EZLog(EZLogLevelWarning, @"API", @"ez-chat timed out; retrying once");
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    [self appendToChat:@"[System: The model took too long — retrying your request automatically...]"];
-                    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)),
-                                   dispatch_get_main_queue(), ^{
-                        [self callChatCompletionsWithRetryCount:retryCount + 1];
-                    });
-                });
-                return;
-            }
             // Insufficient coins — show store
             if ([errMsg isEqualToString:@"Insufficient coins"] ||
                 [json[@"reason"] isEqualToString:@"Insufficient coins"]) {
@@ -3528,7 +3343,6 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
         EZLogf(EZLogLevelInfo, @"API", @"Reply %lu chars", (unsigned long)reply.length);
 
         dispatch_async(dispatch_get_main_queue(), ^{
-            self.sendButton.enabled = YES;
             self.lastAIResponse = reply;
             [self.chatContext addObject:@{@"role": @"assistant", @"content": reply}];
 
@@ -3649,12 +3463,6 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
                 self.activeThread.attachmentPaths = [att copy];
                 [self saveActiveThread];
                 [self persistImagePath:firstPath prompt:savedPrompt];
-                // Preserve prompt metadata for every variation so sharing any
-                // result from the gallery can include its original prompt.
-                NSMutableDictionary *promptMap = [[[NSUserDefaults standardUserDefaults]
-                    dictionaryForKey:@"EZGalleryImagePrompts"] mutableCopy] ?: [NSMutableDictionary dictionary];
-                for (NSString *path in savedPaths) promptMap[path] = savedPrompt ?: @"";
-                [[NSUserDefaults standardUserDefaults] setObject:promptMap forKey:@"EZGalleryImagePrompts"];
 
                 // Was previously missing entirely — image generation memory
                 // entries (this and the edit-mode one below) were only ever
@@ -3796,10 +3604,6 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
                 self.activeThread.attachmentPaths = [att copy];
                 [self saveActiveThread];
                 [self persistImagePath:firstPath prompt:prompt];
-                NSMutableDictionary *promptMap = [[[NSUserDefaults standardUserDefaults]
-                    dictionaryForKey:@"EZGalleryImagePrompts"] mutableCopy] ?: [NSMutableDictionary dictionary];
-                for (NSString *path in savedPaths) promptMap[path] = prompt ?: @"";
-                [[NSUserDefaults standardUserDefaults] setObject:promptMap forKey:@"EZGalleryImagePrompts"];
 
                 // Was previously missing entirely, same as generation —
                 // see the comment above the other createMemoryFromCompletion
@@ -4680,10 +4484,6 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
     [d setObject:path   forKey:@"lastImageLocalPath"];
     [d setObject:prompt ?: @"" forKey:@"lastImagePrompt"];
-    NSMutableDictionary *promptMap = [[d dictionaryForKey:@"EZGalleryImagePrompts"] mutableCopy]
-        ?: [NSMutableDictionary dictionary];
-    promptMap[path] = prompt ?: @"";
-    [d setObject:promptMap forKey:@"EZGalleryImagePrompts"];
     [d synchronize];
     EZLogf(EZLogLevelInfo, @"IMAGE", @"Persisted path: %@", path.lastPathComponent);
 }
@@ -4712,17 +4512,11 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
         @"edit", @"change", @"modify", @"adjust", @"alter",
         @"add to", @"remove from", @"make it", @"turn it into"
     ];
-    NSArray *textSignals = @[
-        @"explain", @"write", @"rewrite", @"summarize", @"summarise",
-        @"translate", @"email", @"document", @"letter", @"essay",
-        @"what is", @"how do", @"help me", @"code", @"calculate"
-    ];
 
-    NSInteger reopenScore = 0, generateScore = 0, editScore = 0, textScore = 0;
+    NSInteger reopenScore = 0, generateScore = 0, editScore = 0;
     for (NSString *s in reopenSignals)   if ([lower containsString:s]) reopenScore++;
     for (NSString *s in generateSignals) if ([lower containsString:s]) generateScore++;
     for (NSString *s in editSignals)     if ([lower containsString:s]) editScore++;
-    for (NSString *s in textSignals)     if ([lower containsString:s]) textScore++;
 
     EZLogf(EZLogLevelDebug, @"IMAGE",
            @"Intent scores — reopen:%ld generate:%ld edit:%ld hasLocal:%d",
@@ -4745,9 +4539,7 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     }
 
     if (!hasLocalImage) {
-        // With no source image, recognizable text work should never become a
-        // drawing just because an image model was left selected.
-        dispatch_async(dispatch_get_main_queue(), ^{ completion(textScore > 0 ? @"chat" : @"generate"); });
+        dispatch_async(dispatch_get_main_queue(), ^{ completion(@"generate"); });
         return;
     }
 

@@ -305,3 +305,10 @@
 "EZCoinStore.Tier.BasicWeekly" = "Basic साप्ताहिक";
 "EZCoinStore.Tier.BasicWeeklyPrice" = "$5/सप्ताह • 400 कॉइन/सप्ताह";
 "EZCoinStore.Tier.BasicWeeklySubtitle" = "शुरुआत के लिए शानदार पैकेज";
+"EZCoinStore.Cancel" = "रद्द करें";
+
+/* फ़ोटो गैलरी */
+"EZGallery.AskQuestion" = "एक सवाल पूछें";
+"EZGallery.EditWithAI" = "AI से संपादित करें";
+"EZGallery.UseInVideoGame" = "वीडियो गेम में उपयोग करें";
+"EZGallery.EditPromptPlaceholder" = "अपने बदलावों का वर्णन करें…";

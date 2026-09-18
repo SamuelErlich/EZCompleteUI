@@ -305,3 +305,10 @@
 "EZCoinStore.Tier.BasicWeekly" = "Basic settimanale";
 "EZCoinStore.Tier.BasicWeeklyPrice" = "$5/settimana • 400 monete/settimana";
 "EZCoinStore.Tier.BasicWeeklySubtitle" = "Un ottimo pacchetto iniziale";
+"EZCoinStore.Cancel" = "Annulla";
+
+/* Galleria foto */
+"EZGallery.AskQuestion" = "Fai una domanda";
+"EZGallery.EditWithAI" = "Modifica con l’IA";
+"EZGallery.UseInVideoGame" = "Usa nel videogioco";
+"EZGallery.EditPromptPlaceholder" = "Descrivi le modifiche…";
