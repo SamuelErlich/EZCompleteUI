@@ -15,6 +15,7 @@
 #import <QuartzCore/QuartzCore.h>
 #import <PhotosUI/PhotosUI.h>
 #import <ImageIO/ImageIO.h>
+#import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
 // ── Notification names ────────────────────────────────────────────────────────
 
@@ -30,6 +31,17 @@ static NSInteger const kMinColumns      = 2;
 static NSInteger const kMaxColumns      = 5;
 static NSInteger const kDefaultColumns  = 3;
 static NSString *const kGalleryImagePromptsKey = @"EZGalleryImagePrompts";
+
+static NSString *EZGalleryPromptForPath(NSString *path) {
+    NSDictionary *prompts = [[NSUserDefaults standardUserDefaults]
+        dictionaryForKey:kGalleryImagePromptsKey];
+    NSString *prompt = [prompts[path] isKindOfClass:[NSString class]] ? prompts[path] : nil;
+    if (!prompt.length && [path isEqualToString:[[NSUserDefaults standardUserDefaults]
+                                           stringForKey:@"lastImageLocalPath"]]) {
+        prompt = [[NSUserDefaults standardUserDefaults] stringForKey:@"lastImagePrompt"];
+    }
+    return prompt;
+}
 
 // ── Thumbnail cell ─────────────────────────────────────────────────────────────
 
@@ -116,6 +128,8 @@ static NSString *const kGalleryImagePromptsKey = @"EZGalleryImagePrompts";
 @property (nonatomic, strong) UIImage  *image;
 @property (nonatomic, copy)   NSString *filePath;
 @property (nonatomic, copy, nullable) NSString *imagePrompt;
+@property (nonatomic, copy) NSArray<NSString *> *galleryFilePaths;
+@property (nonatomic, assign) NSUInteger galleryIndex;
 @property (nonatomic, copy)   void (^onDeleted)(void);
 @end
 
@@ -143,6 +157,7 @@ static NSString *const kGalleryImagePromptsKey = @"EZGalleryImagePrompts";
 - (UIImage *)shareImageWithBrandingForImage:(UIImage *)image showOriginalCard:(BOOL)showOriginalCard;
 - (NSURL *)animatedShareGIFURL;
 - (void)downloadTapped;
+- (void)showPhotoAtGalleryIndex:(NSUInteger)index animated:(BOOL)animated;
 @end
 
 @implementation EZPhotoDetailViewController {
@@ -178,6 +193,7 @@ static NSString *const kGalleryImagePromptsKey = @"EZGalleryImagePrompts";
     NSURLSessionDataTask *_imageEditTask;
     BOOL               _isEditingImage;
     BOOL               _hasEditedImage;
+    NSUInteger         _galleryIndex;
     BOOL               _isRetryingImageEdit;
     BOOL               _lastImageEditFailureWasTransient;
     NSInteger          _imageEditRetryCount;
@@ -198,6 +214,16 @@ static NSString *const kGalleryImagePromptsKey = @"EZGalleryImagePrompts";
     [self setupToolbar];
     [self setupNavBar];
     [self setupImageEditingControls];
+
+    _galleryIndex = self.galleryIndex;
+    UISwipeGestureRecognizer *swipeLeft = [[UISwipeGestureRecognizer alloc]
+        initWithTarget:self action:@selector(handleGallerySwipe:)];
+    swipeLeft.direction = UISwipeGestureRecognizerDirectionLeft;
+    [self.view addGestureRecognizer:swipeLeft];
+    UISwipeGestureRecognizer *swipeRight = [[UISwipeGestureRecognizer alloc]
+        initWithTarget:self action:@selector(handleGallerySwipe:)];
+    swipeRight.direction = UISwipeGestureRecognizerDirectionRight;
+    [self.view addGestureRecognizer:swipeRight];
 
     NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
     [center addObserver:self selector:@selector(keyboardWillChange:)
@@ -1085,6 +1111,52 @@ didFinishPicking:(NSArray<PHPickerResult *> *)results {
     return btn;
 }
 
+- (void)handleGallerySwipe:(UISwipeGestureRecognizer *)gesture {
+    if (_isEditingImage || self.galleryFilePaths.count < 2) return;
+    NSInteger destination = (NSInteger)_galleryIndex +
+        (gesture.direction == UISwipeGestureRecognizerDirectionLeft ? 1 : -1);
+    if (destination < 0 || destination >= (NSInteger)self.galleryFilePaths.count) return;
+    [self showPhotoAtGalleryIndex:(NSUInteger)destination animated:YES];
+}
+
+- (void)showPhotoAtGalleryIndex:(NSUInteger)index animated:(BOOL)animated {
+    if (index >= self.galleryFilePaths.count || _isEditingImage) return;
+    NSString *path = self.galleryFilePaths[index];
+    UIImage *image = [UIImage imageWithContentsOfFile:path];
+    if (!image) return;
+
+    void (^applyPhoto)(void) = ^{
+        self->_galleryIndex = index;
+        self.image = image;
+        self.filePath = path;
+        self.imagePrompt = EZGalleryPromptForPath(path);
+        self->_originalImageForShare = image;
+        self->_hasEditedImage = NO;
+        [self->_editSourceImages removeAllObjects];
+        [self->_editSourceImages addObject:image];
+        [self->_editSourcePaths removeAllObjects];
+        [self->_editSourcePaths addObject:path];
+        while (self->_imageGridViews.count > 1) {
+            UIImageView *extra = self->_imageGridViews.lastObject;
+            [extra removeFromSuperview];
+            [self->_imageGridViews removeLastObject];
+        }
+        self->_imageView.image = image;
+        self->_imageCanvas.transform = CGAffineTransformIdentity;
+        [self->_scrollView setZoomScale:1.0 animated:NO];
+        [self.view setNeedsLayout];
+        [self.view layoutIfNeeded];
+    };
+    if (animated) {
+        [UIView transitionWithView:_imageCanvas duration:0.22
+                           options:UIViewAnimationOptionTransitionCrossDissolve |
+                                   UIViewAnimationOptionCurveEaseInOut
+                        animations:applyPhoto completion:nil];
+    } else {
+        applyPhoto();
+    }
+}
+
 // ── Actions ───────────────────────────────────────────────────────────────────
 
 - (void)askTapped {
@@ -1379,7 +1451,9 @@ didFinishPicking:(NSArray<PHPickerResult *> *)results {
 
 @interface EZPhotoGalleryViewController () <UICollectionViewDelegate,
                                              UICollectionViewDataSource,
-                                             UICollectionViewDelegateFlowLayout>
+                                             UICollectionViewDelegateFlowLayout,
+                                             PHPickerViewControllerDelegate,
+                                             UIDocumentPickerDelegate>
 @property (nonatomic, strong) UICollectionView      *collectionView;
 @property (nonatomic, strong) UICollectionViewFlowLayout *layout;
 @property (nonatomic, strong) NSMutableArray<NSString *> *filePaths;
@@ -1430,12 +1504,21 @@ didFinishPicking:(NSArray<PHPickerResult *> *)results {
     self.navigationController.navigationBar.scrollEdgeAppearance = appearance;
     self.navigationController.navigationBar.tintColor = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:1.0];
 
-    // Close button
-    self.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc]
+    // The leading + imports images. Files exposes installed providers such as
+    // Dropbox, Box, Google Drive, and any cloud-photo app with Files support.
+    UIBarButtonItem *addItem = [[UIBarButtonItem alloc]
+        initWithImage:[UIImage systemImageNamed:@"plus"]
+                style:UIBarButtonItemStylePlain
+               target:self
+               action:@selector(addPhotosTapped)];
+    addItem.tintColor = [UIColor colorWithRed:0.05 green:0.92 blue:0.72 alpha:1.0];
+
+    UIBarButtonItem *closeItem = [[UIBarButtonItem alloc]
         initWithBarButtonSystemItem:UIBarButtonSystemItemClose
                              target:self
                              action:@selector(closeTapped)];
-    self.navigationItem.leftBarButtonItem.tintColor = [UIColor colorWithWhite:0.65 alpha:1];
+    closeItem.tintColor = [UIColor colorWithWhite:0.65 alpha:1];
+    self.navigationItem.leftBarButtonItems = @[addItem, closeItem];
 
     // Count label as right item (updated after load)
     self.countLabel = [[UILabel alloc] init];
@@ -1618,15 +1701,9 @@ didFinishPicking:(NSArray<PHPickerResult *> *)results {
     EZPhotoDetailViewController *detail = [EZPhotoDetailViewController new];
     detail.image    = image;
     detail.filePath = path;
-    NSDictionary *prompts = [[NSUserDefaults standardUserDefaults]
-        dictionaryForKey:kGalleryImagePromptsKey];
-    NSString *prompt = [prompts[path] isKindOfClass:[NSString class]] ? prompts[path] : nil;
-    // Compatibility with generations made before prompt-to-file metadata.
-    if (!prompt.length && [path isEqualToString:[[NSUserDefaults standardUserDefaults]
-                                           stringForKey:@"lastImageLocalPath"]]) {
-        prompt = [[NSUserDefaults standardUserDefaults] stringForKey:@"lastImagePrompt"];
-    }
-    detail.imagePrompt = prompt;
+    detail.imagePrompt = EZGalleryPromptForPath(path);
+    detail.galleryFilePaths = [self.filePaths copy];
+    detail.galleryIndex = indexPath.item;
 
     __weak typeof(self) weakSelf = self;
     detail.onDeleted = ^{
@@ -1637,6 +1714,74 @@ didFinishPicking:(NSArray<PHPickerResult *> *)results {
 }
 
 // ── Close ─────────────────────────────────────────────────────────────────────
+
+- (void)addPhotosTapped {
+    UIAlertController *sources = [UIAlertController
+        alertControllerWithTitle:@"Add Photos"
+                         message:@"Choose a source for images to add to your gallery."
+                  preferredStyle:UIAlertControllerStyleActionSheet];
+    [sources addAction:[UIAlertAction actionWithTitle:@"Photos"
+                                                style:UIAlertActionStyleDefault
+                                              handler:^(UIAlertAction *action) {
+        PHPickerConfiguration *configuration = [[PHPickerConfiguration alloc] init];
+        configuration.filter = [PHPickerFilter imagesFilter];
+        configuration.selectionLimit = 0; // Native Photos supports multi-select.
+        PHPickerViewController *picker = [[PHPickerViewController alloc]
+            initWithConfiguration:configuration];
+        picker.delegate = self;
+        [self presentViewController:picker animated:YES completion:nil];
+    }]];
+    [sources addAction:[UIAlertAction actionWithTitle:@"Browse Files & Cloud Providers"
+                                                style:UIAlertActionStyleDefault
+                                              handler:^(UIAlertAction *action) {
+        UIDocumentPickerViewController *picker = [[UIDocumentPickerViewController alloc]
+            initForOpeningContentTypes:@[UTTypeImage] asCopy:YES];
+        picker.delegate = self;
+        picker.allowsMultipleSelection = YES;
+        [self presentViewController:picker animated:YES completion:nil];
+    }]];
+    [sources addAction:[UIAlertAction actionWithTitle:@"Cancel"
+                                                style:UIAlertActionStyleCancel handler:nil]];
+    sources.popoverPresentationController.barButtonItem = self.navigationItem.leftBarButtonItems.firstObject;
+    [self presentViewController:sources animated:YES completion:nil];
+}
+
+- (void)picker:(PHPickerViewController *)picker
+didFinishPicking:(NSArray<PHPickerResult *> *)results {
+    [picker dismissViewControllerAnimated:YES completion:nil];
+    for (PHPickerResult *result in results) {
+        NSItemProvider *provider = result.itemProvider;
+        if (![provider canLoadObjectOfClass:[UIImage class]]) continue;
+        [provider loadObjectOfClass:[UIImage class]
+                 completionHandler:^(__kindof id<NSItemProviderReading> object, NSError *error) {
+            UIImage *image = [object isKindOfClass:[UIImage class]] ? object : nil;
+            NSData *data = image ? UIImagePNGRepresentation(image) : nil;
+            if (!data.length) {
+                EZLogf(EZLogLevelWarning, @"GALLERY", @"Could not import a selected Photos image: %@", error);
+                return;
+            }
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (EZAttachmentSave(data, @"photo_import.png")) [self loadFilePaths];
+            });
+        }];
+    }
+}
+
+- (void)documentPicker:(UIDocumentPickerViewController *)controller
+didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
+    for (NSURL *url in urls) {
+        BOOL accessed = [url startAccessingSecurityScopedResource];
+        NSData *data = [NSData dataWithContentsOfURL:url];
+        if (accessed) [url stopAccessingSecurityScopedResource];
+        if (!data.length) {
+            EZLogf(EZLogLevelWarning, @"GALLERY", @"Could not import image from %@", url.lastPathComponent);
+            continue;
+        }
+        NSString *filename = url.lastPathComponent.length ? url.lastPathComponent : @"cloud_photo";
+        EZAttachmentSave(data, filename);
+    }
+    [self loadFilePaths];
+}
 
 - (void)closeTapped {
     [self dismissViewControllerAnimated:YES completion:nil];

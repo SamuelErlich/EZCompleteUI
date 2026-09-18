@@ -83,6 +83,7 @@ static NSCache<NSString *, UIImage *> *EZCodeBlockThumbCache(void) {
     UIButton   *_copyBtn;
     UIButton   *_shareBtn;
     UITextView *_codeView;
+    NSLayoutConstraint *_codeHeightConstraint;
     NSString   *_codeContent;
     NSString   *_savedPath;
     __weak UIViewController *_vc;
@@ -215,8 +216,8 @@ static NSCache<NSString *, UIImage *> *EZCodeBlockThumbCache(void) {
         [_codeView.trailingAnchor constraintEqualToAnchor:container.trailingAnchor],
         // Fixed height ~1/3 screen so the cell stays compact and content scrolls inside.
         // Container bottom is driven by this height rather than expanding to content.
-        [_codeView.heightAnchor   constraintEqualToConstant:
-            MAX(120.0, UIScreen.mainScreen.bounds.size.height / 3.0)],
+        (_codeHeightConstraint = [_codeView.heightAnchor constraintEqualToConstant:
+            MAX(120.0, UIScreen.mainScreen.bounds.size.height / 3.0)]),
         [_codeView.bottomAnchor   constraintEqualToAnchor:container.bottomAnchor],
 
         // Thumbnail / button / badge share _codeView's exact footprint —
@@ -245,6 +246,16 @@ static NSCache<NSString *, UIImage *> *EZCodeBlockThumbCache(void) {
     _vc                 = vc;
     _langLabel.text     = language.length > 0 ? language.uppercaseString : @"CODE";
     _codeView.text      = code;
+
+    // Short snippets should read like compact chat content rather than a
+    // full-screen terminal. Longer snippets retain the scrollable 1/3-screen
+    // editor, while fewer than 12 source lines use roughly half that height.
+    NSArray<NSString *> *lines = [code componentsSeparatedByString:@"\n"];
+    NSUInteger lineCount = lines.count;
+    if (lineCount > 1 && [lines.lastObject length] == 0) lineCount--;
+    CGFloat normalHeight = MAX(120.0, UIScreen.mainScreen.bounds.size.height / 3.0);
+    CGFloat compactHeight = MAX(80.0, UIScreen.mainScreen.bounds.size.height / 6.0);
+    _codeHeightConstraint.constant = lineCount < 12 ? compactHeight : normalHeight;
 
     // Reset preview state on every configure — cells get reused, so a
     // previous row's thumbnail/badge state must never leak into this one.

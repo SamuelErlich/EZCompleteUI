@@ -14,7 +14,7 @@ NSString *const EZTermsAcceptedVersionKey = @"EZ_termsAcceptedVersion";
 
 // ── Bump this when Terms, Privacy Policy, or Refund Policy change materially ─
 // Users who accepted an older version will be re-prompted on next launch.
-NSString *const EZCurrentTermsVersion = @"2025-05-14";
+NSString *const EZCurrentTermsVersion = @"2026-09-18";
 
 @interface EZTermsAcceptanceViewController ()
 @property (nonatomic, strong) UIView   *cardView;
@@ -78,7 +78,7 @@ NSString *const EZCurrentTermsVersion = @"2025-05-14";
 
     // ── Title ─────────────────────────────────────────────────────────────────
     UILabel *titleLabel      = [UILabel new];
-    titleLabel.text          = @"Before You Continue";
+    titleLabel.text          = @"Terms & Privacy Updated";
     titleLabel.font          = [UIFont systemFontOfSize:22 weight:UIFontWeightBold];
     titleLabel.textColor     = [UIColor labelColor];
     titleLabel.textAlignment = NSTextAlignmentCenter;
@@ -92,12 +92,11 @@ NSString *const EZCurrentTermsVersion = @"2025-05-14";
     bodyLabel.textColor     = [UIColor secondaryLabelColor];
     bodyLabel.font          = [UIFont systemFontOfSize:15];
     bodyLabel.text          =
-        @"EZCompleteUI uses a coin system to access AI features. "
-        @"Coins are purchased within the app and consumed when you use features.\n\n"
-        @"Your prompts are processed by OpenAI and ElevenLabs. "
-        @"Usage data is stored securely by Supabase and may be reviewed by the developer "
-        @"(Brian Nooning / ios_tweak3r) to keep the app running correctly.\n\n"
-        @"No data is shared with anyone outside these necessary partners.";
+        @"We updated our Terms, Privacy Policy, and data-sharing information.\n\n"
+        @"Resend now delivers signup and password-reset emails. Cloudflare supports our domain and may be used "
+        @"for future network, security, or performance services. Namecheap provides domain and DNS infrastructure.\n\n"
+        @"These providers may process limited information needed to provide their services. We do not sell your data. "
+        @"Please review the updated policies before continuing.";
     bodyLabel.translatesAutoresizingMaskIntoConstraints = NO;
     [self.cardView addSubview:bodyLabel];
 

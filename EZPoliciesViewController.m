@@ -17,7 +17,7 @@ static NSString *const kPrivacyURL = @"https://yoursite.com/privacy-policy";
 static NSString *const kRefundURL  = @"https://yoursite.com/refund-policy";
 
 // ── Effective date shown in each policy ───────────────────────────────────────
-static NSString *const kPolicyDate = @"May 14, 2026";
+static NSString *const kPolicyDate = @"September 18, 2026";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MARK: - Policy text
@@ -69,7 +69,9 @@ static NSString *EZFullTermsText(void) {
     @"Content is also subject to OpenAI's and ElevenLabs' terms.\n\n"
 
     @"7. THIRD-PARTY SERVICES\n"
-    @"The app relies on OpenAI, ElevenLabs, and Supabase. Your use is also governed by their terms.\n\n"
+    @"The app relies on OpenAI, ElevenLabs, Supabase, Resend, Cloudflare, and Namecheap to operate "
+    @"features, accounts, transactional email, and domain/network infrastructure. Your use is also governed "
+    @"by their applicable terms and privacy policies.\n\n"
 
     @"8. DISCLAIMERS\n"
     @"The app is provided \"as is\" without warranties of any kind.\n\n"
@@ -124,8 +126,23 @@ static NSString *EZFullPrivacyText(void) {
     @"Supabase — Your account data, usage logs, and coin records are stored on Supabase's "
     @"secure hosted database (supabase.com/privacy).\n\n"
 
+    @"Resend — We use Resend to deliver transactional account emails, including signup confirmation "
+    @"and password-reset emails. Resend processes the recipient email address, message content needed "
+    @"to deliver the email, and delivery-related technical data on our behalf (resend.com/legal/privacy-policy).\n\n"
+
+    @"Cloudflare — Cloudflare provides domain-resolution and network/security services for EZCompleteUI. "
+    @"When you access a domain, website, API, or other service routed through Cloudflare, Cloudflare may "
+    @"process technical request information such as IP address, traffic-routing data, and device or system "
+    @"configuration information (cloudflare.com/policies/privacy). Cloudflare may be used for additional "
+    @"network, performance, and security services as the app develops.\n\n"
+
+    @"Namecheap — Namecheap provides domain registration and DNS-related infrastructure for our domain. "
+    @"Namecheap may process limited technical DNS or service information needed to operate that infrastructure "
+    @"under its privacy policy (namecheap.com/legal/general/privacy-policy). We do not provide Namecheap with "
+    @"your EZCompleteUI account profile, prompts, or payment information.\n\n"
+
     @"NO OTHER SHARING\n"
-    @"Beyond the parties above, your data is not sold, rented, or shared with anyone. "
+    @"Beyond the service providers identified above and disclosures required by law, your data is not sold, rented, or shared with anyone. "
     @"We have no advertising networks.\n\n"
 
     @"DATA RETENTION\n"
