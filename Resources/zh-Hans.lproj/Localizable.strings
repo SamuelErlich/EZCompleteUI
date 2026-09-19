@@ -155,6 +155,8 @@
 "EZCoinStore.DailyCoins.FreeFormat" = "🎁 +%ld 免费金币！";
 
 "EZCoinStore.DailyCoins.Free" = "🎁 免费金币！";
+"EZCoinStore.DailyReminder.Title" = "你的免费金币已准备好";
+"EZCoinStore.DailyReminder.Body" = "准备好时即可领取金币。";
 
 "EZCoinStore.DailyCoins.NextHours" = "🎁 下次：%ld小时 %ld分钟";
 

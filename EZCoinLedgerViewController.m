@@ -146,9 +146,46 @@ static NSDateFormatter *sharedDisplayFormatter(void) {
     dispatch_once(&onceToken, ^{
         formatter = [NSDateFormatter new];
         formatter.locale     = [NSLocale currentLocale];
-        formatter.dateFormat = @"MMM d, h:mm a";
+        // Ledger timestamps are stored by Supabase in UTC. Show them in the
+        // product's Eastern time zone (EST in winter, EDT during daylight
+        // saving time) instead of treating their UTC clock values as local.
+        formatter.timeZone   = [NSTimeZone timeZoneWithName:@"America/New_York"];
+        formatter.dateFormat = @"MMM d, h:mm a z";
     });
     return formatter;
+}
+
+// Supabase emits UTC timestamps such as "2026-09-19T22:32:00.000Z". Parsing
+// only the first 19 characters without a time zone makes 22:32 look like local
+// time; preserve the UTC meaning first, then let sharedDisplayFormatter convert
+// it to Eastern time for the card.
+static NSDate *dateFromLedgerISOString(NSString *isoDate) {
+    if (isoDate.length == 0) return nil;
+
+    static NSDateFormatter *withMilliseconds;
+    static NSDateFormatter *withoutMilliseconds;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        NSLocale *posixLocale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
+        withMilliseconds = [NSDateFormatter new];
+        withMilliseconds.locale = posixLocale;
+        withMilliseconds.dateFormat = @"yyyy-MM-dd'T'HH:mm:ss.SSSZZZZZ";
+        withoutMilliseconds = [NSDateFormatter new];
+        withoutMilliseconds.locale = posixLocale;
+        withoutMilliseconds.dateFormat = @"yyyy-MM-dd'T'HH:mm:ssZZZZZ";
+    });
+
+    NSDate *date = [withMilliseconds dateFromString:isoDate]
+        ?: [withoutMilliseconds dateFromString:isoDate];
+    if (date || isoDate.length < 19) return date;
+
+    // Defensive fallback for legacy rows with no explicit offset. Their
+    // created_at values were still written in UTC by the backend.
+    NSDateFormatter *legacyParser = [NSDateFormatter new];
+    legacyParser.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
+    legacyParser.timeZone = [NSTimeZone timeZoneForSecondsFromGMT:0];
+    legacyParser.dateFormat = @"yyyy-MM-dd'T'HH:mm:ss";
+    return [legacyParser dateFromString:[isoDate substringToIndex:19]];
 }
 
 // ── Coin count formatter ──────────────────────────────────────────────────────
@@ -275,7 +312,8 @@ typedef void (^EZGrantCoinsHandler)(NSString *userId, NSString *email);
     // each ledger card and needs to remain readable at a glance.
     _costLabel      = makeLabel(16, UIFontWeightSemibold, [UIColor whiteColor],                  1);
     _effLabel       = makeLabel(14, UIFontWeightSemibold,[UIColor systemGreenColor],            1);
-    _timeLabel      = makeLabel(12, UIFontWeightRegular, EZMutedLight(),                        1);
+    _timeLabel      = makeLabel(13, UIFontWeightMedium,  [UIColor colorWithWhite:0.88 alpha:1], 1);
+    _timeLabel.textAlignment = NSTextAlignmentRight;
 
     _coinsLabel.textAlignment   = NSTextAlignmentRight;
     _balanceLabel.textAlignment = NSTextAlignmentRight;
@@ -433,15 +471,8 @@ typedef void (^EZGrantCoinsHandler)(NSString *userId, NSString *email);
 
     // Timestamp
     NSString *isoDate = safeString(row[@"created_at"]);
-    if (isoDate.length >= 19) {
-        NSDateFormatter *isoParser = [NSDateFormatter new];
-        isoParser.locale     = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
-        isoParser.dateFormat = @"yyyy-MM-dd'T'HH:mm:ss";
-        NSDate *parsedDate   = [isoParser dateFromString:[isoDate substringToIndex:19]];
-        _timeLabel.text = parsedDate ? [sharedDisplayFormatter() stringFromDate:parsedDate] : isoDate;
-    } else {
-        _timeLabel.text = isoDate;
-    }
+    NSDate *parsedDate = dateFromLedgerISOString(isoDate);
+    _timeLabel.text = parsedDate ? [sharedDisplayFormatter() stringFromDate:parsedDate] : isoDate;
     _contactDateTime = _timeLabel.text.length ? _timeLabel.text : @"Not recorded";
 
     // Status dot + label
@@ -633,10 +664,10 @@ typedef void (^EZGrantCoinsHandler)(NSString *userId, NSString *email);
     // Status dot — top-right corner
     _statusDot.frame = CGRectMake(cardWidth - padding - 8, padding, 8, 8);
 
-    // Row 1: feature (left) + timestamp (right). Timestamp got bigger/lighter
-    // per feedback that it was unreadable, so it needs a bit more width too.
-    _featureLabel.frame = CGRectMake(x, y, cardWidth - 140, 18);
-    _timeLabel.frame    = CGRectMake(cardWidth - 138, y, 126, 16);
+    // Row 1: feature (left) + Eastern timestamp (right). Give the now-larger,
+    // brighter time label room for its EST/EDT suffix.
+    _featureLabel.frame = CGRectMake(x, y, cardWidth - 164, 18);
+    _timeLabel.frame    = CGRectMake(cardWidth - 158, y, 146, 18);
     y += 22;
 
     // Row 2: model (left) + user email (right)

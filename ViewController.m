@@ -789,6 +789,7 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
 - (void)updateHelperDirectAnswersButton;
 - (void)callChatCompletionsWithRetryCount:(NSInteger)retryCount;
 - (void)recoverUndeliveredGalleryImagesIfNeeded;
+- (void)consumePendingExternalImageEdit;
 
 @end
 @interface ViewController (EZPrivateForward)
@@ -836,11 +837,20 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
     [[NSNotificationCenter defaultCenter] addObserver:self
         selector:@selector(handleEditImageInChat:)
         name:EZEditImageInChat object:nil];
+    [self consumePendingExternalImageEdit];
     [[EZEntitlementManager shared] refreshBalanceWithCompletion:^(NSInteger balance) {
         [self updateCoinBalanceDisplay];
     }];
     [self recoverUndeliveredGalleryImagesIfNeeded];
 
+}
+
+- (void)consumePendingExternalImageEdit {
+    NSString *path = [[NSUserDefaults standardUserDefaults] stringForKey:@"EZPendingExternalImageEditPath"];
+    if (!path.length || ![[NSFileManager defaultManager] fileExistsAtPath:path]) return;
+    [[NSNotificationCenter defaultCenter] postNotificationName:EZEditImageInChat
+                                                        object:nil
+                                                      userInfo:@{ @"filePath": path }];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2846,11 +2856,6 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
 // ─────────────────────────────────────────────────────────────────────────────
 
 - (void)handleSend {
-
-    @try { [self ezcui_beginLongOperation:@"ChatCompletion"]; } @catch (NSException *e) {
-        EZLogf(EZLogLevelWarning, @"EZKeepAwake", @"begin failed in handleSend: %@", e);
-    }
-
     NSString *text = self.messageTextField.text;
     if (text.length == 0) return;
 
@@ -5822,6 +5827,13 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
 // are now thin wrappers kept for their existing call sites; behavior for
 // GPT-5 is unchanged.
 - (void)showStatusBannerWithMessages:(NSArray<NSString *> *)messages {
+    // The status banner is the user-visible source of truth for a long
+    // generation/reasoning operation.  Tie screen wakefulness to it instead
+    // of the broad send action, whose many early-return paths could leave the
+    // old reference count unbalanced.
+    @try { [self ezcui_beginLongOperation:@"Visible long operation"]; } @catch (NSException *e) {
+        EZLogf(EZLogLevelWarning, @"EZKeepAwake", @"begin failed for status banner: %@", e);
+    }
     self.statusBannerMessages = messages.count ? messages : @[@"Working…"];
     self.statusBannerPhase = 0; [self.statusBannerSpinner startAnimating]; [self tickStatusBanner];
     self.statusBannerTimer = [NSTimer scheduledTimerWithTimeInterval:4.0 target:self
@@ -5832,7 +5844,12 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
 - (void)hideStatusBanner {
     [self.statusBannerTimer invalidate]; self.statusBannerTimer = nil;
     [UIView animateWithDuration:0.3 animations:^{ self.statusBannerView.alpha = 0.0; }
-     completion:^(BOOL _) { [self.statusBannerSpinner stopAnimating]; }];
+     completion:^(BOOL _) {
+        [self.statusBannerSpinner stopAnimating];
+        @try { [self ezcui_endLongOperation]; } @catch (NSException *e) {
+            EZLogf(EZLogLevelWarning, @"EZKeepAwake", @"end failed for status banner: %@", e);
+        }
+    }];
 }
 - (void)tickStatusBanner {
     NSArray<NSString *> *m = self.statusBannerMessages.count ? self.statusBannerMessages : @[@"Working…"];
@@ -6041,6 +6058,13 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
 /// Called when user taps "Edit with AI" in the gallery detail view.
 /// Attaches the image and pre-fills the input with an edit prompt.
 - (void)handleEditImageInChat:(NSNotification *)notification {
+    NSString *incomingPath = [notification.userInfo[@"filePath"] isKindOfClass:[NSString class]]
+        ? notification.userInfo[@"filePath"] : nil;
+    if (incomingPath.length && [[NSFileManager defaultManager] fileExistsAtPath:incomingPath]) {
+        [[NSUserDefaults standardUserDefaults] removeObjectForKey:@"EZPendingExternalImageEditPath"];
+        [self attachImage:[NSURL fileURLWithPath:incomingPath]];
+        [[NSFileManager defaultManager] removeItemAtPath:incomingPath error:nil];
+    } else {
     UIImage *image = notification.userInfo[@"image"];
     if (!image) return;
 
@@ -6059,6 +6083,7 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     // attachments, including the visible bubble and the model-readable vision
     // message. callImageEdit still uses pendingImagePaths.lastObject below.
     [self attachImage:[NSURL fileURLWithPath:path]];
+    }
 
     // Switch to edit mode — gpt-image-1-edit takes the direct path (see the
     // "Image edit mode" dispatch in the send flow above) which uses

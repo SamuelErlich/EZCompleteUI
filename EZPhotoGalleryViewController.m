@@ -33,6 +33,7 @@ static NSInteger const kMinColumns      = 2;
 static NSInteger const kMaxColumns      = 5;
 static NSInteger const kDefaultColumns  = 3;
 static NSString *const kGalleryImagePromptsKey = @"EZGalleryImagePrompts";
+static NSUInteger const kMaxImageEditSources = 4;
 
 typedef NS_ENUM(NSInteger, EZShareGIFStyle) {
     EZShareGIFStyleOriginalReveal = 0,
@@ -597,7 +598,7 @@ static NSString *EZGalleryPromptForPath(NSString *path) {
     [self layoutProcessingOverlay];
 }
 
-// A single reference keeps the familiar aspect-fit preview.  Two or three
+// A single reference keeps the familiar aspect-fit preview.  Two to four
 // references become an equal-sized grid, giving each input the same visual
 // weight before the edit is sent.
 - (void)layoutImagePresentation {
@@ -699,7 +700,10 @@ static NSString *EZGalleryPromptForPath(NSString *path) {
 - (void)layoutToolbarButtons {
     CGFloat pad  = 16;
     CGFloat btnH = 56;
-    CGFloat y    = 88;
+    // The prompt field grows as the user writes. Keep the action row below it
+    // instead of at a fixed y-position, which previously caused long prompts
+    // to paint underneath the buttons while the keyboard was visible.
+    CGFloat y    = 14.0 + [self editPromptHeight] + 18.0;
     CGFloat W    = self.view.bounds.size.width;
     if (W == 0) W = UIScreen.mainScreen.bounds.size.width;
 
@@ -816,7 +820,7 @@ static NSString *EZGalleryPromptForPath(NSString *path) {
     _sourceCountLabel.frame = CGRectMake(33.0, 5.0, 16.0, 16.0);
     _sourceCountLabel.text = [NSString stringWithFormat:@"%lu", (unsigned long)_editSourceImages.count];
     _sourceCountLabel.hidden = _editSourceImages.count < 2;
-    _addImageButton.alpha = _editSourceImages.count >= 3 ? 0.40 : 1.0;
+    _addImageButton.alpha = _editSourceImages.count >= kMaxImageEditSources ? 0.40 : 1.0;
     _editPromptField.frame = CGRectMake(54.0, 0.0,
                                         MAX(0.0, CGRectGetWidth(promptContainer.bounds) - 70.0),
                                         CGRectGetHeight(promptContainer.bounds));
@@ -840,14 +844,14 @@ static NSString *EZGalleryPromptForPath(NSString *path) {
 }
 
 - (void)addEditImageTapped {
-    if (_isEditingImage || _editSourceImages.count >= 3) return;
+    if (_isEditingImage || _editSourceImages.count >= kMaxImageEditSources) return;
     __weak typeof(self) weakSelf = self;
     EZPresentPhotoSourcePicker(self, ^{
         typeof(self) self = weakSelf;
         if (!self) return;
         PHPickerConfiguration *configuration = [[PHPickerConfiguration alloc] init];
         configuration.filter = [PHPickerFilter imagesFilter];
-        configuration.selectionLimit = 3 - self->_editSourceImages.count;
+        configuration.selectionLimit = kMaxImageEditSources - self->_editSourceImages.count;
         PHPickerViewController *picker = [[PHPickerViewController alloc]
             initWithConfiguration:configuration];
         picker.delegate = self;
@@ -880,7 +884,7 @@ didFinishPicking:(NSArray<PHPickerResult *> *)results {
 }
 
 - (void)addPickedEditImage:(UIImage *)image {
-    if (!image || _isEditingImage || _editSourceImages.count >= 3) return;
+    if (!image || _isEditingImage || _editSourceImages.count >= kMaxImageEditSources) return;
     [_editSourceImages addObject:image];
     UIImageView *imageView = [[UIImageView alloc] initWithImage:image];
     imageView.backgroundColor = [UIColor colorWithWhite:0.10 alpha:1.0];
@@ -902,7 +906,7 @@ didFinishPicking:(NSArray<PHPickerResult *> *)results {
 - (void)documentPicker:(UIDocumentPickerViewController *)controller
 didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     for (NSURL *url in urls) {
-        if (_editSourceImages.count >= 3) break;
+        if (_editSourceImages.count >= kMaxImageEditSources) break;
         BOOL accessed = [url startAccessingSecurityScopedResource];
         NSData *data = [NSData dataWithContentsOfURL:url];
         if (accessed) [url stopAccessingSecurityScopedResource];
@@ -1152,7 +1156,7 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
 - (void)setImageEditing:(BOOL)editing {
     _isEditingImage = editing;
     _editPromptField.editable = !editing;
-    _addImageButton.enabled = !editing && _editSourceImages.count < 3;
+    _addImageButton.enabled = !editing && _editSourceImages.count < kMaxImageEditSources;
     _sendEditButton.enabled = !editing;
     _askButton.enabled = !editing;
     _editButton.enabled = !editing;

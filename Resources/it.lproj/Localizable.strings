@@ -155,6 +155,8 @@
 "EZCoinStore.DailyCoins.FreeFormat" = "🎁 +%ld gratis!";
 
 "EZCoinStore.DailyCoins.Free" = "🎁 Monete gratis!";
+"EZCoinStore.DailyReminder.Title" = "Le tue monete gratis sono pronte";
+"EZCoinStore.DailyReminder.Body" = "Riscatta le tue monete quando vuoi.";
 
 "EZCoinStore.DailyCoins.NextHours" = "🎁 Prossimo: %ldh %ldm";
 

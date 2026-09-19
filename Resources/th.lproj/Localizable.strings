@@ -155,6 +155,8 @@
 "EZCoinStore.DailyCoins.FreeFormat" = "🎁 +%ld ฟรี!";
 
 "EZCoinStore.DailyCoins.Free" = "🎁 เหรียญฟรี!";
+"EZCoinStore.DailyReminder.Title" = "เหรียญฟรีของคุณพร้อมแล้ว";
+"EZCoinStore.DailyReminder.Body" = "รับเหรียญของคุณได้เมื่อพร้อม";
 
 "EZCoinStore.DailyCoins.NextHours" = "🎁 ถัดไป: %ldh %ldm";
 

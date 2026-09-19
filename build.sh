@@ -47,7 +47,7 @@ PYEOF
 # ─────────────────────────────────────────────────────────────────────────────
 echo ""
 echo "==> [1/5] Compiling..."
-make clean && make stage
+make clean && make stage FINALPACKAGE=1 DEBUG=0 debug=0
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 2. Patch staged plist
@@ -95,7 +95,7 @@ echo "  ${APP_NAME}.ipa ready"
 # ─────────────────────────────────────────────────────────────────────────────
 echo ""
 echo "==> [5/5] Building .deb..."
-make package FINALPACKAGE=1
+make package FINALPACKAGE=1 DEBUG=0 debug=0
 
 DEB=$(ls -t packages/*.deb 2>/dev/null | head -1)
 if [ -z "${DEB}" ]; then

@@ -177,6 +177,8 @@
 "EZCoinStore.DailyCoins.FreeFormat" = "🎁 +%ld Free!";
 
 "EZCoinStore.DailyCoins.Free" = "🎁 Free Coins!";
+"EZCoinStore.DailyReminder.Title" = "Your free coins are ready";
+"EZCoinStore.DailyReminder.Body" = "Claim your coins whenever you’re ready.";
 
 "EZCoinStore.DailyCoins.NextHours" = "🎁 Next: %ldh %ldm";
 

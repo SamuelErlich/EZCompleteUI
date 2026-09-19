@@ -27,6 +27,10 @@
 #import "EZKeyVault.h"
 #import "LoginViewController.h"
 #import "EZAuthManager.h"
+#import "EZPhotoGalleryViewController.h"
+#import "helpers.h"
+
+static NSString *const kPendingExternalImageEditPath = @"EZPendingExternalImageEditPath";
 
 
 @implementation AppDelegate
@@ -59,6 +63,34 @@
         // Not logged in, or in recovery mode — LoginViewController stays
     }];
 
+    NSURL *launchURL = launchOptions[UIApplicationLaunchOptionsURLKey];
+    if (launchURL.isFileURL) [self acceptIncomingImageURL:launchURL];
+
+    return YES;
+}
+
+// Copies an Open In / Files-provider image while its security-scoped access is
+// valid.  The chat controller consumes this temporary copy and sends it through
+// the normal attachment pipeline, which makes the permanent gallery copy and
+// immediately enters image-edit mode.
+- (BOOL)acceptIncomingImageURL:(NSURL *)url {
+    if (!url.isFileURL) return NO;
+    BOOL scoped = [url startAccessingSecurityScopedResource];
+    NSData *data = [NSData dataWithContentsOfURL:url];
+    if (scoped) [url stopAccessingSecurityScopedResource];
+    if (!data.length || ![UIImage imageWithData:data]) return NO;
+
+    NSString *fileName = url.lastPathComponent.length ? url.lastPathComponent : @"open-in-image.png";
+    NSString *destination = [NSTemporaryDirectory() stringByAppendingPathComponent:
+        [NSString stringWithFormat:@"open-in-%@-%@", NSUUID.UUID.UUIDString, fileName]];
+    if (![data writeToFile:destination atomically:YES]) return NO;
+    [[NSUserDefaults standardUserDefaults] setObject:destination forKey:kPendingExternalImageEditPath];
+
+    if ([self.window.rootViewController isKindOfClass:[ViewController class]]) {
+        [[NSNotificationCenter defaultCenter] postNotificationName:EZEditImageInChat
+                                                            object:nil
+                                                          userInfo:@{ @"filePath": destination }];
+    }
     return YES;
 }
 
@@ -86,6 +118,8 @@
 - (BOOL)application:(UIApplication *)application
             openURL:(NSURL *)url
             options:(NSDictionary<UIApplicationOpenURLOptionsKey, id> *)options {
+
+    if (url.isFileURL) return [self acceptIncomingImageURL:url];
 
     if (![url.scheme isEqualToString:@"ezcomplete"]) return NO;
 

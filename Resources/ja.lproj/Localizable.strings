@@ -155,6 +155,8 @@
 "EZCoinStore.DailyCoins.FreeFormat" = "🎁 +%ld 無料!";
 
 "EZCoinStore.DailyCoins.Free" = "🎁 無料コイン！";
+"EZCoinStore.DailyReminder.Title" = "無料コインの準備ができました";
+"EZCoinStore.DailyReminder.Body" = "準備ができたらコインを受け取りましょう。";
 
 "EZCoinStore.DailyCoins.NextHours" = "🎁 次: %ldh %ldm";
 

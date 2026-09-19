@@ -77,6 +77,7 @@
 //   - All JSON value reads now use NSNull-safe helpers (crash fix: JSON null → [NSNull null] → ___forwarding___)
 
 #import <QuartzCore/QuartzCore.h>
+#import <UserNotifications/UserNotifications.h>
 
 #import "EZCoinStoreViewController.h"
 
@@ -199,6 +200,12 @@ static NSString *const kStoreSupabaseURL   = @"https://spuoimtqofhbdzosrbng.supa
 // Daily coins endpoint — see supabase/functions/claim-daily-coins/index.ts
 
 static NSString *const kDailyCoinsEndpoint = @"/functions/v1/claim-daily-coins";
+
+// One non-repeating local reminder is scheduled for the authoritative server
+// claim time. It is replaced after every successful claim, never used as a
+// generic engagement notification, and is only scheduled after the person
+// opts in to notifications.
+static NSString *const kDailyCoinsReadyNotificationIdentifier = @"com.i0stweak3r.ezcompleteui.daily-coins-ready";
 
 // Subscription tier names sent to the create-paypal-subscription edge function.
 
@@ -1545,6 +1552,8 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
 
         self.isDailyCoinsAvailable = YES;
 
+        [self cancelDailyCoinsReadyReminder];
+
         [self updateDailyCoinsButtonState];
 
     } else {
@@ -1553,6 +1562,71 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
 
     }
 
+}
+
+// MARK: - Daily coin ready reminder
+
+- (void)cancelDailyCoinsReadyReminder {
+
+    [[UNUserNotificationCenter currentNotificationCenter]
+        removePendingNotificationRequestsWithIdentifiers:@[kDailyCoinsReadyNotificationIdentifier]];
+}
+
+// Requests permission only immediately after a successful daily claim, when
+// the value of this reminder is clear. Status refreshes can restore a pending
+// reminder for people who have already granted permission, but never prompt.
+- (void)scheduleDailyCoinsReadyReminderForDate:(NSDate *)date requestPermissionIfNeeded:(BOOL)requestPermissionIfNeeded {
+
+    NSTimeInterval interval = [date timeIntervalSinceNow];
+    if (!date || interval < 60.0) {
+        [self cancelDailyCoinsReadyReminder];
+        return;
+    }
+
+    UNUserNotificationCenter *notificationCenter = [UNUserNotificationCenter currentNotificationCenter];
+    void (^scheduleReminder)(void) = ^{
+        [notificationCenter removePendingNotificationRequestsWithIdentifiers:@[kDailyCoinsReadyNotificationIdentifier]];
+
+        UNMutableNotificationContent *content = [[UNMutableNotificationContent alloc] init];
+        content.title = NSLocalizedString(@"EZCoinStore.DailyReminder.Title", @"Daily coins reminder notification title");
+        content.body = NSLocalizedString(@"EZCoinStore.DailyReminder.Body", @"Daily coins reminder notification body");
+        content.sound = [UNNotificationSound defaultSound];
+        content.userInfo = @{ @"destination": @"daily-coins" };
+
+        // A non-repeating interval trigger preserves the exact server cooldown
+        // even if the cooldown changes from four to six hours in a future build.
+        UNTimeIntervalNotificationTrigger *trigger =
+            [UNTimeIntervalNotificationTrigger triggerWithTimeInterval:interval repeats:NO];
+        UNNotificationRequest *request =
+            [UNNotificationRequest requestWithIdentifier:kDailyCoinsReadyNotificationIdentifier
+                                                  content:content
+                                                  trigger:trigger];
+        [notificationCenter addNotificationRequest:request withCompletionHandler:^(NSError *error) {
+            if (error) {
+                NSLog(@"[EZCoinStore] Could not schedule daily coin reminder: %@", error.localizedDescription);
+            }
+        }];
+    };
+
+    [notificationCenter getNotificationSettingsWithCompletionHandler:^(UNNotificationSettings *settings) {
+        if (settings.authorizationStatus == UNAuthorizationStatusAuthorized ||
+            settings.authorizationStatus == UNAuthorizationStatusProvisional ||
+            settings.authorizationStatus == UNAuthorizationStatusEphemeral) {
+            scheduleReminder();
+        } else if (requestPermissionIfNeeded &&
+                   settings.authorizationStatus == UNAuthorizationStatusNotDetermined) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [notificationCenter requestAuthorizationWithOptions:(UNAuthorizationOptionAlert | UNAuthorizationOptionSound)
+                                                   completionHandler:^(BOOL granted, NSError *error) {
+                    if (granted) {
+                        scheduleReminder();
+                    } else if (error) {
+                        NSLog(@"[EZCoinStore] Daily coin notification permission error: %@", error.localizedDescription);
+                    }
+                }];
+            });
+        }
+    }];
 }
 
 // Asks the server whether coins can be claimed right now and how many would be awarded.
@@ -1598,6 +1672,12 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
             self.dailyCoinsPendingAmount = jsonInteger(json, @"coins_to_award");
 
             self.nextDailyClaimDate      = dateFromISO8601String(jsonString(json, @"next_claim_at"));
+
+            if (self.isDailyCoinsAvailable) {
+                [self cancelDailyCoinsReadyReminder];
+            } else {
+                [self scheduleDailyCoinsReadyReminderForDate:self.nextDailyClaimDate requestPermissionIfNeeded:NO];
+            }
 
             [self updateDailyCoinsButtonState];
 
@@ -1703,6 +1783,8 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
 
                 self.isDailyCoinsAvailable = NO;
 
+                [self scheduleDailyCoinsReadyReminderForDate:self.nextDailyClaimDate requestPermissionIfNeeded:YES];
+
                 // Reflect new balance immediately before the delayed full refresh
 
                 [[EZEntitlementManager shared] applyKnownBalance:newBalance];
@@ -1734,6 +1816,8 @@ typedef NS_ENUM(NSUInteger, EZStoreItemType) {
                 self.nextDailyClaimDate    = dateFromISO8601String(jsonString(json, @"next_claim_at"));
 
                 self.isDailyCoinsAvailable = NO;
+
+                [self scheduleDailyCoinsReadyReminderForDate:self.nextDailyClaimDate requestPermissionIfNeeded:NO];
 
                 [self updateDailyCoinsButtonState];
 

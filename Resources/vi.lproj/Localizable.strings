@@ -155,6 +155,8 @@
 "EZCoinStore.DailyCoins.FreeFormat" = "🎁 +%ld miễn phí!";
 
 "EZCoinStore.DailyCoins.Free" = "🎁 Xu miễn phí!";
+"EZCoinStore.DailyReminder.Title" = "Xu miễn phí của bạn đã sẵn sàng";
+"EZCoinStore.DailyReminder.Body" = "Nhận xu của bạn khi bạn sẵn sàng.";
 
 "EZCoinStore.DailyCoins.NextHours" = "🎁 Tiếp theo: %ldg %ldp";
 

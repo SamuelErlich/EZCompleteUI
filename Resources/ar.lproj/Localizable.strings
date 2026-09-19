@@ -155,6 +155,8 @@
 "EZCoinStore.DailyCoins.FreeFormat" = "🎁 +%ld مجانًا!";
 
 "EZCoinStore.DailyCoins.Free" = "🎁 عملات مجانية!";
+"EZCoinStore.DailyReminder.Title" = "عملاتك المجانية جاهزة";
+"EZCoinStore.DailyReminder.Body" = "احصل على عملاتك عندما تكون مستعدًا.";
 
 "EZCoinStore.DailyCoins.NextHours" = "🎁 التالي: %ldس %ldد";
 

@@ -37,7 +37,13 @@ static inline void ezka_setBG(ViewController *vc, UIBackgroundTaskIdentifier t) 
 
 #if TARGET_OS_IOS
         if (c == 1) {
-            [UIApplication sharedApplication].idleTimerDisabled = YES;
+            // UIKit application state must be changed on the main thread.
+            // Some completion paths arrive on a URL-session queue; changing
+            // the idle timer there is unreliable and caused the display to
+            // dim during an otherwise active generation.
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [UIApplication sharedApplication].idleTimerDisabled = YES;
+            });
             EZLogf(EZLogLevelInfo, kEZKA_Tag, @"Idle timer disabled (%@)", reason ?: @"op");
 
             UIBackgroundTaskIdentifier bg = [[UIApplication sharedApplication] beginBackgroundTaskWithExpirationHandler:^{
@@ -72,7 +78,9 @@ static inline void ezka_setBG(ViewController *vc, UIBackgroundTaskIdentifier t) 
 
 #if TARGET_OS_IOS
         if (c == 0) {
-            [UIApplication sharedApplication].idleTimerDisabled = NO;
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [UIApplication sharedApplication].idleTimerDisabled = NO;
+            });
             EZLog(EZLogLevelInfo, kEZKA_Tag, @"Idle timer re-enabled");
 
             NSTimer *t = objc_getAssociatedObject(self, kEZKA_Timer);

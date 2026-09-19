@@ -155,6 +155,8 @@
 "EZCoinStore.DailyCoins.FreeFormat" = "🎁 +%ld निःशुल्क!";
 
 "EZCoinStore.DailyCoins.Free" = "🎁 मुफ़्त सिक्के!";
+"EZCoinStore.DailyReminder.Title" = "आपके मुफ़्त सिक्के तैयार हैं";
+"EZCoinStore.DailyReminder.Body" = "जब चाहें अपने सिक्के पाएं।";
 
 "EZCoinStore.DailyCoins.NextHours" = "🎁 अगला: %ldh %ldm";
 
