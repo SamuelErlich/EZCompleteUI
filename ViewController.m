@@ -572,6 +572,7 @@
 #import "EZImageGridCell.h"
 #import "EZEntitlementManager.h"
 #import "EZAuthManager.h"         // needed for [EZAuthManager shared].accessToken (edge function JWT)
+#import "EZSupabaseConfig.h"
 #import "EZTermsAcceptanceViewController.h"
 #import "HelperLogViewController.h"
 #import <CommonCrypto/CommonDigest.h>
@@ -787,6 +788,7 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
 - (void)toggleHelperDirectAnswers;
 - (void)updateHelperDirectAnswersButton;
 - (void)callChatCompletionsWithRetryCount:(NSInteger)retryCount;
+- (void)recoverUndeliveredGalleryImagesIfNeeded;
 
 @end
 @interface ViewController (EZPrivateForward)
@@ -837,7 +839,89 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
     [[EZEntitlementManager shared] refreshBalanceWithCompletion:^(NSInteger balance) {
         [self updateCoinBalanceDisplay];
     }];
+    [self recoverUndeliveredGalleryImagesIfNeeded];
 
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MARK: - Gallery recovery
+// ─────────────────────────────────────────────────────────────────────────────
+
+- (void)recoverUndeliveredGalleryImagesIfNeeded {
+    static BOOL recoveryInFlight = NO;
+    if (recoveryInFlight) return;
+    NSString *userID = [EZAuthManager shared].userId;
+    if (!userID.length) return;
+
+    NSString *manifestKey = [@"EZRecoveredRemoteImagePaths." stringByAppendingString:userID];
+    NSSet<NSString *> *knownPaths = [NSSet setWithArray:
+        [[NSUserDefaults standardUserDefaults] arrayForKey:manifestKey] ?: @[]];
+    recoveryInFlight = YES;
+    __weak typeof(self) weakSelf = self;
+    [[EZAuthManager shared] getValidAccessToken:^(NSString *token, NSError *tokenError) {
+        if (!token.length) { recoveryInFlight = NO; return; }
+        NSURL *url = [NSURL URLWithString:[NSString stringWithFormat:
+            @"%@/functions/v1/recover-user-images", EZSupabaseURL]];
+        NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
+        request.HTTPMethod = @"POST";
+        request.timeoutInterval = 45.0;
+        [request setValue:[NSString stringWithFormat:@"Bearer %@", token] forHTTPHeaderField:@"Authorization"];
+        [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+        request.HTTPBody = [NSJSONSerialization dataWithJSONObject:@{ @"known_paths": knownPaths.allObjects }
+                                                                 options:0 error:nil];
+        [[[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:
+          ^(NSData *data, NSURLResponse *response, NSError *error) {
+            if (error || !data) { recoveryInFlight = NO; return; }
+            NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+            NSArray<NSDictionary *> *images = [json[@"images"] isKindOfClass:[NSArray class]] ? json[@"images"] : @[];
+            if (images.count == 0) { recoveryInFlight = NO; return; }
+
+            dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+                NSMutableSet<NSString *> *claimed = [knownPaths mutableCopy];
+                NSMutableArray<NSData *> *existingData = [NSMutableArray array];
+                for (NSString *name in [[NSFileManager defaultManager] contentsOfDirectoryAtPath:EZPhotoGalleryDirectory() error:nil]) {
+                    NSData *localData = [NSData dataWithContentsOfFile:[EZPhotoGalleryDirectory() stringByAppendingPathComponent:name]];
+                    if (localData.length) [existingData addObject:localData];
+                }
+
+                NSUInteger restored = 0;
+                for (NSDictionary *entry in images) {
+                    NSString *remotePath = [entry[@"path"] isKindOfClass:[NSString class]] ? entry[@"path"] : nil;
+                    NSString *signedURL = [entry[@"url"] isKindOfClass:[NSString class]] ? entry[@"url"] : nil;
+                    if (!remotePath.length || !signedURL.length || [claimed containsObject:remotePath]) continue;
+                    NSData *remoteData = [NSData dataWithContentsOfURL:[NSURL URLWithString:signedURL]];
+                    if (!remoteData.length || ![UIImage imageWithData:remoteData]) continue;
+
+                    BOOL alreadyLocal = NO;
+                    for (NSData *localData in existingData) {
+                        if (localData.length == remoteData.length && [localData isEqualToData:remoteData]) {
+                            alreadyLocal = YES;
+                            break;
+                        }
+                    }
+                    if (!alreadyLocal) {
+                        NSString *name = remotePath.lastPathComponent.length ? remotePath.lastPathComponent : @"recovered-image.png";
+                        NSString *savedPath = EZPhotoGallerySave(remoteData, name);
+                        if (savedPath) {
+                            [existingData addObject:remoteData];
+                            restored++;
+                        }
+                    }
+                    // Mark both restored and already-present images as claimed.
+                    // Future app launches therefore do not redownload them.
+                    [claimed addObject:remotePath];
+                }
+                [[NSUserDefaults standardUserDefaults] setObject:claimed.allObjects forKey:manifestKey];
+                recoveryInFlight = NO;
+                if (restored > 0) {
+                    EZLogf(EZLogLevelInfo, @"GALLERY", @"Recovered %lu undelivered image(s) from cloud storage", (unsigned long)restored);
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        [weakSelf updateCoinBalanceDisplay];
+                    });
+                }
+            });
+        }] resume];
+    }];
 }
 
 - (void)setupData {
@@ -2253,11 +2337,11 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
         else                                           mime = @"image/jpeg";
     }
 
-    // ── Save to EZAttachments ─────────────────────────────────────────────────
+    // ── Save to EZPhotoGallery ────────────────────────────────────────────────
     NSString *saveName  = converted
         ? [[name stringByDeletingPathExtension] stringByAppendingPathExtension:@"jpeg"]
         : name;
-    NSString *localPath = EZAttachmentSave(imageData, saveName);
+    NSString *localPath = EZPhotoGallerySave(imageData, saveName);
     NSString *thisPath  = localPath ?: fileURL.path;
     [self.pendingImagePaths addObject:thisPath];
     [self appendAttachmentBubble:thisPath];
@@ -3634,7 +3718,7 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
             if (!imgData) continue;
             NSString *fname = [NSString stringWithFormat:@"gptimage_%lu.%@",
                                (unsigned long)savedPaths.count + 1, imgExtension];
-            NSString *path = EZAttachmentSave(imgData, fname);
+            NSString *path = EZPhotoGallerySave(imgData, fname);
             if (path) [savedPaths addObject:path];
         }
 
@@ -3776,7 +3860,7 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
             if (!imgData) continue;
             NSString *fname = [NSString stringWithFormat:@"edit_%lu.%@",
                                (unsigned long)savedPaths.count + 1, editExtension];
-            NSString *path = EZAttachmentSave(imgData, fname);
+            NSString *path = EZPhotoGallerySave(imgData, fname);
             if (path) [savedPaths addObject:path];
         }
 
@@ -4262,7 +4346,7 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
 
         NSString *ext = mime.length > 0 ? mime : @"jpg";
         NSString *name = [NSString stringWithFormat:@"restored_%@.%@", [NSUUID UUID].UUIDString, ext];
-        NSString *savedPath = EZAttachmentSave(imageData, name);
+        NSString *savedPath = EZPhotoGallerySave(imageData, name);
         if (savedPath) [paths addObject:savedPath];
     }
     return [paths copy];
@@ -5935,11 +6019,9 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     UIImage *image = notification.userInfo[@"image"];
     if (!image) return;
 
-    // Save the image into EZAttachments so pendingImagePaths works normally
-    NSString *dir  = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject
-                      stringByAppendingPathComponent:@"EZAttachments"];
-    [[NSFileManager defaultManager] createDirectoryAtPath:dir
-                              withIntermediateDirectories:YES attributes:nil error:nil];
+    // Use a temporary handoff file. attachImage: persists the real image into
+    // EZPhotoGallery, keeping EZAttachments reserved for non-image files.
+    NSString *dir = NSTemporaryDirectory();
     NSString *filename = [NSString stringWithFormat:@"gallery_ask_%@.jpg",
                           [NSUUID UUID].UUIDString];
     NSString *path = [dir stringByAppendingPathComponent:filename];
@@ -5962,10 +6044,9 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     UIImage *image = notification.userInfo[@"image"];
     if (!image) return;
 
-    NSString *dir  = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject
-                      stringByAppendingPathComponent:@"EZAttachments"];
-    [[NSFileManager defaultManager] createDirectoryAtPath:dir
-                              withIntermediateDirectories:YES attributes:nil error:nil];
+    // The attachment pipeline below stores the permanent copy in
+    // EZPhotoGallery; this is only a short-lived handoff file.
+    NSString *dir = NSTemporaryDirectory();
     NSString *filename = [NSString stringWithFormat:@"gallery_edit_%@.jpg",
                           [NSUUID UUID].UUIDString];
     NSString *path = [dir stringByAppendingPathComponent:filename];

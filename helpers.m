@@ -53,6 +53,7 @@ static NSString * const kMemoryJSONFileName    = @"ezui_memory.json";   // curre
 static NSString * const kMemoryLegacyFileName  = @"ezui_memory.log";    // old plaintext format; migrated on first run
 static NSString * const kThreadsDirName        = @"EZThreads";          // sub-folder that holds one .json file per thread
 static NSString * const kAttachmentsDirName    = @"EZAttachments";      // sub-folder where user-uploaded files are copied
+static NSString * const kPhotoGalleryDirName   = @"EZPhotoGallery";     // image-only gallery storage
 
 static NSString * const kHelperTemperatureDefaultsKey = @"helperTemperature";
 
@@ -2790,6 +2791,39 @@ static NSString *_attachmentDirectory(void) {
     return directory;
 }
 
+NSString *EZPhotoGalleryDirectory(void) {
+    NSString *directory = [_documentsDirectory() stringByAppendingPathComponent:kPhotoGalleryDirName];
+    [[NSFileManager defaultManager] createDirectoryAtPath:directory
+                              withIntermediateDirectories:YES
+                                               attributes:nil
+                                                    error:nil];
+    return directory;
+}
+
+static BOOL _isImageFileName(NSString *fileName) {
+    static NSSet<NSString *> *imageExtensions;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        imageExtensions = [NSSet setWithArray:@[@"jpg", @"jpeg", @"png", @"heic", @"gif", @"webp", @"tiff", @"bmp"]];
+    });
+    return [imageExtensions containsObject:fileName.pathExtension.lowercaseString];
+}
+
+NSString * _Nullable EZPhotoGallerySave(NSData *data, NSString *fileName) {
+    if (!data || fileName.length == 0) return nil;
+    NSString *uniqueFileName = [NSString stringWithFormat:@"%@_%@",
+                                 [[NSUUID UUID] UUIDString], fileName];
+    NSString *filePath = [EZPhotoGalleryDirectory() stringByAppendingPathComponent:uniqueFileName];
+    NSError *writeError = nil;
+    BOOL saved = [data writeToFile:filePath options:NSDataWritingAtomic error:&writeError];
+    if (!saved) {
+        EZLogf(EZLogLevelError, @"GALLERY", @"Save failed for %@: %@", fileName, writeError);
+        return nil;
+    }
+    EZLogf(EZLogLevelInfo, @"GALLERY", @"Saved: %@", uniqueFileName);
+    return filePath;
+}
+
 // EZAttachmentSave — copies raw file data into EZAttachments/ with a UUID prefix.
 //
 // Parameters:
@@ -2801,6 +2835,10 @@ static NSString *_attachmentDirectory(void) {
 // The UUID prefix ensures no two uploads ever collide, even across sessions.
 NSString * _Nullable EZAttachmentSave(NSData *data, NSString *fileName) {
     if (!data || fileName.length == 0) return nil;
+
+    // Keep EZAttachments strictly for non-image files even when an older call
+    // site still uses the generic save API.
+    if (_isImageFileName(fileName)) return EZPhotoGallerySave(data, fileName);
 
     // Prepend a UUID to guarantee uniqueness.
     NSString *uniqueFileName = [NSString stringWithFormat:@"%@_%@",
@@ -2834,6 +2872,15 @@ NSString * _Nullable EZAttachmentPath(NSString *savedFileName) {
         return savedFileName;
     }
     NSString *filePath = [_attachmentDirectory()
+                          stringByAppendingPathComponent:savedFileName.lastPathComponent];
+    if ([[NSFileManager defaultManager] fileExistsAtPath:filePath]) return filePath;
+    return EZPhotoGalleryPath(savedFileName);
+}
+
+NSString * _Nullable EZPhotoGalleryPath(NSString *savedFileName) {
+    if (savedFileName.length == 0) return nil;
+    if ([[NSFileManager defaultManager] fileExistsAtPath:savedFileName]) return savedFileName;
+    NSString *filePath = [EZPhotoGalleryDirectory()
                           stringByAppendingPathComponent:savedFileName.lastPathComponent];
     return [[NSFileManager defaultManager] fileExistsAtPath:filePath] ? filePath : nil;
 }

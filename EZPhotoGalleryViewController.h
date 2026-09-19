@@ -2,7 +2,7 @@
 //  EZPhotoGalleryViewController.h
 //  EZCompleteUI
 //
-//  Scrollable, pinch-to-zoom photo gallery that reads from /Documents/EZAttachments.
+//  Scrollable, pinch-to-zoom photo gallery that reads from /Documents/EZPhotoGallery.
 //  Present modally from the bottom:
 //
 //      EZPhotoGalleryViewController *vc = [EZPhotoGalleryViewController new];

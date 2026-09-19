@@ -312,3 +312,11 @@
 "EZGallery.EditWithAI" = "使用 AI 编辑";
 "EZGallery.UseInVideoGame" = "在电子游戏中使用";
 "EZGallery.EditPromptPlaceholder" = "描述你的编辑需求…";
+"EZGallery.Export.Title" = "导出图片";
+"EZGallery.Export.Subtitle" = "选择分享方式。";
+"EZGallery.Export.GIFReveal" = "GIF：展示原图";
+"EZGallery.Export.GIFMotion" = "GIF：动态过渡";
+"EZGallery.Export.ShareOriginal" = "分享品牌图 + 原图";
+"EZGallery.Export.ShareClean" = "分享品牌图片";
+"EZGallery.Export.Download" = "下载图片";
+"EZGallery.Export.Cancel" = "取消";

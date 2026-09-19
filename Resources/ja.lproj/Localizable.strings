@@ -312,3 +312,11 @@
 "EZGallery.EditWithAI" = "AIで編集";
 "EZGallery.UseInVideoGame" = "ゲームで使用";
 "EZGallery.EditPromptPlaceholder" = "編集内容を説明…";
+"EZGallery.Export.Title" = "画像を書き出す";
+"EZGallery.Export.Subtitle" = "共有方法を選択してください。";
+"EZGallery.Export.GIFReveal" = "GIF：元画像を表示";
+"EZGallery.Export.GIFMotion" = "GIF：モーション切り替え";
+"EZGallery.Export.ShareOriginal" = "ブランド付き + 元画像を共有";
+"EZGallery.Export.ShareClean" = "ブランド付き画像を共有";
+"EZGallery.Export.Download" = "画像をダウンロード";
+"EZGallery.Export.Cancel" = "キャンセル";

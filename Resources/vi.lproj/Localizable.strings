@@ -312,3 +312,11 @@
 "EZGallery.EditWithAI" = "Chỉnh sửa bằng AI";
 "EZGallery.UseInVideoGame" = "Dùng trong trò chơi điện tử";
 "EZGallery.EditPromptPlaceholder" = "Mô tả các chỉnh sửa của bạn…";
+"EZGallery.Export.Title" = "Xuất ảnh";
+"EZGallery.Export.Subtitle" = "Chọn cách bạn muốn chia sẻ.";
+"EZGallery.Export.GIFReveal" = "GIF: Hiện ảnh gốc";
+"EZGallery.Export.GIFMotion" = "GIF: Chuyển cảnh chuyển động";
+"EZGallery.Export.ShareOriginal" = "Chia sẻ có thương hiệu + ảnh gốc";
+"EZGallery.Export.ShareClean" = "Chia sẻ ảnh có thương hiệu";
+"EZGallery.Export.Download" = "Tải ảnh xuống";
+"EZGallery.Export.Cancel" = "Hủy";

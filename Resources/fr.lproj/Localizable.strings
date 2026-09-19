@@ -334,3 +334,11 @@
 "EZGallery.EditWithAI" = "Modifier avec l’IA";
 "EZGallery.UseInVideoGame" = "Utiliser dans un jeu vidéo";
 "EZGallery.EditPromptPlaceholder" = "Décrivez vos modifications…";
+"EZGallery.Export.Title" = "Exporter l’image";
+"EZGallery.Export.Subtitle" = "Choisissez comment la partager.";
+"EZGallery.Export.GIFReveal" = "GIF : révélation de l’original";
+"EZGallery.Export.GIFMotion" = "GIF : transition animée";
+"EZGallery.Export.ShareOriginal" = "Partager avec marque + original";
+"EZGallery.Export.ShareClean" = "Partager l’image avec marque";
+"EZGallery.Export.Download" = "Télécharger l’image";
+"EZGallery.Export.Cancel" = "Annuler";

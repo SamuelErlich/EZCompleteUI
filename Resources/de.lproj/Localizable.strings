@@ -312,3 +312,11 @@
 "EZGallery.EditWithAI" = "Mit KI bearbeiten";
 "EZGallery.UseInVideoGame" = "In Videospiel verwenden";
 "EZGallery.EditPromptPlaceholder" = "Beschreibe deine Änderungen…";
+"EZGallery.Export.Title" = "Bild exportieren";
+"EZGallery.Export.Subtitle" = "Wähle, wie du es teilen möchtest.";
+"EZGallery.Export.GIFReveal" = "GIF: Original enthüllen";
+"EZGallery.Export.GIFMotion" = "GIF: Bewegungsübergang";
+"EZGallery.Export.ShareOriginal" = "Gebrandet + Original teilen";
+"EZGallery.Export.ShareClean" = "Gebrandetes Bild teilen";
+"EZGallery.Export.Download" = "Bild herunterladen";
+"EZGallery.Export.Cancel" = "Abbrechen";

@@ -312,3 +312,11 @@
 "EZGallery.EditWithAI" = "AI से संपादित करें";
 "EZGallery.UseInVideoGame" = "वीडियो गेम में उपयोग करें";
 "EZGallery.EditPromptPlaceholder" = "अपने बदलावों का वर्णन करें…";
+"EZGallery.Export.Title" = "इमेज निर्यात करें";
+"EZGallery.Export.Subtitle" = "चुनें कि आप इसे कैसे साझा करना चाहते हैं।";
+"EZGallery.Export.GIFReveal" = "GIF: मूल दिखाएं";
+"EZGallery.Export.GIFMotion" = "GIF: गतिशील संक्रमण";
+"EZGallery.Export.ShareOriginal" = "ब्रांडेड + मूल साझा करें";
+"EZGallery.Export.ShareClean" = "ब्रांडेड इमेज साझा करें";
+"EZGallery.Export.Download" = "इमेज डाउनलोड करें";
+"EZGallery.Export.Cancel" = "रद्द करें";

@@ -312,3 +312,11 @@
 "EZGallery.EditWithAI" = "تعديل بالذكاء الاصطناعي";
 "EZGallery.UseInVideoGame" = "استخدم في لعبة فيديو";
 "EZGallery.EditPromptPlaceholder" = "صف تعديلاتك…";
+"EZGallery.Export.Title" = "تصدير الصورة";
+"EZGallery.Export.Subtitle" = "اختر كيفية مشاركتها.";
+"EZGallery.Export.GIFReveal" = "GIF: إظهار الأصل";
+"EZGallery.Export.GIFMotion" = "GIF: انتقال متحرك";
+"EZGallery.Export.ShareOriginal" = "مشاركة بعلامة + الأصل";
+"EZGallery.Export.ShareClean" = "مشاركة صورة بعلامة";
+"EZGallery.Export.Download" = "تنزيل الصورة";
+"EZGallery.Export.Cancel" = "إلغاء";

@@ -2,13 +2,14 @@
 //  EZPhotoGalleryViewController.m
 //  EZCompleteUI
 //
-//  Dark, polished photo gallery. Reads images from /Documents/EZAttachments.
+//  Dark, polished photo gallery. Reads images from /Documents/EZPhotoGallery.
 //  Pinch gesture cycles the grid between 2 – 5 columns.
 //  Tap → full-screen detail sheet with action buttons.
 
 #import "EZPhotoGalleryViewController.h"
 #import "BrainRotViewController.h"
 #import "EZAuthManager.h"
+#import "EZEntitlementManager.h"
 #import "EZSupabaseConfig.h"
 #import "helpers.h"
 #import <SafariServices/SafariServices.h>
@@ -25,12 +26,251 @@ NSNotificationName const EZEditImageInChat   = @"EZEditImageInChat";
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 static NSString *const kGalleryCellID   = @"EZGalleryCell";
-static NSString *const kAttachmentsDir  = @"EZAttachments";
+static NSString *const kPhotoGalleryDir = @"EZPhotoGallery";
+static NSString *const kLegacyAttachmentsDir = @"EZAttachments";
 static CGFloat   const kCellSpacing     = 3.0;
 static NSInteger const kMinColumns      = 2;
 static NSInteger const kMaxColumns      = 5;
 static NSInteger const kDefaultColumns  = 3;
 static NSString *const kGalleryImagePromptsKey = @"EZGalleryImagePrompts";
+
+typedef NS_ENUM(NSInteger, EZShareGIFStyle) {
+    EZShareGIFStyleOriginalReveal = 0,
+    EZShareGIFStyleMotionTransition,
+};
+
+// Supplying a naked file URL lets some activity extensions infer a static
+// image from its first frame. This item source explicitly advertises animated
+// GIF data so Messages, Mail, Files, and share extensions preserve the loop.
+@interface EZGIFActivityItemSource : NSObject <UIActivityItemSource>
+@property (nonatomic, strong) NSData *gifData;
+- (instancetype)initWithGIFData:(NSData *)gifData;
+@end
+
+@implementation EZGIFActivityItemSource
+- (instancetype)initWithGIFData:(NSData *)gifData {
+    self = [super init];
+    if (self) _gifData = gifData;
+    return self;
+}
+- (id)activityViewControllerPlaceholderItem:(UIActivityViewController *)activityViewController {
+    return _gifData ?: [NSData data];
+}
+- (id)activityViewController:(UIActivityViewController *)activityViewController
+ itemForActivityType:(UIActivityType)activityType {
+    return _gifData;
+}
+- (NSString *)activityViewController:(UIActivityViewController *)activityViewController
+ dataTypeIdentifierForActivityType:(UIActivityType)activityType {
+    return @"com.compuserve.gif";
+}
+- (NSString *)activityViewController:(UIActivityViewController *)activityViewController
+ attachmentNameForActivityType:(UIActivityType)activityType {
+    return @"EZCompleteUI-animation.gif";
+}
+- (NSString *)activityViewController:(UIActivityViewController *)activityViewController
+             subjectForActivityType:(UIActivityType)activityType {
+    return @"EZCompleteUI";
+}
+@end
+
+static CGRect EZAspectFillRect(CGSize imageSize, CGRect bounds) {
+    if (imageSize.width <= 0 || imageSize.height <= 0) return bounds;
+    CGFloat scale = MAX(bounds.size.width / imageSize.width, bounds.size.height / imageSize.height);
+    CGSize size = CGSizeMake(imageSize.width * scale, imageSize.height * scale);
+    return CGRectMake(CGRectGetMidX(bounds) - size.width / 2.0,
+                      CGRectGetMidY(bounds) - size.height / 2.0, size.width, size.height);
+}
+
+static CGRect EZAspectFitRect(CGSize imageSize, CGRect bounds) {
+    if (imageSize.width <= 0 || imageSize.height <= 0) return bounds;
+    CGFloat scale = MIN(bounds.size.width / imageSize.width, bounds.size.height / imageSize.height);
+    CGSize size = CGSizeMake(imageSize.width * scale, imageSize.height * scale);
+    return CGRectMake(CGRectGetMidX(bounds) - size.width / 2.0,
+                      CGRectGetMidY(bounds) - size.height / 2.0,
+                      size.width, size.height);
+}
+
+// Shared by the gallery + button and the detail editor's reference-image +.
+// This intentionally mirrors the coin-store upsell card rather than falling
+// back to a plain system action sheet.
+static void EZPresentPhotoSourcePicker(UIViewController *presenter,
+                                       void (^openPhotos)(void),
+                                       void (^openFiles)(void)) {
+    UIView *overlay = [[UIView alloc] initWithFrame:presenter.view.bounds];
+    overlay.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    overlay.backgroundColor = [UIColor colorWithWhite:0 alpha:0.72];
+    overlay.alpha = 0;
+    [presenter.view addSubview:overlay];
+
+    CGFloat cardWidth = MIN(340.0, presenter.view.bounds.size.width - 36.0);
+    UIView *card = [[UIView alloc] initWithFrame:CGRectMake(0, 0, cardWidth, 354.0)];
+    card.center = CGPointMake(CGRectGetMidX(presenter.view.bounds), CGRectGetMidY(presenter.view.bounds));
+    card.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleRightMargin |
+                            UIViewAutoresizingFlexibleTopMargin | UIViewAutoresizingFlexibleBottomMargin;
+    card.backgroundColor = [UIColor colorWithRed:0.055 green:0.06 blue:0.13 alpha:1.0];
+    card.layer.cornerRadius = 24.0;
+    card.layer.borderWidth = 1.5;
+    card.layer.borderColor = [[UIColor colorWithRed:0.05 green:0.92 blue:0.72 alpha:0.65] CGColor];
+    card.transform = CGAffineTransformMakeScale(0.82, 0.82);
+    [overlay addSubview:card];
+
+    UILabel *title = [[UILabel alloc] initWithFrame:CGRectMake(20, 25, cardWidth - 40, 30)];
+    title.text = @"Add to Photo Gallery";
+    title.textAlignment = NSTextAlignmentCenter;
+    title.font = [UIFont systemFontOfSize:21 weight:UIFontWeightBold];
+    title.textColor = [UIColor colorWithRed:0.05 green:0.92 blue:0.72 alpha:1.0];
+    [card addSubview:title];
+
+    UILabel *subtitle = [[UILabel alloc] initWithFrame:CGRectMake(24, 58, cardWidth - 48, 38)];
+    subtitle.text = @"Choose a source for photos and image references.";
+    subtitle.numberOfLines = 2;
+    subtitle.textAlignment = NSTextAlignmentCenter;
+    subtitle.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
+    subtitle.textColor = [UIColor colorWithWhite:0.72 alpha:1.0];
+    [card addSubview:subtitle];
+
+    void (^dismissThen)(void (^)(void)) = ^(void (^completion)(void)) {
+        [UIView animateWithDuration:0.20 animations:^{
+            overlay.alpha = 0;
+            card.transform = CGAffineTransformMakeScale(0.90, 0.90);
+        } completion:^(BOOL finished) {
+            [overlay removeFromSuperview];
+            if (completion) completion();
+        }];
+    };
+    void (^addSourceButton)(NSString *, NSString *, NSString *, UIColor *, CGFloat, void (^)(void)) =
+    ^(NSString *titleText, NSString *detailText, NSString *symbol, UIColor *accent, CGFloat y, void (^handler)(void)) {
+        UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
+        button.frame = CGRectMake(22, y, cardWidth - 44, 72);
+        button.backgroundColor = [accent colorWithAlphaComponent:0.16];
+        button.layer.cornerRadius = 16.0;
+        button.layer.borderWidth = 1.0;
+        button.layer.borderColor = [accent colorWithAlphaComponent:0.48].CGColor;
+        button.tintColor = accent;
+        UIImageSymbolConfiguration *cfg = [UIImageSymbolConfiguration configurationWithPointSize:23 weight:UIImageSymbolWeightSemibold];
+        [button setImage:[UIImage systemImageNamed:symbol withConfiguration:cfg] forState:UIControlStateNormal];
+        button.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeft;
+        button.contentEdgeInsets = UIEdgeInsetsMake(0, 18, 0, 0);
+        [button addAction:[UIAction actionWithHandler:^(__kindof UIAction *action) {
+            dismissThen(handler);
+        }] forControlEvents:UIControlEventTouchUpInside];
+        [card addSubview:button];
+
+        UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(64, 12, button.bounds.size.width - 80, 24)];
+        label.text = titleText;
+        label.font = [UIFont systemFontOfSize:16 weight:UIFontWeightBold];
+        label.textColor = [UIColor whiteColor];
+        label.userInteractionEnabled = NO;
+        [button addSubview:label];
+        UILabel *detail = [[UILabel alloc] initWithFrame:CGRectMake(64, 37, button.bounds.size.width - 80, 20)];
+        detail.text = detailText;
+        detail.font = [UIFont systemFontOfSize:12 weight:UIFontWeightMedium];
+        detail.textColor = [UIColor colorWithWhite:0.70 alpha:1.0];
+        detail.userInteractionEnabled = NO;
+        [button addSubview:detail];
+    };
+    addSourceButton(@"Photo Library", @"Photos, albums, and recent captures", @"photo.on.rectangle.angled",
+                    [UIColor colorWithRed:0.05 green:0.92 blue:0.72 alpha:1.0], 112.0, openPhotos);
+    addSourceButton(@"Files & Cloud Providers", @"Files, Dropbox, Google Drive, Box, and more", @"folder.fill",
+                    [UIColor colorWithRed:0.47 green:0.52 blue:1.0 alpha:1.0], 193.0, openFiles);
+
+    UIButton *cancel = [UIButton buttonWithType:UIButtonTypeSystem];
+    cancel.frame = CGRectMake(40, 282, cardWidth - 80, 42);
+    [cancel setTitle:@"Cancel" forState:UIControlStateNormal];
+    [cancel setTitleColor:[UIColor colorWithWhite:0.75 alpha:1.0] forState:UIControlStateNormal];
+    cancel.titleLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightSemibold];
+    [cancel addAction:[UIAction actionWithHandler:^(__kindof UIAction *action) {
+        dismissThen(nil);
+    }] forControlEvents:UIControlEventTouchUpInside];
+    [card addSubview:cancel];
+
+    [UIView animateWithDuration:0.36 delay:0 usingSpringWithDamping:0.76 initialSpringVelocity:0.45
+                        options:UIViewAnimationOptionCurveEaseOut animations:^{
+        overlay.alpha = 1;
+        card.transform = CGAffineTransformIdentity;
+    } completion:nil];
+}
+
+static void EZPresentPhotoExportPicker(UIViewController *presenter, BOOL hasEdit,
+                                       void (^revealGIF)(void), void (^motionGIF)(void),
+                                       void (^shareWithOriginal)(void), void (^shareClean)(void),
+                                       void (^download)(void)) {
+    UIView *overlay = [[UIView alloc] initWithFrame:presenter.view.bounds];
+    overlay.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    overlay.backgroundColor = [UIColor colorWithWhite:0 alpha:0.72];
+    overlay.alpha = 0;
+    [presenter.view addSubview:overlay];
+
+    NSArray<NSDictionary *> *options = hasEdit ? @[
+        @{@"title": NSLocalizedString(@"EZGallery.Export.GIFReveal", nil), @"icon": @"rectangle.inset.filled.and.person.filled", @"color": [UIColor systemPurpleColor], @"action": revealGIF ?: ^{}},
+        @{@"title": NSLocalizedString(@"EZGallery.Export.GIFMotion", nil), @"icon": @"sparkles.rectangle.stack", @"color": [UIColor systemIndigoColor], @"action": motionGIF ?: ^{}},
+        @{@"title": NSLocalizedString(@"EZGallery.Export.ShareOriginal", nil), @"icon": @"rectangle.inset.filled", @"color": [UIColor colorWithRed:0.05 green:0.92 blue:0.72 alpha:1.0], @"action": shareWithOriginal ?: ^{}},
+        @{@"title": NSLocalizedString(@"EZGallery.Export.ShareClean", nil), @"icon": @"square.and.arrow.up", @"color": [UIColor systemTealColor], @"action": shareClean ?: ^{}},
+        @{@"title": NSLocalizedString(@"EZGallery.Export.Download", nil), @"icon": @"arrow.down.to.line", @"color": [UIColor systemOrangeColor], @"action": download ?: ^{}},
+    ] : @[
+        @{@"title": NSLocalizedString(@"EZGallery.Export.ShareClean", nil), @"icon": @"square.and.arrow.up", @"color": [UIColor systemTealColor], @"action": shareClean ?: ^{}},
+        @{@"title": NSLocalizedString(@"EZGallery.Export.Download", nil), @"icon": @"arrow.down.to.line", @"color": [UIColor systemOrangeColor], @"action": download ?: ^{}},
+    ];
+    CGFloat cardWidth = MIN(350.0, presenter.view.bounds.size.width - 36.0);
+    CGFloat cardHeight = 129.0 + options.count * 51.0;
+    UIView *card = [[UIView alloc] initWithFrame:CGRectMake(0, 0, cardWidth, cardHeight)];
+    card.center = CGPointMake(CGRectGetMidX(presenter.view.bounds), CGRectGetMidY(presenter.view.bounds));
+    card.backgroundColor = [UIColor colorWithRed:0.055 green:0.06 blue:0.13 alpha:1.0];
+    card.layer.cornerRadius = 24.0;
+    card.layer.borderWidth = 1.5;
+    card.layer.borderColor = [[UIColor colorWithRed:0.05 green:0.92 blue:0.72 alpha:0.65] CGColor];
+    card.transform = CGAffineTransformMakeScale(0.82, 0.82);
+    [overlay addSubview:card];
+    UILabel *title = [[UILabel alloc] initWithFrame:CGRectMake(20, 22, cardWidth - 40, 28)];
+    title.text = NSLocalizedString(@"EZGallery.Export.Title", nil);
+    title.textAlignment = NSTextAlignmentCenter;
+    title.font = [UIFont systemFontOfSize:20 weight:UIFontWeightBold];
+    title.textColor = [UIColor colorWithRed:0.05 green:0.92 blue:0.72 alpha:1.0];
+    [card addSubview:title];
+    UILabel *subtitle = [[UILabel alloc] initWithFrame:CGRectMake(24, 51, cardWidth - 48, 22)];
+    subtitle.text = NSLocalizedString(@"EZGallery.Export.Subtitle", nil);
+    subtitle.textAlignment = NSTextAlignmentCenter;
+    subtitle.font = [UIFont systemFontOfSize:12 weight:UIFontWeightMedium];
+    subtitle.textColor = [UIColor colorWithWhite:0.70 alpha:1.0];
+    [card addSubview:subtitle];
+    void (^dismissThen)(void (^)(void)) = ^(void (^completion)(void)) {
+        [UIView animateWithDuration:0.20 animations:^{ overlay.alpha = 0; card.transform = CGAffineTransformMakeScale(0.90, 0.90); }
+                         completion:^(BOOL finished) { [overlay removeFromSuperview]; if (completion) completion(); }];
+    };
+    CGFloat y = 83.0;
+    for (NSDictionary *option in options) {
+        UIColor *color = option[@"color"];
+        UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
+        button.frame = CGRectMake(20, y, cardWidth - 40, 43);
+        button.backgroundColor = [color colorWithAlphaComponent:0.16];
+        button.layer.cornerRadius = 13.0;
+        button.layer.borderWidth = 1.0;
+        button.layer.borderColor = [color colorWithAlphaComponent:0.45].CGColor;
+        button.tintColor = color;
+        button.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeft;
+        button.contentEdgeInsets = UIEdgeInsetsMake(0, 14, 0, 0);
+        [button setImage:[UIImage systemImageNamed:option[@"icon"]] forState:UIControlStateNormal];
+        [button setTitle:[@"  " stringByAppendingString:option[@"title"]] forState:UIControlStateNormal];
+        [button setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+        button.titleLabel.font = [UIFont systemFontOfSize:14 weight:UIFontWeightBold];
+        void (^action)(void) = option[@"action"];
+        [button addAction:[UIAction actionWithHandler:^(__kindof UIAction *actionControl) { dismissThen(action); }]
+      forControlEvents:UIControlEventTouchUpInside];
+        [card addSubview:button];
+        y += 51.0;
+    }
+    UIButton *cancel = [UIButton buttonWithType:UIButtonTypeSystem];
+    cancel.frame = CGRectMake(40, cardHeight - 48, cardWidth - 80, 34);
+    [cancel setTitle:NSLocalizedString(@"EZGallery.Export.Cancel", nil) forState:UIControlStateNormal];
+    [cancel setTitleColor:[UIColor colorWithWhite:0.75 alpha:1.0] forState:UIControlStateNormal];
+    cancel.titleLabel.font = [UIFont systemFontOfSize:14 weight:UIFontWeightSemibold];
+    [cancel addAction:[UIAction actionWithHandler:^(__kindof UIAction *action) { dismissThen(nil); }]
+  forControlEvents:UIControlEventTouchUpInside];
+    [card addSubview:cancel];
+    [UIView animateWithDuration:0.36 delay:0 usingSpringWithDamping:0.76 initialSpringVelocity:0.45 options:0
+                     animations:^{ overlay.alpha = 1; card.transform = CGAffineTransformIdentity; } completion:nil];
+}
 
 static NSString *EZGalleryPromptForPath(NSString *path) {
     NSDictionary *prompts = [[NSUserDefaults standardUserDefaults]
@@ -133,10 +373,11 @@ static NSString *EZGalleryPromptForPath(NSString *path) {
 @property (nonatomic, copy)   void (^onDeleted)(void);
 @end
 
-@interface EZPhotoDetailViewController () <UITextFieldDelegate, PHPickerViewControllerDelegate,
+@interface EZPhotoDetailViewController () <UITextViewDelegate, PHPickerViewControllerDelegate, UIDocumentPickerDelegate,
                                             UIContextMenuInteractionDelegate>
 - (void)setupImageEditingControls;
 - (void)layoutImageEditingControls;
+- (CGFloat)editPromptHeight;
 - (void)layoutProcessingOverlay;
 - (void)layoutImagePresentation;
 - (void)keyboardWillChange:(NSNotification *)notification;
@@ -155,7 +396,14 @@ static NSString *EZGalleryPromptForPath(NSString *path) {
 - (void)showImageEditError:(NSString *)message;
 - (UIImage *)shareImageWithBranding;
 - (UIImage *)shareImageWithBrandingForImage:(UIImage *)image showOriginalCard:(BOOL)showOriginalCard;
-- (NSURL *)animatedShareGIFURL;
+- (CGRect)originalCardRectInImageArea:(CGRect)imageArea border:(CGFloat)border;
+- (NSURL *)animatedShareGIFURLWithStyle:(EZShareGIFStyle)style;
+- (UIImage *)originalRevealFrameForProgress:(CGFloat)progress;
+- (UIImage *)motionTransitionFrameFrom:(UIImage *)before to:(UIImage *)after progress:(CGFloat)progress;
+- (UIMenu *)shareMenu;
+- (void)shareBrandedImage;
+- (void)shareBrandedImageWithOriginalCard:(BOOL)showOriginalCard;
+- (void)shareGIFWithStyle:(EZShareGIFStyle)style;
 - (void)downloadTapped;
 - (void)showPhotoAtGalleryIndex:(NSUInteger)index animated:(BOOL)animated;
 @end
@@ -165,6 +413,9 @@ static NSString *EZGalleryPromptForPath(NSString *path) {
     UIView             *_imageCanvas;
     UIImageView       *_imageView;
     UIImage           *_originalImageForShare;
+    // The asset selected when the edit began. It must never be reassigned or
+    // removed as a side effect of creating a generated result.
+    NSString          *_editSourceFilePath;
     NSMutableArray<UIImageView *> *_imageGridViews;
     NSMutableArray<UIImage *> *_editSourceImages;
     NSMutableArray<NSString *> *_editSourcePaths;
@@ -178,7 +429,8 @@ static NSString *EZGalleryPromptForPath(NSString *path) {
     UILabel           *_filenameLabel;
 
     // EZPhotoAIEditorPatchInstalled
-    UITextField       *_editPromptField;
+    UITextView        *_editPromptField;
+    UILabel           *_editPromptPlaceholderLabel;
     UIButton          *_addImageButton;
     UILabel           *_sourceCountLabel;
     UIButton          *_sendEditButton;
@@ -195,6 +447,8 @@ static NSString *EZGalleryPromptForPath(NSString *path) {
     BOOL               _hasEditedImage;
     NSUInteger         _galleryIndex;
     BOOL               _isRetryingImageEdit;
+    BOOL               _imageEditUsageAuthorized;
+    BOOL               _imageEditUsageLogPending;
     BOOL               _lastImageEditFailureWasTransient;
     NSInteger          _imageEditRetryCount;
     NSInteger          _imageEditStatusPhase;
@@ -208,7 +462,10 @@ static NSString *EZGalleryPromptForPath(NSString *path) {
     _editSourceImages = [NSMutableArray arrayWithObject:self.image];
     _originalImageForShare = self.image;
     _editSourcePaths = [NSMutableArray array];
-    if (self.filePath.length) [_editSourcePaths addObject:self.filePath];
+    if (self.filePath.length) {
+        [_editSourcePaths addObject:self.filePath];
+        _editSourceFilePath = [self.filePath copy];
+    }
 
     [self setupScrollView];
     [self setupToolbar];
@@ -253,7 +510,6 @@ static NSString *EZGalleryPromptForPath(NSString *path) {
     _shareButton = [self makeIconButton:@"square.and.arrow.up" color:[UIColor colorWithWhite:0.75 alpha:1]];
     _shareButton.frame = CGRectMake(0, 0, 36, 36);
     [_shareButton addTarget:self action:@selector(shareTapped) forControlEvents:UIControlEventTouchUpInside];
-    [_shareButton addInteraction:[[UIContextMenuInteraction alloc] initWithDelegate:self]];
     _deleteButton = [self makeIconButton:@"trash" color:[UIColor systemRedColor]];
     _deleteButton.frame = CGRectMake(0, 0, 36, 36);
     [_deleteButton addTarget:self action:@selector(deleteTapped) forControlEvents:UIControlEventTouchUpInside];
@@ -326,7 +582,7 @@ static NSString *EZGalleryPromptForPath(NSString *path) {
 - (void)viewDidLayoutSubviews {
     [super viewDidLayoutSubviews];
 
-    CGFloat toolbarH = 184 + self.view.safeAreaInsets.bottom;
+    CGFloat toolbarH = 184 + ([self editPromptHeight] - 56.0) + self.view.safeAreaInsets.bottom;
     CGFloat availableHeight = self.view.bounds.size.height - _keyboardOverlap;
     CGFloat imageAreaH = MAX(0.0, availableHeight - toolbarH);
 
@@ -464,21 +720,26 @@ static NSString *EZGalleryPromptForPath(NSString *path) {
     promptContainer.clipsToBounds = YES;
     [_toolbar.contentView addSubview:promptContainer];
 
-    _editPromptField = [[UITextField alloc] init];
-    _editPromptField.placeholder = NSLocalizedString(@"EZGallery.EditPromptPlaceholder", nil);
+    _editPromptField = [[UITextView alloc] init];
+    _editPromptField.backgroundColor = [UIColor clearColor];
     _editPromptField.textColor = [UIColor whiteColor];
     _editPromptField.tintColor = [UIColor colorWithRed:0.05 green:0.92 blue:0.72 alpha:1.0];
     _editPromptField.font = [UIFont systemFontOfSize:16 weight:UIFontWeightMedium];
-    _editPromptField.clearButtonMode = UITextFieldViewModeWhileEditing;
-    _editPromptField.returnKeyType = UIReturnKeySend;
-    _editPromptField.enablesReturnKeyAutomatically = YES;
-    _editPromptField.delegate = (id<UITextFieldDelegate>)self;
-    _editPromptField.attributedPlaceholder = [[NSAttributedString alloc]
-        initWithString:NSLocalizedString(@"EZGallery.EditPromptPlaceholder", nil)
-            attributes:@{
-                NSForegroundColorAttributeName: [UIColor colorWithWhite:0.72 alpha:0.70]
-            }];
+    _editPromptField.returnKeyType = UIReturnKeyDefault;
+    _editPromptField.delegate = (id<UITextViewDelegate>)self;
+    _editPromptField.textContainerInset = UIEdgeInsetsMake(8, 0, 8, 0);
+    _editPromptField.textContainer.lineFragmentPadding = 0;
+    _editPromptField.showsVerticalScrollIndicator = YES;
+    _editPromptField.alwaysBounceVertical = NO;
     [promptContainer addSubview:_editPromptField];
+
+    _editPromptPlaceholderLabel = [[UILabel alloc] init];
+    _editPromptPlaceholderLabel.text = NSLocalizedString(@"EZGallery.EditPromptPlaceholder", nil);
+    _editPromptPlaceholderLabel.textColor = [UIColor colorWithWhite:0.72 alpha:0.70];
+    _editPromptPlaceholderLabel.font = _editPromptField.font;
+    _editPromptPlaceholderLabel.numberOfLines = 0;
+    _editPromptPlaceholderLabel.userInteractionEnabled = NO;
+    [promptContainer addSubview:_editPromptPlaceholderLabel];
 
     _addImageButton = [UIButton buttonWithType:UIButtonTypeSystem];
     _addImageButton.tintColor = [UIColor colorWithRed:0.05 green:0.92 blue:0.72 alpha:1.0];
@@ -540,12 +801,12 @@ static NSString *EZGalleryPromptForPath(NSString *path) {
 
     CGFloat pad = 16.0;
     CGFloat y = 14.0;
-    CGFloat fieldHeight = 56.0;
+    CGFloat fieldHeight = [self editPromptHeight];
     CGFloat sendSize = 56.0;
     CGFloat width = _toolbar.contentView.bounds.size.width;
     if (width <= 0) width = self.view.bounds.size.width;
 
-    _sendEditButton.frame = CGRectMake(width - pad - sendSize, y, sendSize, sendSize);
+    _sendEditButton.frame = CGRectMake(width - pad - sendSize, y + (fieldHeight - sendSize) / 2.0, sendSize, sendSize);
     _editSpinner.center = CGPointMake(CGRectGetMidX(_sendEditButton.bounds),
                                       CGRectGetMidY(_sendEditButton.bounds));
 
@@ -559,24 +820,47 @@ static NSString *EZGalleryPromptForPath(NSString *path) {
     _editPromptField.frame = CGRectMake(54.0, 0.0,
                                         MAX(0.0, CGRectGetWidth(promptContainer.bounds) - 70.0),
                                         CGRectGetHeight(promptContainer.bounds));
-    _editErrorLabel.frame = CGRectMake(pad, 72.0, width - pad * 2.0, 14.0);
+    _editPromptPlaceholderLabel.frame = CGRectMake(54.0, 8.0,
+        MAX(0.0, CGRectGetWidth(promptContainer.bounds) - 70.0), fieldHeight - 16.0);
+    _editPromptPlaceholderLabel.hidden = _editPromptField.text.length > 0;
+    _editErrorLabel.frame = CGRectMake(pad, y + fieldHeight + 2.0, width - pad * 2.0, 14.0);
 }
 
-- (BOOL)textFieldShouldReturn:(UITextField *)textField {
-    [self sendImageEditTapped];
-    return NO;
+- (CGFloat)editPromptHeight {
+    CGFloat width = MAX(120.0, self.view.bounds.size.width - 16.0 * 2.0 - 56.0 - 10.0 - 54.0 - 16.0);
+    CGSize measured = [_editPromptField sizeThatFits:CGSizeMake(width, CGFLOAT_MAX)];
+    // Start compact, grow up to five lines, then let the editor scroll so no
+    // prompt becomes inaccessible while typing.
+    return MIN(128.0, MAX(56.0, ceil(measured.height)));
+}
+
+- (void)textViewDidChange:(UITextView *)textView {
+    _editPromptPlaceholderLabel.hidden = textView.text.length > 0;
+    [self.view setNeedsLayout];
 }
 
 - (void)addEditImageTapped {
     if (_isEditingImage || _editSourceImages.count >= 3) return;
-
-    PHPickerConfiguration *configuration = [[PHPickerConfiguration alloc] init];
-    configuration.filter = [PHPickerFilter imagesFilter];
-    configuration.selectionLimit = 3 - _editSourceImages.count;
-    PHPickerViewController *picker = [[PHPickerViewController alloc]
-        initWithConfiguration:configuration];
-    picker.delegate = self;
-    [self presentViewController:picker animated:YES completion:nil];
+    __weak typeof(self) weakSelf = self;
+    EZPresentPhotoSourcePicker(self, ^{
+        typeof(self) self = weakSelf;
+        if (!self) return;
+        PHPickerConfiguration *configuration = [[PHPickerConfiguration alloc] init];
+        configuration.filter = [PHPickerFilter imagesFilter];
+        configuration.selectionLimit = 3 - self->_editSourceImages.count;
+        PHPickerViewController *picker = [[PHPickerViewController alloc]
+            initWithConfiguration:configuration];
+        picker.delegate = self;
+        [self presentViewController:picker animated:YES completion:nil];
+    }, ^{
+        typeof(self) self = weakSelf;
+        if (!self) return;
+        UIDocumentPickerViewController *picker = [[UIDocumentPickerViewController alloc]
+            initForOpeningContentTypes:@[UTTypeImage] asCopy:YES];
+        picker.delegate = self;
+        picker.allowsMultipleSelection = YES;
+        [self presentViewController:picker animated:YES completion:nil];
+    });
 }
 
 - (void)picker:(PHPickerViewController *)picker
@@ -615,6 +899,18 @@ didFinishPicking:(NSArray<PHPickerResult *> *)results {
                     completion:nil];
 }
 
+- (void)documentPicker:(UIDocumentPickerViewController *)controller
+didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
+    for (NSURL *url in urls) {
+        if (_editSourceImages.count >= 3) break;
+        BOOL accessed = [url startAccessingSecurityScopedResource];
+        NSData *data = [NSData dataWithContentsOfURL:url];
+        if (accessed) [url stopAccessingSecurityScopedResource];
+        UIImage *image = [UIImage imageWithData:data];
+        if (image) [self addPickedEditImage:image];
+    }
+}
+
 - (void)editTapped {
     [_editPromptField becomeFirstResponder];
     [UIView animateWithDuration:0.20 animations:^{
@@ -641,6 +937,8 @@ didFinishPicking:(NSArray<PHPickerResult *> *)results {
     if (!_isRetryingImageEdit) {
         _imageEditRetryCount = 0;
         _lastImageEditFailureWasTransient = NO;
+        _imageEditUsageAuthorized = NO;
+        _imageEditUsageLogPending = NO;
     }
     _isRetryingImageEdit = NO;
 
@@ -662,7 +960,52 @@ didFinishPicking:(NSArray<PHPickerResult *> *)results {
         return;
     }
 
+    // This editor posts directly to ez-image, so it needs its own entitlement
+    // preflight (the chat path normally does this before calling an image API).
+    // The approved usage log is reused by automatic network retries.
+    if (!_imageEditUsageAuthorized) {
+        NSUserDefaults *billingDefaults = [NSUserDefaults standardUserDefaults];
+        NSString *billingQuality = [billingDefaults stringForKey:@"imgQuality"] ?: @"auto";
+        NSString *billingSize = [billingDefaults stringForKey:@"imgSize"] ?: @"1024x1024";
+        NSInteger billingN = [billingDefaults integerForKey:@"imgVariations"];
+        if (billingN < 1 || billingN > 4) billingN = 1;
+        EZFeature feature = [billingQuality isEqualToString:@"high"] ? EZFeatureImageHigh :
+                            [billingQuality isEqualToString:@"low"] ? EZFeatureImageLow : EZFeatureImageMedium;
+        NSInteger quantity = (NSInteger)ceil(billingN * ([billingSize isEqualToString:@"1024x1024"] ? 1.0 : 1.25));
+        [_editPromptField resignFirstResponder];
+        [self setImageEditing:YES];
+        [self startProcessingAnimation];
+        __weak typeof(self) weakSelf = self;
+        [[EZEntitlementManager shared] checkEntitlementForFeature:feature
+                                                         quantity:quantity
+                                                           prompt:prompt
+                                                            model:@"gpt-image-2.5-sunburst"
+                                                         quality:billingQuality
+                                                            size:billingSize
+                                                          isEdit:YES
+                                                       completion:^(BOOL allowed, NSInteger balance, NSString *reason) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                typeof(self) self = weakSelf;
+                if (!self || !self->_isEditingImage) return;
+                if (!allowed) {
+                    [self setImageEditing:NO];
+                    [self stopProcessingAnimationWithCompletion:nil];
+                    [self showImageEditError:reason.length ? reason : @"Image edit is not available right now."];
+                    return;
+                }
+                self->_imageEditUsageAuthorized = YES;
+                self->_imageEditUsageLogPending = YES;
+                self->_isRetryingImageEdit = YES;
+                [self sendImageEditTapped];
+            });
+        }];
+        return;
+    }
+
     [_editPromptField resignFirstResponder];
+    // Freeze the selected asset identity before the asynchronous request so a
+    // completion can only create a sibling file, never replace that source.
+    _editSourceFilePath = [self.filePath copy];
     [self setImageEditing:YES];
     [self startProcessingAnimation];
 
@@ -808,7 +1151,7 @@ didFinishPicking:(NSArray<PHPickerResult *> *)results {
 
 - (void)setImageEditing:(BOOL)editing {
     _isEditingImage = editing;
-    _editPromptField.enabled = !editing;
+    _editPromptField.editable = !editing;
     _addImageButton.enabled = !editing && _editSourceImages.count < 3;
     _sendEditButton.enabled = !editing;
     _askButton.enabled = !editing;
@@ -982,23 +1325,42 @@ didFinishPicking:(NSArray<PHPickerResult *> *)results {
     [self setImageEditing:NO];
 
     if (errorMessage.length > 0 || !editedImage) {
+        if (_imageEditUsageLogPending) {
+            [[EZEntitlementManager shared] completeUsageLogWithImagesReturned:0
+                                                                     errorText:errorMessage ?: @"Image edit returned no image."];
+            _imageEditUsageLogPending = NO;
+        }
         [self stopProcessingAnimationWithCompletion:nil];
         [self showImageEditError:errorMessage ?: @"The image edit did not return an image."];
         return;
     }
 
+    if (_imageEditUsageLogPending) {
+        [[EZEntitlementManager shared] completeUsageLogWithImagesReturned:1 errorText:nil];
+        _imageEditUsageLogPending = NO;
+    }
+
     [self stopProcessingAnimationWithCompletion:^{
-        // Never replace the selected attachment.  A gallery edit is a new
-        // asset, so the source remains recoverable even if the user deletes
-        // the result later.
+        // An edit is always a new attachment. EZAttachmentSave UUID-prefixes
+        // the filename, so this write cannot replace the source asset.
+        NSString *sourcePath = self->_editSourceFilePath ?: self.filePath;
         NSData *savedData = [self PNGDataForImage:editedImage];
         NSString *newFilePath = savedData.length
-            ? EZAttachmentSave(savedData, @"gallery_edit.png") : nil;
-        if (!newFilePath.length) {
+            ? EZPhotoGallerySave(savedData, @"gallery_edit.png") : nil;
+        if (!newFilePath.length || [newFilePath isEqualToString:sourcePath]) {
             [self showImageEditError:@"The edit completed, but could not be saved as a new gallery image."];
             return;
         }
 
+        // Keep the original in the detail controller's gallery sequence and
+        // add the generated result as its own newest item. The displayed image
+        // changes only as a preview of that new item; no source file is moved,
+        // overwritten, or deleted.
+        NSMutableArray<NSString *> *updatedPaths = [self.galleryFilePaths mutableCopy] ?: [NSMutableArray array];
+        [updatedPaths removeObject:newFilePath];
+        [updatedPaths insertObject:newFilePath atIndex:0];
+        self.galleryFilePaths = updatedPaths;
+        self->_galleryIndex = 0;
         self.image = editedImage;
         self->_hasEditedImage = YES;
         self.filePath = newFilePath;
@@ -1129,6 +1491,7 @@ didFinishPicking:(NSArray<PHPickerResult *> *)results {
         self->_galleryIndex = index;
         self.image = image;
         self.filePath = path;
+        self->_editSourceFilePath = [path copy];
         self.imagePrompt = EZGalleryPromptForPath(path);
         self->_originalImageForShare = image;
         self->_hasEditedImage = NO;
@@ -1183,10 +1546,93 @@ didFinishPicking:(NSArray<PHPickerResult *> *)results {
 }
 
 - (void)shareTapped {
-    NSURL *animatedGIFURL = [self animatedShareGIFURL];
-    id exportItem = animatedGIFURL ?: ([self shareImageWithBranding] ?: self.image);
+    __weak typeof(self) weakSelf = self;
+    EZPresentPhotoExportPicker(self, _hasEditedImage && _originalImageForShare,
+        ^{ [weakSelf shareGIFWithStyle:EZShareGIFStyleOriginalReveal]; },
+        ^{ [weakSelf shareGIFWithStyle:EZShareGIFStyleMotionTransition]; },
+        ^{ [weakSelf shareBrandedImageWithOriginalCard:YES]; },
+        ^{ [weakSelf shareBrandedImageWithOriginalCard:NO]; },
+        ^{ [weakSelf downloadTapped]; });
+}
+
+- (UIMenu *)shareMenu {
+    __weak typeof(self) weakSelf = self;
+    UIAction *brandedShare = [UIAction actionWithTitle:@"Share Branded Image"
+                                                  image:[UIImage systemImageNamed:@"square.and.arrow.up"]
+                                             identifier:nil
+                                                handler:^(__kindof UIAction *action) {
+        [weakSelf shareBrandedImageWithOriginalCard:NO];
+    }];
+    UIAction *download = [UIAction actionWithTitle:@"Download Image"
+                                              image:[UIImage systemImageNamed:@"arrow.down.to.line"]
+                                         identifier:nil
+                                            handler:^(__kindof UIAction *action) {
+        [weakSelf downloadTapped];
+    }];
+    if (!_hasEditedImage || !_originalImageForShare) {
+        return [UIMenu menuWithTitle:@"Export" children:@[brandedShare, download]];
+    }
+    UIAction *brandedShareWithOriginal =
+        [UIAction actionWithTitle:@"Share Branded + Original"
+                             image:[UIImage systemImageNamed:@"rectangle.inset.filled"]
+                        identifier:nil
+                           handler:^(__kindof UIAction *action) {
+            [weakSelf shareBrandedImageWithOriginalCard:YES];
+        }];
+    UIAction *revealGIF = [UIAction actionWithTitle:@"GIF: Original Reveal"
+                                               image:[UIImage systemImageNamed:@"rectangle.inset.filled.and.person.filled"]
+                                          identifier:nil
+                                             handler:^(__kindof UIAction *action) {
+        [weakSelf shareGIFWithStyle:EZShareGIFStyleOriginalReveal];
+    }];
+    UIAction *motionGIF = [UIAction actionWithTitle:@"GIF: Motion Transition"
+                                               image:[UIImage systemImageNamed:@"sparkles.rectangle.stack"]
+                                          identifier:nil
+                                             handler:^(__kindof UIAction *action) {
+        [weakSelf shareGIFWithStyle:EZShareGIFStyleMotionTransition];
+    }];
+    return [UIMenu menuWithTitle:@"Export" children:@[
+        revealGIF, motionGIF, brandedShareWithOriginal, brandedShare, download
+    ]];
+}
+
+- (void)shareBrandedImage {
+    [self shareBrandedImageWithOriginalCard:_hasEditedImage];
+}
+
+- (void)shareBrandedImageWithOriginalCard:(BOOL)showOriginalCard {
+    UIImage *brandedImage = [self shareImageWithBrandingForImage:self.image
+                                                  showOriginalCard:showOriginalCard];
+    id exportItem = brandedImage ?: self.image;
     UIActivityViewController *share = [[UIActivityViewController alloc]
         initWithActivityItems:@[exportItem] applicationActivities:nil];
+    share.popoverPresentationController.sourceView = _shareButton;
+    [self presentViewController:share animated:YES completion:nil];
+}
+
+- (void)shareGIFWithStyle:(EZShareGIFStyle)style {
+    NSURL *gifURL = [self animatedShareGIFURLWithStyle:style];
+    if (!gifURL) {
+        // Never quietly substitute a JPEG for a requested GIF.  A static
+        // fallback makes this look like the export worked while losing the
+        // animation.  Leave the detail view in place and expose a small,
+        // visible retry state instead.
+        EZLog(EZLogLevelError, @"GALLERY", @"GIF export could not create its .gif file.");
+        [_shareButton setImage:[UIImage systemImageNamed:@"exclamationmark.triangle"]
+                      forState:UIControlStateNormal];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{
+            [self->_shareButton setImage:[UIImage systemImageNamed:@"square.and.arrow.up"]
+                                  forState:UIControlStateNormal];
+        });
+        return;
+    }
+    // Keep the exact concrete file URL as the single activity item.  Do not
+    // decode the GIF to NSData/UIImage and do not inspect it through
+    // CGImageSource here: that validation was the source of a false negative
+    // and silently routed successful GIF requests to the branded JPEG path.
+    UIActivityViewController *share = [[UIActivityViewController alloc]
+        initWithActivityItems:@[gifURL] applicationActivities:nil];
     share.popoverPresentationController.sourceView = _shareButton;
     [self presentViewController:share animated:YES completion:nil];
 }
@@ -1202,13 +1648,15 @@ didFinishPicking:(NSArray<PHPickerResult *> *)results {
                                             handler:^(__kindof UIAction *action) {
             [self downloadTapped];
         }];
-        return [UIMenu menuWithTitle:@"" children:@[save]];
+        UIMenu *menu = [self shareMenu];
+        return [UIMenu menuWithTitle:menu.title children:[menu.children arrayByAddingObject:save]];
     }];
 }
 
-// Builds a lightweight, looping before/after GIF for edited images.  It uses
-// a capped canvas so opening the share sheet remains responsive on large photos.
-- (NSURL *)animatedShareGIFURL {
+// Builds a lightweight, looping GIF for edited images. Both choices retain the
+// prompt/branding; the reveal version ends with the original as a lower-right
+// card, while the motion version creates a gentle camera-like transition.
+- (NSURL *)animatedShareGIFURLWithStyle:(EZShareGIFStyle)style {
     if (!_hasEditedImage || !_originalImageForShare || !self.image) return nil;
     UIImage *before = [self shareImageWithBrandingForImage:_originalImageForShare showOriginalCard:NO];
     UIImage *after = [self shareImageWithBranding];
@@ -1220,8 +1668,13 @@ didFinishPicking:(NSArray<PHPickerResult *> *)results {
     if (frameSize.width < 1 || frameSize.height < 1) return nil;
 
     NSMutableData *data = [NSMutableData data];
+    // One opening frame + ten transition frames + one final frame + ten
+    // reverse-transition frames.  This count must match the images added
+    // below; declaring 14 (the old animation's count) makes ImageIO reject
+    // finalization and leaves no file to share.
+    const size_t frameCount = 22;
     CGImageDestinationRef destination = CGImageDestinationCreateWithData(
-        (__bridge CFMutableDataRef)data, CFSTR("com.compuserve.gif"), 14, NULL);
+        (__bridge CFMutableDataRef)data, CFSTR("com.compuserve.gif"), frameCount, NULL);
     if (!destination) return nil;
     NSDictionary *gifProperties = @{(NSString *)kCGImagePropertyGIFDictionary: @{(NSString *)kCGImagePropertyGIFLoopCount: @0}};
     CGImageDestinationSetProperties(destination, (__bridge CFDictionaryRef)gifProperties);
@@ -1243,25 +1696,21 @@ didFinishPicking:(NSArray<PHPickerResult *> *)results {
         CGImageDestinationAddImage(destination, frame.CGImage, (__bridge CFDictionaryRef)frameProperties);
     };
 
-    addFrame(before, 0.9);
-    for (NSInteger step = 1; step <= 6; step++) {
-        CGFloat progress = step / 6.0;
-        UIGraphicsBeginImageContextWithOptions(frameSize, YES, 1.0);
-        [before drawInRect:(CGRect){CGPointZero, frameSize}];
-        [after drawInRect:(CGRect){CGPointZero, frameSize} blendMode:kCGBlendModeNormal alpha:progress];
-        UIImage *transition = UIGraphicsGetImageFromCurrentImageContext();
-        UIGraphicsEndImageContext();
-        addFrame(transition, 0.11);
+    addFrame(before, 0.85);
+    for (NSInteger step = 1; step <= 10; step++) {
+        CGFloat progress = step / 10.0;
+        UIImage *frame = style == EZShareGIFStyleOriginalReveal
+            ? [self originalRevealFrameForProgress:progress]
+            : [self motionTransitionFrameFrom:before to:after progress:progress];
+        addFrame(frame, 0.09);
     }
-    addFrame(after, 1.2);
-    for (NSInteger step = 5; step >= 0; step--) {
-        CGFloat progress = step / 6.0;
-        UIGraphicsBeginImageContextWithOptions(frameSize, YES, 1.0);
-        [before drawInRect:(CGRect){CGPointZero, frameSize}];
-        [after drawInRect:(CGRect){CGPointZero, frameSize} blendMode:kCGBlendModeNormal alpha:progress];
-        UIImage *transition = UIGraphicsGetImageFromCurrentImageContext();
-        UIGraphicsEndImageContext();
-        addFrame(transition, 0.11);
+    addFrame(after, 1.15);
+    for (NSInteger step = 9; step >= 0; step--) {
+        CGFloat progress = step / 10.0;
+        UIImage *frame = style == EZShareGIFStyleOriginalReveal
+            ? [self originalRevealFrameForProgress:progress]
+            : [self motionTransitionFrameFrom:before to:after progress:progress];
+        addFrame(frame, 0.09);
     }
 
     if (!CGImageDestinationFinalize(destination)) {
@@ -1272,6 +1721,50 @@ didFinishPicking:(NSArray<PHPickerResult *> *)results {
     NSString *path = [NSTemporaryDirectory() stringByAppendingPathComponent:
         [NSString stringWithFormat:@"EZCompleteUI-edit-%@.gif", NSUUID.UUID.UUIDString]];
     return [data writeToFile:path atomically:YES] ? [NSURL fileURLWithPath:path] : nil;
+}
+
+- (UIImage *)originalRevealFrameForProgress:(CGFloat)progress {
+    UIImage *finalImage = [self shareImageWithBranding];
+    if (!finalImage || !_originalImageForShare) return finalImage;
+    CGFloat width = self.image.size.width;
+    CGFloat border = MAX(12.0, width * 0.022);
+    CGFloat headerHeight = MAX(58.0, width * 0.095);
+    CGRect imageArea = CGRectMake(border, border + headerHeight,
+                                  width - border * 2.0, self.image.size.height);
+    CGRect cardRect = [self originalCardRectInImageArea:imageArea border:border];
+    CGRect target = CGRectInset(cardRect, 4.0, 4.0);
+    CGRect overlay = CGRectMake(imageArea.origin.x + (target.origin.x - imageArea.origin.x) * progress,
+                                imageArea.origin.y + (target.origin.y - imageArea.origin.y) * progress,
+                                imageArea.size.width + (target.size.width - imageArea.size.width) * progress,
+                                imageArea.size.height + (target.size.height - imageArea.size.height) * progress);
+    UIGraphicsBeginImageContextWithOptions(finalImage.size, YES, finalImage.scale);
+    [finalImage drawAtPoint:CGPointZero];
+    UIBezierPath *clip = [UIBezierPath bezierPathWithRoundedRect:overlay cornerRadius:12.0 * progress];
+    [clip addClip];
+    [_originalImageForShare drawInRect:EZAspectFitRect(_originalImageForShare.size, overlay)];
+    UIImage *frame = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+    return frame;
+}
+
+- (UIImage *)motionTransitionFrameFrom:(UIImage *)before to:(UIImage *)after progress:(CGFloat)progress {
+    CGSize size = after.size;
+    UIGraphicsBeginImageContextWithOptions(size, YES, after.scale);
+    CGRect bounds = (CGRect){CGPointZero, size};
+    CGFloat beforeScale = 1.0 + progress * 0.055;
+    CGRect beforeRect = CGRectInset(bounds, -size.width * (beforeScale - 1.0) / 2.0,
+                                    -size.height * (beforeScale - 1.0) / 2.0);
+    beforeRect.origin.x -= size.width * 0.035 * progress;
+    [before drawInRect:EZAspectFillRect(before.size, beforeRect)];
+    CGFloat afterScale = 1.055 - progress * 0.055;
+    CGRect afterRect = CGRectInset(bounds, -size.width * (afterScale - 1.0) / 2.0,
+                                   -size.height * (afterScale - 1.0) / 2.0);
+    afterRect.origin.x += size.width * 0.035 * (1.0 - progress);
+    [after drawInRect:EZAspectFillRect(after.size, afterRect)
+            blendMode:kCGBlendModeNormal alpha:progress];
+    UIImage *frame = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+    return frame;
 }
 
 - (void)downloadTapped {
@@ -1293,6 +1786,27 @@ didFinishPicking:(NSArray<PHPickerResult *> *)results {
     });
 }
 
+// The reference card follows the source image's orientation.  A portrait
+// original therefore remains a portrait card instead of being forced into a
+// landscape slot and losing its top/bottom to an aspect-fill crop.
+- (CGRect)originalCardRectInImageArea:(CGRect)imageArea border:(CGFloat)border {
+    CGSize originalSize = _originalImageForShare.size;
+    if (originalSize.width <= 0 || originalSize.height <= 0) return CGRectZero;
+    CGFloat aspect = originalSize.width / originalSize.height;
+    CGFloat maxWidth = MIN(CGRectGetWidth(imageArea) * 0.31, 300.0);
+    CGFloat maxHeight = MIN(CGRectGetHeight(imageArea) * 0.34, 300.0);
+    CGFloat cardWidth = maxWidth;
+    CGFloat cardHeight = cardWidth / aspect;
+    if (cardHeight > maxHeight) {
+        cardHeight = maxHeight;
+        cardWidth = cardHeight * aspect;
+    }
+    CGFloat cardInset = border * 1.25;
+    return CGRectMake(CGRectGetMaxX(imageArea) - cardWidth - cardInset,
+                      CGRectGetMaxY(imageArea) - cardHeight - cardInset,
+                      cardWidth, cardHeight);
+}
+
 // Exports a self-contained presentation image without altering the original
 // gallery asset.  Attachments that have no recorded generation prompt simply
 // omit the bottom prompt card.
@@ -1308,7 +1822,24 @@ didFinishPicking:(NSArray<PHPickerResult *> *)results {
     CGFloat width = source.size.width;
     CGFloat border = MAX(12.0, width * 0.022);
     CGFloat headerHeight = MAX(58.0, width * 0.095);
-    CGFloat promptHeight = prompt.length ? MAX(82.0, width * 0.14) : 0.0;
+    UIFont *captionFont = [UIFont systemFontOfSize:MAX(14.0, width * 0.024)
+                                             weight:UIFontWeightMedium];
+    NSMutableParagraphStyle *captionStyle = [[NSMutableParagraphStyle alloc] init];
+    captionStyle.alignment = NSTextAlignmentCenter;
+    captionStyle.lineBreakMode = NSLineBreakByWordWrapping;
+    NSDictionary *captionAttributes = @{
+        NSFontAttributeName: captionFont,
+        NSForegroundColorAttributeName: [UIColor colorWithWhite:0.93 alpha:1],
+        NSParagraphStyleAttributeName: captionStyle
+    };
+    CGFloat captionWidth = width - border * 2.0 - 36.0;
+    CGRect captionBounds = prompt.length ? [prompt boundingRectWithSize:CGSizeMake(captionWidth, CGFLOAT_MAX)
+                                                                  options:NSStringDrawingUsesLineFragmentOrigin | NSStringDrawingUsesFontLeading
+                                                               attributes:captionAttributes
+                                                                  context:nil] : CGRectZero;
+    // Allocate exactly the height the caption needs.  This deliberately does
+    // not truncate long edit prompts in a branded export.
+    CGFloat promptHeight = prompt.length ? MAX(62.0, ceil(CGRectGetHeight(captionBounds)) + 28.0) : 0.0;
     CGSize outputSize = CGSizeMake(width, source.size.height + headerHeight + promptHeight + border * 2.0);
 
     UIGraphicsBeginImageContextWithOptions(outputSize, YES, source.scale);
@@ -1346,28 +1877,15 @@ didFinishPicking:(NSArray<PHPickerResult *> *)results {
         CGRect promptRect = CGRectMake(border, CGRectGetMaxY(imageArea), width - border * 2.0, promptHeight);
         [[UIColor colorWithWhite:1 alpha:0.075] setFill];
         UIRectFill(promptRect);
-        NSMutableParagraphStyle *style = [[NSMutableParagraphStyle alloc] init];
-        style.alignment = NSTextAlignmentCenter;
-        style.lineBreakMode = NSLineBreakByTruncatingTail;
-        NSString *caption = [NSString stringWithFormat:@"%@", prompt];
-        [caption drawInRect:CGRectInset(promptRect, 18.0, 14.0)
-                  withAttributes:@{
-            NSFontAttributeName: [UIFont systemFontOfSize:MAX(14.0, width * 0.024) weight:UIFontWeightMedium],
-            NSForegroundColorAttributeName: [UIColor colorWithWhite:0.93 alpha:1],
-            NSParagraphStyleAttributeName: style
-        }];
+        [prompt drawInRect:CGRectInset(promptRect, 18.0, 14.0)
+             withAttributes:captionAttributes];
     }
 
     // For an AI-edited result, keep a small, clearly labelled reference to
     // the image the edit began with.  It is part of the exported image only;
     // the gallery's original asset remains untouched.
     if (showOriginalCard && _originalImageForShare) {
-        CGFloat cardWidth = MIN(width * 0.31, 300.0);
-        CGFloat cardHeight = MAX(cardWidth * 0.72, 100.0);
-        CGFloat cardInset = border * 1.25;
-        CGRect cardRect = CGRectMake(CGRectGetMaxX(imageArea) - cardWidth - cardInset,
-                                     CGRectGetMaxY(imageArea) - cardHeight - cardInset,
-                                     cardWidth, cardHeight);
+        CGRect cardRect = [self originalCardRectInImageArea:imageArea border:border];
         UIBezierPath *outerPath = [UIBezierPath bezierPathWithRoundedRect:cardRect cornerRadius:12.0];
         CGContextSaveGState(context);
         [outerPath addClip];
@@ -1391,13 +1909,7 @@ didFinishPicking:(NSArray<PHPickerResult *> *)results {
         [innerPath addClip];
         [[UIColor colorWithRed:0.025 green:0.035 blue:0.085 alpha:1] setFill];
         UIRectFill(innerCard);
-        CGFloat imageScale = MAX(CGRectGetWidth(innerCard) / _originalImageForShare.size.width,
-                                 CGRectGetHeight(innerCard) / _originalImageForShare.size.height);
-        CGSize fittedSize = CGSizeMake(_originalImageForShare.size.width * imageScale,
-                                       _originalImageForShare.size.height * imageScale);
-        CGRect originalRect = CGRectMake(CGRectGetMidX(innerCard) - fittedSize.width / 2.0,
-                                         CGRectGetMidY(innerCard) - fittedSize.height / 2.0,
-                                         fittedSize.width, fittedSize.height);
+        CGRect originalRect = EZAspectFitRect(_originalImageForShare.size, innerCard);
         [_originalImageForShare drawInRect:originalRect];
         CGContextRestoreGState(context);
 
@@ -1572,11 +2084,37 @@ didFinishPicking:(NSArray<PHPickerResult *> *)results {
 
 - (NSString *)attachmentsPath {
     NSString *docs = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject;
-    return [docs stringByAppendingPathComponent:kAttachmentsDir];
+    return [docs stringByAppendingPathComponent:kPhotoGalleryDir];
+}
+
+- (void)migrateLegacyGalleryImagesIfNeeded {
+    static NSString *const kGalleryMigrationKey = @"EZPhotoGalleryMigratedLegacyImages";
+    if ([[NSUserDefaults standardUserDefaults] boolForKey:kGalleryMigrationKey]) return;
+
+    NSString *docs = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject;
+    NSString *legacyDirectory = [docs stringByAppendingPathComponent:kLegacyAttachmentsDir];
+    NSArray<NSString *> *legacyFiles = [[NSFileManager defaultManager]
+        contentsOfDirectoryAtPath:legacyDirectory error:nil] ?: @[];
+    NSSet<NSString *> *imageExtensions = [NSSet setWithArray:@[@"jpg", @"jpeg", @"png", @"heic", @"gif", @"webp", @"tiff", @"bmp"]];
+    NSFileManager *fm = [NSFileManager defaultManager];
+    for (NSString *name in legacyFiles) {
+        if (![imageExtensions containsObject:name.pathExtension.lowercaseString]) continue;
+        NSString *legacyPath = [legacyDirectory stringByAppendingPathComponent:name];
+        NSString *galleryPath = [[self attachmentsPath] stringByAppendingPathComponent:name];
+        if (![fm fileExistsAtPath:galleryPath]) {
+            // Copy first: old thread records can still contain the legacy
+            // absolute path. New image writes never enter this directory.
+            [fm copyItemAtPath:legacyPath toPath:galleryPath error:nil];
+        }
+    }
+    [[NSUserDefaults standardUserDefaults] setBool:YES forKey:kGalleryMigrationKey];
 }
 
 - (void)loadFilePaths {
     NSString *dir = [self attachmentsPath];
+    [[NSFileManager defaultManager] createDirectoryAtPath:dir
+                              withIntermediateDirectories:YES attributes:nil error:nil];
+    [self migrateLegacyGalleryImagesIfNeeded];
     NSArray<NSString *> *all = [[NSFileManager defaultManager]
         contentsOfDirectoryAtPath:dir error:nil] ?: @[];
 
@@ -1716,13 +2254,10 @@ didFinishPicking:(NSArray<PHPickerResult *> *)results {
 // ── Close ─────────────────────────────────────────────────────────────────────
 
 - (void)addPhotosTapped {
-    UIAlertController *sources = [UIAlertController
-        alertControllerWithTitle:@"Add Photos"
-                         message:@"Choose a source for images to add to your gallery."
-                  preferredStyle:UIAlertControllerStyleActionSheet];
-    [sources addAction:[UIAlertAction actionWithTitle:@"Photos"
-                                                style:UIAlertActionStyleDefault
-                                              handler:^(UIAlertAction *action) {
+    __weak typeof(self) weakSelf = self;
+    EZPresentPhotoSourcePicker(self, ^{
+        typeof(self) self = weakSelf;
+        if (!self) return;
         PHPickerConfiguration *configuration = [[PHPickerConfiguration alloc] init];
         configuration.filter = [PHPickerFilter imagesFilter];
         configuration.selectionLimit = 0; // Native Photos supports multi-select.
@@ -1730,20 +2265,15 @@ didFinishPicking:(NSArray<PHPickerResult *> *)results {
             initWithConfiguration:configuration];
         picker.delegate = self;
         [self presentViewController:picker animated:YES completion:nil];
-    }]];
-    [sources addAction:[UIAlertAction actionWithTitle:@"Browse Files & Cloud Providers"
-                                                style:UIAlertActionStyleDefault
-                                              handler:^(UIAlertAction *action) {
+    }, ^{
+        typeof(self) self = weakSelf;
+        if (!self) return;
         UIDocumentPickerViewController *picker = [[UIDocumentPickerViewController alloc]
             initForOpeningContentTypes:@[UTTypeImage] asCopy:YES];
         picker.delegate = self;
         picker.allowsMultipleSelection = YES;
         [self presentViewController:picker animated:YES completion:nil];
-    }]];
-    [sources addAction:[UIAlertAction actionWithTitle:@"Cancel"
-                                                style:UIAlertActionStyleCancel handler:nil]];
-    sources.popoverPresentationController.barButtonItem = self.navigationItem.leftBarButtonItems.firstObject;
-    [self presentViewController:sources animated:YES completion:nil];
+    });
 }
 
 - (void)picker:(PHPickerViewController *)picker
@@ -1761,7 +2291,7 @@ didFinishPicking:(NSArray<PHPickerResult *> *)results {
                 return;
             }
             dispatch_async(dispatch_get_main_queue(), ^{
-                if (EZAttachmentSave(data, @"photo_import.png")) [self loadFilePaths];
+                if (EZPhotoGallerySave(data, @"photo_import.png")) [self loadFilePaths];
             });
         }];
     }
@@ -1778,7 +2308,7 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
             continue;
         }
         NSString *filename = url.lastPathComponent.length ? url.lastPathComponent : @"cloud_photo";
-        EZAttachmentSave(data, filename);
+        EZPhotoGallerySave(data, filename);
     }
     [self loadFilePaths];
 }

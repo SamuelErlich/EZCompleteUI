@@ -100,6 +100,11 @@ NSArray<NSDictionary *> * _Nullable EZThreadLoadContext(NSString *threadID, NSIn
 
 NSString * _Nullable EZAttachmentSave(NSData *data, NSString *fileName);
 NSString * _Nullable EZAttachmentPath(NSString *savedFileName);
+// Image-only storage. Gallery uploads, generations, and edits belong here,
+// never in EZAttachments.
+NSString *EZPhotoGalleryDirectory(void);
+NSString * _Nullable EZPhotoGallerySave(NSData *data, NSString *fileName);
+NSString * _Nullable EZPhotoGalleryPath(NSString *savedFileName);
 
 NSString *EZHelperStats(void);
 

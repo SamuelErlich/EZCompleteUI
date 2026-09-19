@@ -312,3 +312,11 @@
 "EZGallery.EditWithAI" = "แก้ไขด้วย AI";
 "EZGallery.UseInVideoGame" = "ใช้ในวิดีโอเกม";
 "EZGallery.EditPromptPlaceholder" = "อธิบายการแก้ไขของคุณ…";
+"EZGallery.Export.Title" = "ส่งออกรูปภาพ";
+"EZGallery.Export.Subtitle" = "เลือกวิธีที่ต้องการแชร์";
+"EZGallery.Export.GIFReveal" = "GIF: แสดงภาพต้นฉบับ";
+"EZGallery.Export.GIFMotion" = "GIF: การเปลี่ยนผ่านแบบเคลื่อนไหว";
+"EZGallery.Export.ShareOriginal" = "แชร์พร้อมแบรนด์ + ต้นฉบับ";
+"EZGallery.Export.ShareClean" = "แชร์ภาพพร้อมแบรนด์";
+"EZGallery.Export.Download" = "ดาวน์โหลดรูปภาพ";
+"EZGallery.Export.Cancel" = "ยกเลิก";

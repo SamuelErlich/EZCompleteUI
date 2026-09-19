@@ -345,3 +345,12 @@
 "EZGallery.EditWithAI" = "Edit with AI";
 "EZGallery.UseInVideoGame" = "Use in Video Game";
 "EZGallery.EditPromptPlaceholder" = "Describe your edits…";
+/* Photo gallery export */
+"EZGallery.Export.Title" = "Export Image";
+"EZGallery.Export.Subtitle" = "Choose how you want to share it.";
+"EZGallery.Export.GIFReveal" = "GIF: Original Reveal";
+"EZGallery.Export.GIFMotion" = "GIF: Motion Transition";
+"EZGallery.Export.ShareOriginal" = "Share Branded + Original";
+"EZGallery.Export.ShareClean" = "Share Branded Image";
+"EZGallery.Export.Download" = "Download Image";
+"EZGallery.Export.Cancel" = "Cancel";

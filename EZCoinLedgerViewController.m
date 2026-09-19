@@ -108,6 +108,11 @@
 
 static NSString *const kAdminLedgerBase    = @"https://spuoimtqofhbdzosrbng.supabase.co";
 static NSString *const kAdminLedgerPath    = @"/functions/v1/get-admin-ledger";
+// NOTE: placeholder path — point this at whatever edge function actually
+// performs manual coin grants server-side (must log a manual_grant row to
+// coin_transactions and bump the user's balance). Adjust the payload keys
+// in performGrantCoinsForUserId:email:amount:reason: to match it.
+static NSString *const kGrantCoinsPath     = @"/functions/v1/grant-admin-coins";
 static NSString *const kAdminSecretUDKey   = @"EZAdminSecret";   // NSUserDefaults key
 static NSString *const kLedgerCellID       = @"EZAdminLedgerCell";
 
@@ -121,6 +126,9 @@ static UIColor *EZGold(void)  { return [UIColor colorWithRed:1.0 green:0.84 blue
 static UIColor *EZBg(void)    { return [UIColor colorWithRed:0.04 green:0.04 blue:0.10 alpha:1.0]; }
 static UIColor *EZCard(void)  { return [UIColor colorWithRed:0.09 green:0.09 blue:0.14 alpha:1.0]; }
 static UIColor *EZMuted(void) { return [UIColor colorWithWhite:0.45 alpha:1]; }
+// Lighter than EZMuted — for the date/time and IP fields, which were
+// previously near-illegible against the dark card background.
+static UIColor *EZMutedLight(void) { return [UIColor colorWithWhite:0.70 alpha:1]; }
 
 // ── Efficiency color ──────────────────────────────────────────────────────────
 
@@ -163,9 +171,15 @@ static NSString *formattedCoinCount(NSInteger count) {
 // Shows all fields returned by get-admin-ledger mode=user, including user
 // identity fields (email, IP) that are only available via the admin endpoint.
 
+// Fired when the user double-taps the card's + button. userId/email describe
+// the account the row belongs to, so the presenting VC can build a grant
+// request without reaching back into the row dictionary itself.
+typedef void (^EZGrantCoinsHandler)(NSString *userId, NSString *email);
+
 @interface EZAdminLedgerCell : UITableViewCell
 - (void)configureWithRow:(NSDictionary *)row;
 + (CGFloat)rowHeight;
+@property (nonatomic, copy) EZGrantCoinsHandler grantCoinsHandler;
 @end
 
 @implementation EZAdminLedgerCell {
@@ -185,7 +199,10 @@ static NSString *formattedCoinCount(NSInteger count) {
     UIView  *_statusDot;
     UILabel *_statusLabel;      // "Completed" / "Pending" / "Error" text next to the dot
     UILabel *_errorLabel;       // error_message text, only populated when status = "error"
+    UIView  *_grantButton;      // small "+" affordance, double-tap opens the grant-coins sheet
+    UILabel *_grantButtonLabel;
     NSString *_contactEmail;
+    NSString *_contactUserId;
     NSString *_contactFeature;
     NSString *_contactModel;
     NSString *_contactPrompt;
@@ -228,10 +245,28 @@ static NSString *formattedCoinCount(NSInteger count) {
     _modelLabel     = makeLabel(11, UIFontWeightRegular, EZMuted(),                             1);
     _userEmailLabel = makeLabel(13, UIFontWeightMedium,  [UIColor systemBlueColor],              1);
     _userEmailLabel.userInteractionEnabled = YES;
-    [_userEmailLabel addGestureRecognizer:[[UITapGestureRecognizer alloc]
-                                     initWithTarget:self action:@selector(contactUser:)]];
-    _ipLabel        = makeLabel(10, UIFontWeightRegular, EZMuted(),                             1);
+
+    // Single tap copies just the email address; double tap opens the mailto
+    // compose sheet (existing behavior). The single-tap recognizer must wait
+    // for the double-tap one to fail before firing, or every double tap would
+    // also fire a spurious single-tap copy first.
+    UITapGestureRecognizer *emailSingleTap = [[UITapGestureRecognizer alloc]
+        initWithTarget:self action:@selector(copyEmailTapped:)];
+    emailSingleTap.numberOfTapsRequired = 1;
+    UITapGestureRecognizer *emailDoubleTap = [[UITapGestureRecognizer alloc]
+        initWithTarget:self action:@selector(contactUser:)];
+    emailDoubleTap.numberOfTapsRequired = 2;
+    [emailSingleTap requireGestureRecognizerToFail:emailDoubleTap];
+    [_userEmailLabel addGestureRecognizer:emailSingleTap];
+    [_userEmailLabel addGestureRecognizer:emailDoubleTap];
+
+    _ipLabel        = makeLabel(12, UIFontWeightRegular, EZMutedLight(),                        1);
     _promptLabel    = makeLabel(12, UIFontWeightRegular, [UIColor colorWithWhite:0.80 alpha:1], 2);
+    _promptLabel.userInteractionEnabled = YES;
+    // Tap the prompt to copy just its text, separate from the long-press
+    // "copy everything" gesture on the card as a whole.
+    [_promptLabel addGestureRecognizer:[[UITapGestureRecognizer alloc]
+        initWithTarget:self action:@selector(copyPromptTapped:)]];
     _coinsLabel     = makeLabel(14, UIFontWeightBold,    [UIColor systemOrangeColor],           1);
     _balanceLabel   = makeLabel(16, UIFontWeightSemibold, [UIColor whiteColor],                  1);
     _tokensLabel    = makeLabel(11, UIFontWeightRegular, [UIColor colorWithWhite:0.60 alpha:1], 1);
@@ -240,7 +275,7 @@ static NSString *formattedCoinCount(NSInteger count) {
     // each ledger card and needs to remain readable at a glance.
     _costLabel      = makeLabel(16, UIFontWeightSemibold, [UIColor whiteColor],                  1);
     _effLabel       = makeLabel(14, UIFontWeightSemibold,[UIColor systemGreenColor],            1);
-    _timeLabel      = makeLabel(10, UIFontWeightRegular, EZMuted(),                             1);
+    _timeLabel      = makeLabel(12, UIFontWeightRegular, EZMutedLight(),                        1);
 
     _coinsLabel.textAlignment   = NSTextAlignmentRight;
     _balanceLabel.textAlignment = NSTextAlignmentRight;
@@ -259,6 +294,29 @@ static NSString *formattedCoinCount(NSInteger count) {
     _card.userInteractionEnabled = YES;
     [_card addGestureRecognizer:[[UILongPressGestureRecognizer alloc]
         initWithTarget:self action:@selector(copyCardTapped:)]];
+
+    // "+" affordance — vertically centered on the right edge of the card.
+    // Double-tap (not single-tap) opens the grant-coins sheet, since this
+    // moves real value onto an account and shouldn't fire on a stray touch.
+    _grantButton = [UIView new];
+    _grantButton.backgroundColor    = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:0.16];
+    _grantButton.layer.borderWidth  = 1;
+    _grantButton.layer.borderColor  = [EZGold() colorWithAlphaComponent:0.55].CGColor;
+    _grantButton.userInteractionEnabled = YES;
+    [_card addSubview:_grantButton];
+
+    _grantButtonLabel = [UILabel new];
+    _grantButtonLabel.text = @"+";
+    _grantButtonLabel.font = [UIFont systemFontOfSize:18 weight:UIFontWeightSemibold];
+    _grantButtonLabel.textColor = EZGold();
+    _grantButtonLabel.textAlignment = NSTextAlignmentCenter;
+    _grantButtonLabel.userInteractionEnabled = NO;
+    [_grantButton addSubview:_grantButtonLabel];
+
+    UITapGestureRecognizer *grantDoubleTap = [[UITapGestureRecognizer alloc]
+        initWithTarget:self action:@selector(grantButtonTapped:)];
+    grantDoubleTap.numberOfTapsRequired = 2;
+    [_grantButton addGestureRecognizer:grantDoubleTap];
 
     return self;
 }
@@ -282,6 +340,7 @@ static NSString *formattedCoinCount(NSInteger count) {
     NSString *email = safeString(row[@"user_email"]);
     NSString *ip    = safeString(row[@"ip_address"]);
     _contactEmail = email;
+    _contactUserId = safeString(row[@"user_id"]);
     _contactFeature = _featureLabel.text;
     BOOL hasContactEmail = [email containsString:@"@"] && ![email containsString:@" "];
     _userEmailLabel.text = email.length ? email : safeString(row[@"user_id"]);
@@ -454,6 +513,51 @@ static NSString *formattedCoinCount(NSInteger count) {
     }];
 }
 
+// Brief highlight flash on an arbitrary view — shared feedback for the
+// smaller, single-field copy actions (email alone, prompt alone), distinct
+// from the full-card flash used by the long-press "copy everything" gesture.
+- (void)flashFeedbackView:(UIView *)view {
+    UIImpactFeedbackGenerator *haptic = [[UIImpactFeedbackGenerator alloc]
+        initWithStyle:UIImpactFeedbackStyleLight];
+    [haptic impactOccurred];
+
+    UIColor *originalColor = view.backgroundColor;
+    [UIView animateWithDuration:0.10 animations:^{
+        view.backgroundColor = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:0.30];
+    } completion:^(BOOL finished) {
+        [UIView animateWithDuration:0.22 animations:^{
+            view.backgroundColor = originalColor;
+        }];
+    }];
+}
+
+// Single tap on the email label — copies just the email address, as opposed
+// to the double-tap gesture on the same label which opens the mail compose
+// sheet, and the long-press-anywhere gesture which copies the whole card.
+- (void)copyEmailTapped:(UITapGestureRecognizer *)gesture {
+    if (_contactEmail.length == 0) return;
+    [UIPasteboard generalPasteboard].string = _contactEmail;
+    [self flashFeedbackView:_userEmailLabel];
+}
+
+// Single tap on the prompt label — copies just the prompt text.
+- (void)copyPromptTapped:(UITapGestureRecognizer *)gesture {
+    if (_contactPrompt.length == 0) return;
+    [UIPasteboard generalPasteboard].string = _contactPrompt;
+    [self flashFeedbackView:_promptLabel];
+}
+
+// Double tap on the "+" — hands off to the presenting view controller via
+// grantCoinsHandler, since the cell has no access to the admin secret / JWT
+// needed to actually perform the grant.
+- (void)grantButtonTapped:(UITapGestureRecognizer *)gesture {
+    if (!self.grantCoinsHandler) return;
+    UIImpactFeedbackGenerator *haptic = [[UIImpactFeedbackGenerator alloc]
+        initWithStyle:UIImpactFeedbackStyleMedium];
+    [haptic impactOccurred];
+    self.grantCoinsHandler(_contactUserId, _contactEmail);
+}
+
 // Tapping an email address opens the user's chosen mail app with a concise,
 // contextual follow-up ready to send. Prompt contents stay out of the draft
 // because ledger prompts can contain sensitive user-provided information.
@@ -529,10 +633,11 @@ static NSString *formattedCoinCount(NSInteger count) {
     // Status dot — top-right corner
     _statusDot.frame = CGRectMake(cardWidth - padding - 8, padding, 8, 8);
 
-    // Row 1: feature (left) + timestamp (right)
-    _featureLabel.frame = CGRectMake(x, y, cardWidth - 120, 18);
-    _timeLabel.frame    = CGRectMake(cardWidth - 118, y, 106, 14);
-    y += 20;
+    // Row 1: feature (left) + timestamp (right). Timestamp got bigger/lighter
+    // per feedback that it was unreadable, so it needs a bit more width too.
+    _featureLabel.frame = CGRectMake(x, y, cardWidth - 140, 18);
+    _timeLabel.frame    = CGRectMake(cardWidth - 138, y, 126, 16);
+    y += 22;
 
     // Row 2: model (left) + user email (right)
     _modelLabel.frame     = CGRectMake(x, y, cardWidth * 0.45, 14);
@@ -540,19 +645,32 @@ static NSString *formattedCoinCount(NSInteger count) {
     y += 16;
 
     // Row 3: status text (left, unused space next to the right-aligned IP
-    // label) + IP address (right-aligned, small)
+    // label) + IP address (right-aligned). Same size/color bump as the
+    // timestamp above.
     _statusLabel.frame = CGRectMake(x, y, cardWidth - 210, 13);
-    _ipLabel.frame      = CGRectMake(cardWidth - 190, y, 178, 13);
-    y += 16;
+    _ipLabel.frame      = CGRectMake(cardWidth - 190, y, 178, 16);
+    y += 18;
 
     // Prompt (2 lines)
     _promptLabel.frame = CGRectMake(x, y, cardWidth - x * 2, 36);
     y += 40;
 
-    // Detail rows stay above the financial summary at the bottom of the card.
-    _tokensLabel.frame  = CGRectMake(x, y, cardWidth - x * 2, 14);
+    // "+" grant-coins button — vertically centered on the whole card, right
+    // edge. Sized/positioned first so the detail rows below can be kept clear
+    // of it.
+    CGFloat grantSize = 32;
+    CGFloat grantX    = cardWidth - padding - grantSize;
+    CGFloat grantY    = (_card.bounds.size.height - grantSize) / 2.0;
+    _grantButton.frame = CGRectMake(grantX, grantY, grantSize, grantSize);
+    _grantButton.layer.cornerRadius = grantSize / 2.0;
+    _grantButtonLabel.frame = _grantButton.bounds;
+
+    // Detail rows stay above the financial summary at the bottom of the card,
+    // and are narrowed to leave the grant button clear on the right.
+    CGFloat detailWidth = grantX - 8 - x;
+    _tokensLabel.frame  = CGRectMake(x, y, detailWidth, 14);
     y += 17;
-    _imagesLabel.frame  = CGRectMake(x, y, cardWidth - x * 2, 14);
+    _imagesLabel.frame  = CGRectMake(x, y, detailWidth, 14);
     y += 16;
 
     // Error message — only populated/visible for status = "error". Sits in
@@ -1035,6 +1153,211 @@ static NSInteger const kPageSize = 50;
     }] resume];
 }
 
+// ── Grant coins ───────────────────────────────────────────────────────────────
+// Triggered by double-tapping the "+" on a ledger card. Two steps: first
+// collect the amount + reason (with the account's email shown prominently so
+// an admin doesn't credit the wrong person), then a second confirmation that
+// restates exactly what's about to happen before anything is sent.
+//
+// NOTE: performGrantCoinsForUserId:email:amount:reason: posts to
+// kGrantCoinsPath, a placeholder — point it at your real grant edge function
+// and adjust the request body to match its expected payload.
+
+- (void)presentGrantCoinsSheetForUserId:(NSString *)userId email:(NSString *)email {
+    NSString *displayEmail = email.length ? email : (userId.length ? userId : @"(unknown account)");
+    UIAlertController *choice = [UIAlertController alertControllerWithTitle:@"Manual Coin Adjustment"
+                                                                     message:[NSString stringWithFormat:@"Account: %@", displayEmail]
+                                                              preferredStyle:UIAlertControllerStyleActionSheet];
+    __weak typeof(self) weakSelf = self;
+    [choice addAction:[UIAlertAction actionWithTitle:@"Grant Coins"
+                                                style:UIAlertActionStyleDefault
+                                              handler:^(__unused UIAlertAction *action) {
+        [weakSelf presentCoinAdjustmentSheetForUserId:userId email:email reversal:NO];
+    }]];
+    [choice addAction:[UIAlertAction actionWithTitle:@"Reverse Previous Grant"
+                                                style:UIAlertActionStyleDestructive
+                                              handler:^(__unused UIAlertAction *action) {
+        [weakSelf presentCoinAdjustmentSheetForUserId:userId email:email reversal:YES];
+    }]];
+    [choice addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    choice.popoverPresentationController.sourceView = self.view;
+    choice.popoverPresentationController.sourceRect = CGRectMake(CGRectGetMidX(self.view.bounds), CGRectGetMidY(self.view.bounds), 1, 1);
+    [self presentViewController:choice animated:YES completion:nil];
+}
+
+- (void)presentCoinAdjustmentSheetForUserId:(NSString *)userId
+                                      email:(NSString *)email
+                                   reversal:(BOOL)isReversal {
+    NSString *displayEmail = email.length ? email : (userId.length ? userId : @"(unknown account)");
+    NSString *verb = isReversal ? @"Reverse" : @"Grant";
+    NSString *ledgerTerm = isReversal ? @"manual reversal" : @"manual grant";
+
+    UIAlertController *inputAlert = [UIAlertController
+        alertControllerWithTitle:[NSString stringWithFormat:@"%@ Manual Coins", verb]
+                         message:[NSString stringWithFormat:
+                            @"Account: %@\n\nEnter how many coins to %@ and a short reason. "
+                            @"This is logged to the ledger as a %@; prior entries remain visible.",
+                            displayEmail, isReversal ? @"remove" : @"grant", ledgerTerm]
+                  preferredStyle:UIAlertControllerStyleAlert];
+
+    [inputAlert addTextFieldWithConfigurationHandler:^(UITextField *textField) {
+        textField.placeholder = isReversal ? @"Coins to remove (e.g. 100)" : @"Coins to grant (e.g. 100)";
+        textField.keyboardType = UIKeyboardTypeNumberPad;
+    }];
+    [inputAlert addTextFieldWithConfigurationHandler:^(UITextField *textField) {
+        textField.placeholder = @"Reason (e.g. refund for failed image gen)";
+        textField.autocapitalizationType = UITextAutocapitalizationTypeSentences;
+    }];
+
+    [inputAlert addAction:[UIAlertAction actionWithTitle:@"Cancel"
+                                                    style:UIAlertActionStyleCancel
+                                                  handler:nil]];
+
+    __weak typeof(self) weakSelf = self;
+    [inputAlert addAction:[UIAlertAction actionWithTitle:@"Next"
+                                                    style:UIAlertActionStyleDefault
+                                                  handler:^(UIAlertAction *action) {
+        NSString *amountText = inputAlert.textFields.firstObject.text;
+        NSString *reason = [inputAlert.textFields.lastObject.text
+            stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+
+        NSInteger amount = [amountText integerValue];
+        BOOL amountLooksNumeric = amountText.length > 0 &&
+            [[NSCharacterSet decimalDigitCharacterSet] isSupersetOfSet:
+                [NSCharacterSet characterSetWithCharactersInString:amountText]];
+
+        if (!amountLooksNumeric || amount <= 0) {
+            [weakSelf presentSimpleAlertWithTitle:@"Invalid Amount"
+                                          message:@"Enter a whole number of coins greater than zero."];
+            return;
+        }
+        if (reason.length == 0) {
+            [weakSelf presentSimpleAlertWithTitle:@"Reason Required"
+                                          message:@"A short reason is required so this grant is traceable later."];
+            return;
+        }
+
+        [weakSelf presentCoinAdjustmentConfirmationForUserId:userId
+                                                        email:displayEmail
+                                                       amount:amount
+                                                       reason:reason
+                                                    reversal:isReversal];
+    }]];
+
+    [self presentViewController:inputAlert animated:YES completion:nil];
+}
+
+// Second, explicit confirmation restating the account, amount, and reason —
+// the last checkpoint before crediting a real account.
+- (void)presentCoinAdjustmentConfirmationForUserId:(NSString *)userId
+                                               email:(NSString *)email
+                                              amount:(NSInteger)amount
+                                              reason:(NSString *)reason
+                                           reversal:(BOOL)isReversal {
+    NSString *verb = isReversal ? @"Reverse" : @"Grant";
+    UIAlertController *confirm = [UIAlertController
+        alertControllerWithTitle:[NSString stringWithFormat:@"Confirm %@", verb]
+                         message:[NSString stringWithFormat:
+                            @"%@ %ld coins %@:\n%@\n\nReason: %@\n\nThis creates a permanent, auditable ledger entry.",
+                            verb, (long)amount, isReversal ? @"from" : @"to", email, reason]
+                  preferredStyle:UIAlertControllerStyleAlert];
+
+    [confirm addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+
+    __weak typeof(self) weakSelf = self;
+    [confirm addAction:[UIAlertAction actionWithTitle:isReversal ? @"Reverse Coins" : @"Grant Coins"
+                                                 style:UIAlertActionStyleDestructive
+                                               handler:^(UIAlertAction *action) {
+        [weakSelf performCoinAdjustmentForUserId:userId email:email amount:amount reason:reason reversal:isReversal];
+    }]];
+
+    [self presentViewController:confirm animated:YES completion:nil];
+}
+
+- (void)performCoinAdjustmentForUserId:(NSString *)userId
+                                  email:(NSString *)email
+                                 amount:(NSInteger)amount
+                                 reason:(NSString *)reason
+                              reversal:(BOOL)isReversal {
+    if (!self.adminSecret.length) {
+        [self presentSimpleAlertWithTitle:@"Not Authenticated"
+                                  message:@"Admin secret is missing — pull to refresh the ledger to re-enter it, then try again."];
+        return;
+    }
+    if (![EZAuthManager shared].accessToken) {
+        [self presentSimpleAlertWithTitle:@"Not Authenticated" message:@"No active session was found."];
+        return;
+    }
+
+    [self.spinner startAnimating];
+    __weak typeof(self) weakSelf = self;
+    [[EZAuthManager shared] getValidAccessToken:^(NSString *token, NSError *tokenError) {
+        if (!token.length) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                typeof(self) self = weakSelf;
+                [self.spinner stopAnimating];
+                [self presentSimpleAlertWithTitle:@"Not Authenticated"
+                                           message:tokenError.localizedDescription ?: @"Your session could not be refreshed."];
+            });
+            return;
+        }
+        NSString *urlString = [NSString stringWithFormat:@"%@%@", kAdminLedgerBase, kGrantCoinsPath];
+        NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:urlString]];
+        request.HTTPMethod = @"POST";
+        request.timeoutInterval = 20;
+        [request setValue:[NSString stringWithFormat:@"Bearer %@", token] forHTTPHeaderField:@"Authorization"];
+        [request setValue:self.adminSecret forHTTPHeaderField:@"x-admin-secret"];
+        [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+        request.HTTPBody = [NSJSONSerialization dataWithJSONObject:@{
+            @"user_id": userId ?: @"", @"email": email ?: @"",
+            @"amount": @(amount), @"reason": reason ?: @"",
+            @"operation": isReversal ? @"reversal" : @"grant",
+            // Allows a safe retry of this exact submission if its response is
+            // lost.  The server treats the request ID as idempotent.
+            @"request_id": NSUUID.UUID.UUIDString,
+        } options:0 error:nil];
+        [[[NSURLSession sharedSession] dataTaskWithRequest:request
+            completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            __strong typeof(weakSelf) strongSelf = weakSelf;
+            if (!strongSelf) return;
+            [strongSelf.spinner stopAnimating];
+
+            NSHTTPURLResponse *httpResponse = (NSHTTPURLResponse *)response;
+            BOOL success = !error && httpResponse.statusCode >= 200 && httpResponse.statusCode < 300;
+
+            if (!success) {
+                NSDictionary *body = data.length ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
+                NSString *serverError = [body[@"error"] isKindOfClass:[NSString class]] ? body[@"error"] : nil;
+                NSString *detail = serverError.length ? serverError : error.localizedDescription
+                    ?: [NSString stringWithFormat:@"Server returned status %ld.", (long)httpResponse.statusCode];
+                if (httpResponse.statusCode == 403) {
+                    strongSelf.adminSecret = nil;
+                    [[NSUserDefaults standardUserDefaults] removeObjectForKey:kAdminSecretUDKey];
+                }
+                [strongSelf presentSimpleAlertWithTitle:@"Grant Failed" message:detail];
+                return;
+            }
+
+            UINotificationFeedbackGenerator *haptic = [UINotificationFeedbackGenerator new];
+            [haptic notificationOccurred:UINotificationFeedbackTypeSuccess];
+
+            // Refresh so the new manual_grant row and updated balance show up.
+            strongSelf.hasMore = YES;
+            [strongSelf fetchPage:0];
+        });
+        }] resume];
+    }];
+}
+
+- (void)presentSimpleAlertWithTitle:(NSString *)title message:(NSString *)message {
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:title
+                                                                     message:message
+                                                              preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+    [self presentViewController:alert animated:YES completion:nil];
+}
+
 // ── UITableView ───────────────────────────────────────────────────────────────
 
 - (NSInteger)tableView:(UITableView *)tableView
@@ -1047,6 +1370,11 @@ static NSInteger const kPageSize = 50;
     EZAdminLedgerCell *cell = [tableView dequeueReusableCellWithIdentifier:kLedgerCellID
                                                               forIndexPath:indexPath];
     [cell configureWithRow:self.filteredRows[(NSUInteger)indexPath.row]];
+
+    __weak typeof(self) weakSelf = self;
+    cell.grantCoinsHandler = ^(NSString *userId, NSString *email) {
+        [weakSelf presentGrantCoinsSheetForUserId:userId email:email];
+    };
     return cell;
 }
 

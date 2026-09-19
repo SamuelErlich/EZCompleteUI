@@ -334,3 +334,11 @@
 "EZGallery.EditWithAI" = "Editar com IA";
 "EZGallery.UseInVideoGame" = "Usar no videogame";
 "EZGallery.EditPromptPlaceholder" = "Descreva suas edições…";
+"EZGallery.Export.Title" = "Exportar imagem";
+"EZGallery.Export.Subtitle" = "Escolha como deseja compartilhar.";
+"EZGallery.Export.GIFReveal" = "GIF: Revelar original";
+"EZGallery.Export.GIFMotion" = "GIF: Transição em movimento";
+"EZGallery.Export.ShareOriginal" = "Compartilhar com marca + original";
+"EZGallery.Export.ShareClean" = "Compartilhar imagem com marca";
+"EZGallery.Export.Download" = "Baixar imagem";
+"EZGallery.Export.Cancel" = "Cancelar";
