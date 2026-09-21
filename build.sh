@@ -63,8 +63,7 @@ mkdir -p Payload
 cp -R "$STAGED_APP" "Payload/${APP_NAME}.app"
 rm -f "${APP_NAME}.ipa"
 (
-  cd Payload
-  zip -r9 "../${APP_NAME}.ipa" "${APP_NAME}.app" >/dev/null
+  zip -r9 "${APP_NAME}.ipa" "Payload/${APP_NAME}.app" >/dev/null
 )
 rm -rf Payload
 unzip -Z1 "${APP_NAME}.ipa" | grep -qx "Payload/${APP_NAME}.app/Info.plist" || fail "IPA does not contain the staged app Info.plist"
