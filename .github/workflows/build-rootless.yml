@@ -15,7 +15,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install Debian packaging tools
-        run: brew install dpkg
+        run: brew install dpkg ldid
 
       - name: Install Theos and iPhoneOS SDKs
         shell: bash
