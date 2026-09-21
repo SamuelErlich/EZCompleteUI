@@ -22,9 +22,9 @@ jobs:
         run: |
           set -euo pipefail
           git clone --depth 1 --recurse-submodules https://github.com/theos/theos.git "$HOME/theos"
-          git clone --depth 1 https://github.com/theos/sdks.git "$HOME/theos/sdks"
+          git clone --depth 1 https://github.com/theos/sdks.git "$HOME/theos-sdks"
           echo "THEOS=$HOME/theos" >> "$GITHUB_ENV"
-          echo "THEOS_SDKS_PATH=$HOME/theos/sdks" >> "$GITHUB_ENV"
+          echo "THEOS_SDKS_PATH=$HOME/theos-sdks" >> "$GITHUB_ENV"
 
       - name: Build rootless IPA and Debian package
         shell: bash
