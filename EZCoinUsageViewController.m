@@ -30,8 +30,8 @@
 #import "EZCoinUsageViewController.h"
 #import "EZAuthManager.h"
 #import "EZEntitlementManager.h"
+#import "EZSupabaseConfig.h"
 
-static NSString *const kSupabaseURL  = @"https://spuoimtqofhbdzosrbng.supabase.co";
 static NSString *const kUsageCellID  = @"EZUsageCell";
 static NSInteger const kPageSize     = 100;
 
@@ -481,14 +481,21 @@ static NSNumber *safeNumber(id value) {
         return;
     }
 
-    NSURLComponents *urlComponents = [NSURLComponents componentsWithString:
-        [kSupabaseURL stringByAppendingString:@"/functions/v1/get-usage-log"]];
+    NSURL *usageURL = EZSupabaseFunctionURL(@"get-usage-log");
+    if (!usageURL) {
+        self.loading = NO;
+        [self.spinner stopAnimating];
+        self.emptyLabel.text = @"Backend beta ainda não configurado";
+        self.emptyLabel.hidden = NO;
+        return;
+    }
+    NSURLComponents *urlComponents = [NSURLComponents componentsWithURL:usageURL
+                                               resolvingAgainstBaseURL:NO];
     urlComponents.queryItems = @[
         [NSURLQueryItem queryItemWithName:@"page"  value:[NSString stringWithFormat:@"%ld", (long)page]],
         [NSURLQueryItem queryItemWithName:@"limit" value:[NSString stringWithFormat:@"%ld", (long)kPageSize]]
     ];
-    NSURL *requestURL = urlComponents.URL ?:
-        [NSURL URLWithString:[kSupabaseURL stringByAppendingString:@"/functions/v1/get-usage-log"]];
+    NSURL *requestURL = urlComponents.URL ?: usageURL;
 
     NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:requestURL];
     req.HTTPMethod      = @"GET";

@@ -38,6 +38,7 @@
 #import "EZTTSLibraryManager.h"
 #import "EZTTSLibraryViewController.h"
 #import "EZVoicePickerViewController.h"
+#import "EZSupabaseConfig.h"
 
 static NSString * const kDefaultVoiceID = @"JBFqnCBsd6RMkjVDRZzb"; // fallback example
 static NSString * const kDefaultModelID = @"eleven_multilingual_v2";
@@ -421,8 +422,14 @@ static NSString *timestampString(void) {
     float speed = roundf(self.speedSlider.value / 0.05f) * 0.05f;
     NSUInteger charCount = text.length;
 
-    NSURL *url = [NSURL URLWithString:
-        @"https://spuoimtqofhbdzosrbng.supabase.co/functions/v1/ez-elevenlabs"];
+    NSURL *url = EZSupabaseFunctionURL(@"ez-elevenlabs");
+    if (!url) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            completion(nil, nil, [NSError errorWithDomain:@"TTS" code:503
+                userInfo:@{NSLocalizedDescriptionKey:@"Backend beta ainda não configurado."}]);
+        });
+        return;
+    }
     NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:url];
     req.HTTPMethod = @"POST";
     req.timeoutInterval = 80;

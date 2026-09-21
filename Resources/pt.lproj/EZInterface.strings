@@ -1,0 +1,106 @@
+/* Login, settings, and attachment interface. Keep format placeholders unchanged. */
+
+/* Common */
+"Common.AppName" = "EZCompleteUI";
+"Common.Cancel" = "Cancelar";
+"Common.Done" = "Concluir";
+"Common.Delete" = "Excluir";
+"Common.Copy" = "Copiar";
+"Common.OK" = "OK";
+
+/* Login */
+"Login.LastAccountFormat" = "Último acesso: %@";
+"Login.SignInSubtitle" = "Entre na sua conta para continuar";
+"Login.Email" = "E-mail";
+"Login.Password" = "Senha";
+"Login.ForgotPassword" = "Esqueceu sua senha?";
+"Login.SignIn" = "Entrar";
+"Login.CreateAccountLink" = "Ainda não tem conta? Cadastre-se";
+"Login.ResetSubtitle" = "Escolha uma nova senha para sua conta";
+"Login.NewPassword" = "Nova senha";
+"Login.ConfirmNewPassword" = "Confirme a nova senha";
+"Login.SetNewPassword" = "Salvar nova senha";
+"Login.PasswordLength" = "A senha deve ter pelo menos oito caracteres.";
+"Login.PasswordMismatch" = "As senhas não coincidem. Tente novamente.";
+"Login.GenericError" = "Algo deu errado. Tente novamente.";
+"Login.PasswordUpdated" = "Senha atualizada! Entre na sua conta com a nova senha.";
+"Login.SignUpSubtitle" = "Crie sua conta";
+"Login.SignUp" = "Criar conta";
+"Login.SignInLink" = "Já tem uma conta? Entre";
+"Login.EmailRequired" = "Digite seu e-mail.";
+"Login.EmailInvalid" = "Digite um e-mail válido.";
+"Login.PasswordRequired" = "Digite sua senha.";
+"Login.ResetEmailRequired" = "Digite seu e-mail acima e toque em “Esqueceu sua senha?”.";
+"Login.ResetEmailSent" = "Enviamos um e-mail para redefinir sua senha. Confira sua caixa de entrada.";
+"Login.ResetEmailFailed" = "Não foi possível enviar o e-mail de recuperação. Tente novamente.";
+"Login.ConfirmEmailFormat" = "Enviamos um link de confirmação para %@.\nToque nele para ativar sua conta e depois entre no aplicativo.";
+"Login.ShowPassword" = "Mostrar senha";
+"Login.HidePassword" = "Ocultar senha";
+
+/* Settings */
+"Settings.Title" = "Configurações";
+"Settings.VersionFormat" = "EZCompleteUI  v%@  (compilação %@)";
+"Settings.SubscriptionSection" = "Assinatura";
+"Settings.Loading" = "Carregando…";
+"Settings.ManageSubscription" = "Assinar ou gerenciar assinatura";
+"Settings.RefreshSubscription" = "Restaurar ou atualizar assinatura";
+"Settings.SignOutButton" = "Sair da conta";
+"Settings.ModelPreferences" = "Preferências do modelo (opcional):";
+"Settings.TemperatureInitial" = "Temperatura: 0,70";
+"Settings.HelperTemperatureInitial" = "Temperatura do assistente: 0,20";
+"Settings.FrequencyPenaltyInitial" = "Penalidade de frequência: 0,00";
+"Settings.WebSection" = "Pesquisa na web";
+"Settings.WebDefault" = "Ativar pesquisa na web por padrão";
+"Settings.WebLocation" = "Localização (cidade opcional):";
+"Settings.LocationPlaceholder" = "Ex.: São Paulo, SP";
+"Settings.TTSSection" = "Texto para fala · ElevenLabs";
+"Settings.VoiceIDLabel" = "ID da voz (padrão ou clonada):";
+"Settings.VoiceID" = "ID da voz";
+"Settings.OpenTTS" = "Abrir texto para fala";
+"Settings.CloningSection" = "Clonagem de voz · ElevenLabs";
+"Settings.CloningDescription" = "Envie uma amostra de áudio para criar uma voz clonada personalizada.";
+"Settings.OpenCloning" = "Clonar e gerenciar vozes";
+"Settings.MemorySection" = "Memória da IA";
+"Settings.OpenMemories" = "Ver e editar memórias";
+"Settings.ClearMemories" = "Apagar todas as memórias";
+"Settings.HelperStats" = "Ver estatísticas do assistente";
+"Settings.Policies" = "Termos e políticas";
+"Settings.Support" = "Suporte e sugestões";
+"Settings.SubscriptionUnavailable" = "⚠️ Não foi possível verificar a assinatura";
+"Settings.ActivePlanFormat" = "✅ Assinatura ativa — plano %@";
+"Settings.CoinsOnly" = "🪙 Apenas moedas — sem assinatura ativa";
+"Settings.NoSubscription" = "Sem assinatura ativa";
+"Settings.CoinBalanceFormat" = "🪙 Saldo de moedas: %ld";
+"Settings.SignInRequiredTitle" = "Conta desconectada";
+"Settings.SignInRequiredMessage" = "Entre na sua conta para continuar.";
+"Settings.Checking" = "Verificando…";
+"Settings.SignOutTitle" = "Sair da conta?";
+"Settings.SignOutMessage" = "Você precisará entrar novamente para usar o EZCompleteUI.";
+"Settings.SignOut" = "Sair";
+"Settings.TemperatureFormat" = "Temperatura: %.2f";
+"Settings.HelperTemperatureFormat" = "Temperatura do assistente: %.2f";
+"Settings.FrequencyPenaltyFormat" = "Penalidade de frequência: %.2f";
+"Settings.ClearMemoriesTitle" = "Apagar todas as memórias?";
+"Settings.ClearMemoriesMessage" = "Isso apaga todos os resumos de conversas salvos. Esta ação não pode ser desfeita.";
+"Settings.MemoriesCleared" = "Todas as memórias foram apagadas.";
+"Settings.ClearMemoriesFailed" = "Não foi possível apagar as memórias.";
+"Settings.MemoryTitle" = "Memória";
+"Settings.HelperStatsTitle" = "Estatísticas do assistente";
+"Settings.Plan.Basic" = "Básico";
+"Settings.Plan.BasicWeekly" = "Básico semanal";
+"Settings.Plan.Standard" = "Padrão";
+"Settings.Plan.Pro" = "Pro";
+"Settings.Plan.Ultra" = "Ultra";
+"Settings.Plan.Power" = "Power";
+"Settings.Plan.Enterprise" = "Empresarial";
+
+/* Attach */
+"Attach.Title" = "Anexar";
+"Attach.Transcribe" = "Transcrever áudio ou vídeo";
+"Attach.TranscribeDetail" = "Transcrição com Whisper";
+"Attach.Analyze" = "Analisar PDF, ePub ou texto";
+"Attach.AnalyzeDetail" = "Extrai e resume o conteúdo";
+"Attach.ImageFiles" = "Anexar imagem de Arquivos";
+"Attach.ImageFilesDetail" = "Analise ou edite uma imagem";
+"Attach.PhotoLibrary" = "Escolher da biblioteca de fotos";
+"Attach.PhotoLibraryDetail" = "Selecione uma foto da sua biblioteca";

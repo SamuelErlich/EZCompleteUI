@@ -25,7 +25,7 @@
     <!-- Keychain access groups -->
     <key>keychain-access-groups</key>
     <array>
-        <string>$(AppIdentifierPrefix)com.i0stweak3r.EZCompleteUI</string>
+        <string>$(AppIdentifierPrefix)com.gabriel.ezcomplete.beta</string>
     </array>
 </dict>
 </plist>

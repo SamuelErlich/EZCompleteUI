@@ -1,0 +1,4 @@
+"NSMicrophoneUsageDescription" = "Usado para transformar sua fala em texto.";
+"NSSpeechRecognitionUsageDescription" = "Usado para reconhecer sua fala durante o ditado.";
+"NSPhotoLibraryAddUsageDescription" = "O EZComplete salva imagens geradas pela IA na sua fototeca.";
+"CFBundleDisplayName" = "EZComplete";

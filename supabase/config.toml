@@ -1,0 +1,3 @@
+# Local CLI configuration for the independent beta backend.
+# `supabase link --project-ref SEU_PROJECT_REF` replaces this placeholder.
+project_id = "ygssswkgmcofkdowizeo"

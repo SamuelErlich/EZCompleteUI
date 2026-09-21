@@ -19,6 +19,17 @@
 
 #import "MemoriesViewController.h"
 #import "helpers.h"
+#import "EZUITheme.h"
+
+// Keep translated presentation text separate from models, defaults, and saved data.
+static NSString *EZWorkspaceLocalized(NSString *key) {
+    NSString *value = NSLocalizedStringFromTable(key, @"EZWorkspace", nil);
+    if (![value isEqualToString:key]) return value;
+    NSString *path = [[NSBundle mainBundle] pathForResource:@"en" ofType:@"lproj"];
+    NSBundle *fallback = path.length ? [NSBundle bundleWithPath:path] : nil;
+    return fallback ? [fallback localizedStringForKey:key value:key table:@"EZWorkspace"] : value;
+}
+
 #import <QuickLook/QuickLook.h>
 #import <QuickLookThumbnailing/QuickLookThumbnailing.h>
 
@@ -72,10 +83,7 @@
     UIView *card = [[UIView alloc] init];
     card.tag = 999;
     card.translatesAutoresizingMaskIntoConstraints = NO;
-    card.backgroundColor     = [UIColor secondarySystemGroupedBackgroundColor];
-    card.layer.cornerRadius  = 14;
-    card.layer.borderWidth   = 1.0;
-    card.layer.borderColor   = [UIColor separatorColor].CGColor;
+    [EZUITheme styleCard:card cornerRadius:18.0];
     card.layer.shadowColor   = [UIColor blackColor].CGColor;
     card.layer.shadowOpacity = 0.08;
     card.layer.shadowOffset  = CGSizeMake(0, 2);
@@ -93,9 +101,10 @@
     // ── Timestamp — tappable link to source thread ────────────────────────────
     _timestampLabel = [[UILabel alloc] init];
     _timestampLabel.font      = [UIFont monospacedSystemFontOfSize:12 weight:UIFontWeightSemibold];
-    _timestampLabel.textColor = [UIColor systemBlueColor];
+    _timestampLabel.textColor = [EZUITheme accentSecondaryColor];
     _timestampLabel.translatesAutoresizingMaskIntoConstraints = NO;
     _timestampLabel.userInteractionEnabled = YES;
+    _timestampLabel.accessibilityHint = EZWorkspaceLocalized(@"Memories.OpenSource");
     UITapGestureRecognizer *tsTap = [[UITapGestureRecognizer alloc]
         initWithTarget:self action:@selector(timestampTapped)];
     [_timestampLabel addGestureRecognizer:tsTap];
@@ -107,7 +116,7 @@
     _attachmentThumb.contentMode        = UIViewContentModeScaleAspectFill;
     _attachmentThumb.clipsToBounds      = YES;
     _attachmentThumb.layer.cornerRadius = 8;
-    _attachmentThumb.backgroundColor    = [UIColor tertiarySystemFillColor];
+    _attachmentThumb.backgroundColor    = [EZUITheme surfaceElevatedColor];
     _attachmentThumb.hidden             = YES;
     [card addSubview:_attachmentThumb];
 
@@ -115,6 +124,7 @@
     _attachmentButton = [UIButton buttonWithType:UIButtonTypeCustom];
     _attachmentButton.translatesAutoresizingMaskIntoConstraints = NO;
     _attachmentButton.hidden = YES;
+    _attachmentButton.accessibilityLabel = EZWorkspaceLocalized(@"Memories.PreviewAttachment");
     [_attachmentButton addTarget:self action:@selector(attachmentTapped)
                 forControlEvents:UIControlEventTouchUpInside];
     [card addSubview:_attachmentButton];
@@ -123,10 +133,12 @@
     _attachmentBadge = [[UILabel alloc] init];
     _attachmentBadge.font              = [UIFont systemFontOfSize:13 weight:UIFontWeightSemibold];
     _attachmentBadge.textColor         = [UIColor whiteColor];
-    _attachmentBadge.backgroundColor   = [UIColor systemTealColor];
-    _attachmentBadge.text              = @"  📎  Tap to preview attachment  ";
+    _attachmentBadge.backgroundColor   = [EZUITheme accentColor];
+    _attachmentBadge.text              = EZWorkspaceLocalized(@"Memories.PreviewAttachment");
     _attachmentBadge.layer.cornerRadius = 8;
     _attachmentBadge.clipsToBounds     = YES;
+    _attachmentBadge.adjustsFontSizeToFitWidth = YES;
+    _attachmentBadge.minimumScaleFactor = 0.75;
     _attachmentBadge.hidden            = YES;
     _attachmentBadge.userInteractionEnabled = YES;
     _attachmentBadge.translatesAutoresizingMaskIntoConstraints = NO;
@@ -137,8 +149,9 @@
 
     // ── Summary text view ─────────────────────────────────────────────────────
     _summaryTextView = [[UITextView alloc] init];
-    _summaryTextView.font             = [UIFont systemFontOfSize:15];
-    _summaryTextView.textColor        = [UIColor labelColor];
+    _summaryTextView.font             = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
+    _summaryTextView.adjustsFontForContentSizeCategory = YES;
+    _summaryTextView.textColor        = [EZUITheme primaryTextColor];
     _summaryTextView.backgroundColor  = [UIColor clearColor];
     _summaryTextView.scrollEnabled    = NO;
     _summaryTextView.delegate         = self;
@@ -153,15 +166,19 @@
         initWithBarButtonSystemItem:UIBarButtonSystemItemDone
                              target:self action:@selector(dismissKeyboard)];
     toolbar.items = @[flex, doneBtn];
+    doneBtn.title = EZWorkspaceLocalized(@"Common.Done");
+    toolbar.barTintColor = [EZUITheme surfaceElevatedColor];
+    toolbar.tintColor = [EZUITheme accentSecondaryColor];
     _summaryTextView.inputAccessoryView = toolbar;
     [card addSubview:_summaryTextView];
 
     // ── Edit hint — bold and obvious ──────────────────────────────────────────
     _editHintLabel = [[UILabel alloc] init];
-    _editHintLabel.text            = @"✏️ Tap summary to edit";
+    _editHintLabel.text            = EZWorkspaceLocalized(@"Memories.EditHint");
     _editHintLabel.font            = [UIFont systemFontOfSize:11 weight:UIFontWeightMedium];
-    _editHintLabel.textColor       = [UIColor systemBlueColor];
+    _editHintLabel.textColor       = [EZUITheme accentSecondaryColor];
     _editHintLabel.alpha           = 0.7;
+    _editHintLabel.numberOfLines = 0;
     _editHintLabel.translatesAutoresizingMaskIntoConstraints = NO;
     [card addSubview:_editHintLabel];
 
@@ -187,6 +204,7 @@
         [_attachmentBadge.topAnchor     constraintEqualToAnchor:_timestampLabel.bottomAnchor constant:10],
         [_attachmentBadge.leadingAnchor constraintEqualToAnchor:card.leadingAnchor constant:14],
         [_attachmentBadge.heightAnchor  constraintEqualToConstant:34],
+        [_attachmentBadge.trailingAnchor constraintLessThanOrEqualToAnchor:card.trailingAnchor constant:-14],
 
         // Summary trailing/leading fixed
         [_summaryTextView.leadingAnchor  constraintEqualToAnchor:card.leadingAnchor  constant:14],
@@ -221,8 +239,8 @@
     self.memoryDelegate = delegate;
 
     NSString *ts = memory[@"timestamp"] ?: @"";
-    self.timestampLabel.text  = ts.length ? ts : @"No timestamp";
-    self.summaryTextView.text = memory[@"summary"] ?: @"(no summary)";
+    self.timestampLabel.text  = ts.length ? ts : EZWorkspaceLocalized(@"Memories.NoTimestamp");
+    self.summaryTextView.text = memory[@"summary"] ?: EZWorkspaceLocalized(@"Memories.NoSummary");
 
     NSArray *attachments = memory[@"attachmentPaths"];
     BOOL hasAttachment = [attachments isKindOfClass:[NSArray class]] && attachments.count > 0;
@@ -272,17 +290,17 @@
 
 - (void)textViewDidBeginEditing:(UITextView *)textView {
     UIView *card = [self.contentView viewWithTag:999];
-    card.layer.borderColor = [UIColor systemBlueColor].CGColor;
+    card.layer.borderColor = [EZUITheme accentSecondaryColor].CGColor;
     card.layer.borderWidth = 2.0;
-    self.editHintLabel.text  = @"✏️ Editing — Done to save";
+    self.editHintLabel.text  = EZWorkspaceLocalized(@"Memories.EditingHint");
     self.editHintLabel.alpha = 1.0;
 }
 
 - (void)textViewDidEndEditing:(UITextView *)textView {
     UIView *card = [self.contentView viewWithTag:999];
-    card.layer.borderColor = [UIColor separatorColor].CGColor;
+    card.layer.borderColor = [EZUITheme dividerColor].CGColor;
     card.layer.borderWidth = 1.0;
-    self.editHintLabel.text  = @"✏️ Tap summary to edit";
+    self.editHintLabel.text  = EZWorkspaceLocalized(@"Memories.EditHint");
     self.editHintLabel.alpha = 0.7;
     [self.memoryDelegate cellDidEndEditingWithText:textView.text atIndex:self.memoryIndex];
 }
@@ -328,8 +346,18 @@ static NSString * const kEmptyCellID = @"EZMemoryEmptyCell";
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.title = @"Memories";
-    self.view.backgroundColor = [UIColor systemGroupedBackgroundColor];
+    self.title = EZWorkspaceLocalized(@"Memories.Title");
+    self.view.backgroundColor = [EZUITheme backgroundColor];
+    self.view.tintColor = [EZUITheme accentSecondaryColor];
+    UINavigationBarAppearance *appearance = [[UINavigationBarAppearance alloc] init];
+    [appearance configureWithOpaqueBackground];
+    appearance.backgroundColor = [EZUITheme backgroundColor];
+    appearance.titleTextAttributes = @{ NSForegroundColorAttributeName: [EZUITheme primaryTextColor] };
+    appearance.shadowColor = [EZUITheme dividerColor];
+    self.navigationItem.standardAppearance = appearance;
+    self.navigationItem.scrollEdgeAppearance = appearance;
+    self.navigationItem.compactAppearance = appearance;
+
 
     // ── Left nav bar: search (refresh handled automatically via file watch) ───
     UIBarButtonItem *searchItem = nil;
@@ -354,6 +382,9 @@ static NSString * const kEmptyCellID = @"EZMemoryEmptyCell";
                              target:self
                              action:@selector(dismissSelf)];
     self.navigationItem.rightBarButtonItems = @[closeItem, self.editButtonItem];
+    searchItem.accessibilityLabel = EZWorkspaceLocalized(@"Common.Search");
+    closeItem.accessibilityLabel = EZWorkspaceLocalized(@"Common.Close");
+    self.editButtonItem.title = EZWorkspaceLocalized(@"Common.Edit");
 
     [self setupTableView];
     [self setupSearchBar];
@@ -385,6 +416,8 @@ static NSString * const kEmptyCellID = @"EZMemoryEmptyCell";
 - (void)setupTableView {
     self.tableView = [[UITableView alloc] initWithFrame:self.view.bounds
                                                   style:UITableViewStyleInsetGrouped];
+    self.tableView.backgroundColor = [EZUITheme backgroundColor];
+    self.tableView.tintColor = [EZUITheme accentSecondaryColor];
     self.tableView.delegate           = self;
     self.tableView.dataSource         = self;
     self.tableView.rowHeight          = UITableViewAutomaticDimension;
@@ -400,7 +433,11 @@ static NSString * const kEmptyCellID = @"EZMemoryEmptyCell";
     if (self.searchBar) return;
     self.searchBar = [[UISearchBar alloc] initWithFrame:CGRectMake(0, 0, self.view.bounds.size.width, 44)];
     self.searchBar.autoresizingMask = UIViewAutoresizingFlexibleWidth;
-    self.searchBar.placeholder = @"Search memories";
+    self.searchBar.placeholder = EZWorkspaceLocalized(@"Memories.Search");
+    self.searchBar.searchBarStyle = UISearchBarStyleMinimal;
+    self.searchBar.tintColor = [EZUITheme accentSecondaryColor];
+    self.searchBar.searchTextField.backgroundColor = [EZUITheme surfaceElevatedColor];
+    self.searchBar.searchTextField.textColor = [EZUITheme primaryTextColor];
     self.searchBar.delegate = self;
     self.searchBar.showsCancelButton = NO;
     self.tableView.tableHeaderView = self.searchBar;
@@ -408,15 +445,18 @@ static NSString * const kEmptyCellID = @"EZMemoryEmptyCell";
 
 - (void)setupEmptyLabel {
     self.emptyLabel = [[UILabel alloc] init];
-    self.emptyLabel.text          = @"No memories saved yet.";
-    self.emptyLabel.textColor     = [UIColor secondaryLabelColor];
+    self.emptyLabel.text          = EZWorkspaceLocalized(@"Memories.Empty");
+    self.emptyLabel.textColor     = [EZUITheme secondaryTextColor];
     self.emptyLabel.font          = [UIFont systemFontOfSize:16];
     self.emptyLabel.textAlignment = NSTextAlignmentCenter;
+    self.emptyLabel.numberOfLines = 0;
     self.emptyLabel.translatesAutoresizingMaskIntoConstraints = NO;
     [self.view addSubview:self.emptyLabel];
     [NSLayoutConstraint activateConstraints:@[
         [self.emptyLabel.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
         [self.emptyLabel.centerYAnchor constraintEqualToAnchor:self.view.centerYAnchor],
+        [self.emptyLabel.leadingAnchor constraintGreaterThanOrEqualToAnchor:self.view.leadingAnchor constant:28],
+        [self.emptyLabel.trailingAnchor constraintLessThanOrEqualToAnchor:self.view.trailingAnchor constant:-28],
     ]];
 }
 
@@ -472,7 +512,7 @@ static NSString * const kEmptyCellID = @"EZMemoryEmptyCell";
     BOOL hasResults = self.displayedMemories.count > 0;
     self.emptyLabel.hidden = hasResults;
     if (!hasResults) {
-        self.emptyLabel.text = trimmed.length ? @"No memories match that search." : @"No memories saved yet.";
+        self.emptyLabel.text = trimmed.length ? EZWorkspaceLocalized(@"Memories.NoResults") : EZWorkspaceLocalized(@"Memories.Empty");
     }
     [self.tableView reloadData];
 }
@@ -672,6 +712,7 @@ static NSString * const kEmptyCellID = @"EZMemoryEmptyCell";
 - (void)setEditing:(BOOL)editing animated:(BOOL)animated {
     [super setEditing:editing animated:animated];
     [self.tableView setEditing:editing animated:animated];
+    self.editButtonItem.title = EZWorkspaceLocalized(editing ? @"Common.Done" : @"Common.Edit");
 }
 
 // ── UITableViewDataSource ────────────────────────────────────────────────────
@@ -692,20 +733,22 @@ static NSString * const kEmptyCellID = @"EZMemoryEmptyCell";
         if (@available(iOS 14.0, *)) {
             UIListContentConfiguration *cfg = cell.defaultContentConfiguration;
             if (self.searchTerm.length > 0) {
-                cfg.text = @"No memories match that search.";
+                cfg.text = EZWorkspaceLocalized(@"Memories.NoResults");
             } else {
-                cfg.text = @"No memories saved yet.";
+                cfg.text = EZWorkspaceLocalized(@"Memories.Empty");
             }
-            cfg.textProperties.color = [UIColor secondaryLabelColor];
+            cfg.textProperties.color = [EZUITheme secondaryTextColor];
+            cfg.textProperties.numberOfLines = 0;
             cell.contentConfiguration = cfg;
         } else {
             if (self.searchTerm.length > 0) {
-                cell.textLabel.text = @"No memories match that search.";
+                cell.textLabel.text = EZWorkspaceLocalized(@"Memories.NoResults");
             } else {
-                cell.textLabel.text = @"No memories saved yet.";
+                cell.textLabel.text = EZWorkspaceLocalized(@"Memories.Empty");
             }
-            cell.textLabel.textColor = [UIColor secondaryLabelColor];
+            cell.textLabel.textColor = [EZUITheme secondaryTextColor];
         }
+        cell.backgroundColor = [EZUITheme backgroundColor];
         cell.userInteractionEnabled = NO;
         cell.selectionStyle = UITableViewCellSelectionStyleNone;
         cell.accessoryType = UITableViewCellAccessoryNone;
@@ -728,13 +771,23 @@ static NSString * const kEmptyCellID = @"EZMemoryEmptyCell";
 titleForHeaderInSection:(NSInteger)section {
     if (self.memories.count == 0) return nil;
     if (self.searchTerm.length > 0) {
-        return [NSString stringWithFormat:@"%lu matching %@",
-                (unsigned long)self.displayedMemories.count,
-                self.displayedMemories.count == 1 ? @"memory" : @"memories"];
+        NSString *key = self.displayedMemories.count == 1 ? @"Memories.MatchOne" : @"Memories.MatchMany";
+        return [NSString stringWithFormat:EZWorkspaceLocalized(key), (unsigned long)self.displayedMemories.count];
     }
-    return [NSString stringWithFormat:@"%lu saved %@",
-            (unsigned long)self.memories.count,
-            self.memories.count == 1 ? @"memory" : @"memories"];
+    NSString *key = self.memories.count == 1 ? @"Memories.SavedOne" : @"Memories.SavedMany";
+    return [NSString stringWithFormat:EZWorkspaceLocalized(key), (unsigned long)self.memories.count];
+}
+
+
+- (void)tableView:(UITableView *)tableView willDisplayHeaderView:(UIView *)view forSection:(NSInteger)section {
+    if (![view isKindOfClass:[UITableViewHeaderFooterView class]]) return;
+    UITableViewHeaderFooterView *header = (UITableViewHeaderFooterView *)view;
+    header.textLabel.textColor = [EZUITheme secondaryTextColor];
+    header.textLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleFootnote];
+}
+
+- (NSString *)tableView:(UITableView *)tableView titleForDeleteConfirmationButtonForRowAtIndexPath:(NSIndexPath *)indexPath {
+    return EZWorkspaceLocalized(@"Common.Delete");
 }
 
 - (UITableViewCellEditingStyle)tableView:(UITableView *)tableView
@@ -752,10 +805,10 @@ forRowAtIndexPath:(NSIndexPath *)indexPath {
     if (idx == NSNotFound) return;
 
     UIAlertController *confirm = [UIAlertController
-        alertControllerWithTitle:@"Delete Memory?"
-                         message:@"This entry will be permanently removed."
+        alertControllerWithTitle:EZWorkspaceLocalized(@"Memories.DeleteTitle")
+                         message:EZWorkspaceLocalized(@"Memories.DeleteMessage")
                   preferredStyle:UIAlertControllerStyleAlert];
-    [confirm addAction:[UIAlertAction actionWithTitle:@"Delete"
+    [confirm addAction:[UIAlertAction actionWithTitle:EZWorkspaceLocalized(@"Common.Delete")
                                                style:UIAlertActionStyleDestructive
                                              handler:^(UIAlertAction *a) {
         [self.memories removeObjectAtIndex:idx];
@@ -771,7 +824,7 @@ forRowAtIndexPath:(NSIndexPath *)indexPath {
         [self applyMemorySearch:self.searchTerm ?: @""];
         EZLog(EZLogLevelInfo, @"MEMORIES", @"Memory entry deleted");
     }]];
-    [confirm addAction:[UIAlertAction actionWithTitle:@"Cancel"
+    [confirm addAction:[UIAlertAction actionWithTitle:EZWorkspaceLocalized(@"Common.Cancel")
                                                style:UIAlertActionStyleCancel
                                              handler:^(UIAlertAction *a) {
         [tableView reloadRowsAtIndexPaths:@[indexPath]
@@ -795,7 +848,7 @@ didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     self.memories[index][@"summary"] = trimmed;
     BOOL ok = [self persistMemories];
     [self applyMemorySearch:self.searchTerm ?: @""];
-    [self showToast:ok ? @"✅ Memory updated" : @"⚠️ Save failed"];
+    [self showToast:ok ? EZWorkspaceLocalized(@"Memories.Updated") : EZWorkspaceLocalized(@"Memories.SaveFailed")];
     if (ok) EZLog(EZLogLevelInfo, @"MEMORIES", @"Memory entry edited inline");
 }
 
@@ -803,7 +856,7 @@ didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     if (index >= self.memories.count) return;
     NSArray<NSString *> *paths = [self resolvedAttachmentPathsForMemory:self.memories[index]];
     if (paths.count == 0) {
-        [self showToast:@"⚠️ Attachment file not found"];
+        [self showToast:EZWorkspaceLocalized(@"Memories.AttachmentMissing")];
         return;
     }
     NSString *filePath = paths.firstObject;
@@ -879,7 +932,7 @@ didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
 
     NSString *threadID = [self threadIDFromMemory:memory];
     if (!threadID.length) {
-        [self showToast:@"⚠️ Cannot locate source thread"];
+        [self showToast:EZWorkspaceLocalized(@"Memories.ThreadMissing")];
         EZLog(EZLogLevelWarning, @"MEMORIES", [NSString stringWithFormat:@"Timestamp tap — no threadID for index %lu", (unsigned long)index]);
         return;
     }
@@ -917,7 +970,10 @@ didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
         toast.text               = message;
         toast.font               = [UIFont systemFontOfSize:14 weight:UIFontWeightMedium];
         toast.textColor          = [UIColor whiteColor];
-        toast.backgroundColor    = [UIColor colorWithWhite:0.1 alpha:0.88];
+        toast.backgroundColor    = [EZUITheme surfaceElevatedColor];
+        toast.layer.borderWidth = 1.0;
+        toast.layer.borderColor = [EZUITheme dividerColor].CGColor;
+        toast.numberOfLines = 0;
         toast.textAlignment      = NSTextAlignmentCenter;
         toast.layer.cornerRadius = 12;
         toast.clipsToBounds      = YES;
@@ -927,7 +983,8 @@ didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
             [toast.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
             [toast.bottomAnchor  constraintEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor constant:-24],
             [toast.widthAnchor   constraintGreaterThanOrEqualToConstant:200],
-            [toast.heightAnchor  constraintEqualToConstant:42],
+            [toast.heightAnchor  constraintGreaterThanOrEqualToConstant:42],
+            [toast.widthAnchor constraintLessThanOrEqualToAnchor:self.view.widthAnchor constant:-32],
         ]];
         toast.alpha = 0;
         [UIView animateWithDuration:0.25 animations:^{ toast.alpha = 1; }

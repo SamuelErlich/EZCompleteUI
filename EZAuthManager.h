@@ -6,6 +6,9 @@
 NS_ASSUME_NONNULL_BEGIN
 
 extern NSString *const EZPasswordResetReadyNotification;
+extern NSString *const EZAuthSessionChangedNotification;
+/// Posted after sign-out or another terminal session change. Observers should
+/// discard cached user-specific data and re-read the current auth state.
 
 @interface EZAuthManager : NSObject
 
@@ -36,6 +39,9 @@ extern NSString *const EZPasswordResetReadyNotification;
 
 - (void)signOut;
 
+/// Persists a Supabase session returned by signup/signin/refresh in Keychain.
+/// The dictionary may contain `access_token`, `refresh_token`, `expires_in`,
+/// and either `user.id`, `user_id`, or `id`.
 - (void)saveSession:(NSDictionary *)data;
 
 - (void)postToPath:(NSString *)path
@@ -49,8 +55,9 @@ extern NSString *const EZPasswordResetReadyNotification;
 
 - (NSString *)friendlyErrorFromData:(NSDictionary *)data networkError:(NSError *)error;
 
-/// Returns YES if the user hasn't authenticated in over 7 days.
-/// Check this before restoreSessionWithCompletion: and present LoginViewController if YES.
+/// Returns YES if the user hasn't authenticated in over 7 days. The timestamp
+/// is stored in Keychain with the session, never in NSUserDefaults.
+/// Check this before restoreSessionWithCompletion: when policy requires it.
 - (BOOL)requiresReAuthentication;
 
 @end

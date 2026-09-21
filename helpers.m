@@ -34,6 +34,7 @@
 #import "helpers.h"   // Import our own header so the compiler can verify we
                       // implement everything that was promised there.
 #import "EZAuthManager.h"
+#import "EZSupabaseConfig.h"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MODULE-LEVEL CONSTANTS
@@ -61,8 +62,6 @@ static NSString * const kHelperTemperatureDefaultsKey = @"helperTemperature";
 // The OpenAI key lives in Supabase Vault — it never touches the device.
 // Request:  { system: string, message: string, max_tokens: number }
 // Response: { result: string }
-static NSString * const kEZHelperURL = @"https://spuoimtqofhbdzosrbng.supabase.co/functions/v1/ez-helper";
-
 // Minimum confidence score (0–1) required before we trust the triage model's
 // "I can answer this directly" claim and skip the main model entirely.
 // 0.85 = "85% sure" — calibrated to avoid wrong short-circuit answers.
@@ -678,7 +677,9 @@ static NSString *_callHelperModelSync(NSString *systemPrompt,
                                       NSInteger maxTokens) {
     if (jwtToken.length == 0) return nil;  // no JWT → bail immediately
 
-    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:kEZHelperURL]];
+    NSURL *helperURL = EZSupabaseFunctionURL(@"ez-helper");
+    if (!helperURL) return nil;
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:helperURL];
     request.HTTPMethod      = @"POST";
     request.timeoutInterval = 20;   // 20-second timeout — helper calls should be fast
     [request setValue:@"application/json"                              forHTTPHeaderField:@"Content-Type"];

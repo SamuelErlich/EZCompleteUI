@@ -8,6 +8,7 @@
 #import <objc/runtime.h>
 #import "helpers.h"
 #import "ViewController.h"
+#import "EZUITheme.h"
 
 static const void *kTopContainerKey    = &kTopContainerKey;
 static const void *kSidewaysKey        = &kSidewaysKey;
@@ -48,31 +49,18 @@ static const void *kTableTopConstraint = &kTableTopConstraint;
     NSMutableArray<UIButton *> *protos = [NSMutableArray array];
 
     NSDictionary<NSString *, NSString *> *buttonLabels = @{
-        @"speakButton":          @"Speak",
-        @"webSearchButton":      @"Web Search",
-        @"helperDirectAnswersButton": @"Helper Direct Answers",
-        @"addChatButton":        @"New Chat",
-        @"memoriesButton":       @"Memories",
-        @"textToSpeechButton":   @"TTS",
-        @"supportRequestButton": @"Support",
-        @"cloningButton":        @"Clone Voice",
-        @"galleryButton":        @"Gallery",
-        @"settingsButton":       @"Settings",
-        @"brainRotButton":       @"Brain Rot",
+        @"speakButton":          NSLocalizedString(@"EZMain.Speak", nil),
+        @"webSearchButton":      NSLocalizedString(@"EZMain.WebSearch", nil),
+        @"helperDirectAnswersButton": NSLocalizedString(@"EZMain.HelperDirectAnswers", nil),
+        @"addChatButton":        NSLocalizedString(@"EZMain.NewChat", nil),
+        @"memoriesButton":       NSLocalizedString(@"EZMain.Memories", nil),
+        @"textToSpeechButton":   NSLocalizedString(@"EZMain.TextToSpeech", nil),
+        @"supportRequestButton": NSLocalizedString(@"EZMain.Support", nil),
+        @"cloningButton":        NSLocalizedString(@"EZMain.CloneVoice", nil),
+        @"galleryButton":        NSLocalizedString(@"EZMain.Gallery", nil),
+        @"settingsButton":       NSLocalizedString(@"EZMain.Settings", nil),
+        @"brainRotButton":       NSLocalizedString(@"EZMain.BrainRot", nil),
     };
-    NSDictionary<NSString *, NSString *> *buttonImageNames = @{
-        @"speakButton":          @"SpeakButton.PNG",
-        @"webSearchButton":      @"WebSearchButton.PNG",
-        @"addChatButton":        @"NewChatButton.png",
-        @"memoriesButton":       @"MemoriesButton.PNG",
-        @"textToSpeechButton":   @"TTSButton.PNG",
-        @"supportRequestButton": @"SupportButton.PNG",
-        @"cloningButton":        @"VoiceCloneButton.PNG",
-        @"galleryButton":        @"galleryButton.png",
-        @"settingsButton":       @"SettingsButton.png",
-        @"brainRotButton":       @"BrainRotButton.png",
-    };
-
     // Preserve original button order for consistent display
     NSArray<NSString *> *buttonOrder = @[
         @"memoriesButton",
@@ -82,7 +70,6 @@ static const void *kTableTopConstraint = &kTableTopConstraint;
         @"webSearchButton",
         @"helperDirectAnswersButton",
         @"settingsButton",
-        @"addChatButton",
         @"cloningButton",
         @"galleryButton",
         @"brainRotButton",
@@ -97,23 +84,18 @@ static const void *kTableTopConstraint = &kTableTopConstraint;
                 p.tag = orig.tag;
 
                 NSString *label = buttonLabels[key] ?: key;
-                NSString *imageName = buttonImageNames[key];
-                UIImage *icon = imageName ? [UIImage imageNamed:imageName] : [orig imageForState:UIControlStateNormal];
+                // Use the original SF Symbol instead of the legacy raster cards.
+                // This keeps the iconography sharp on every display scale.
+                UIImage *icon = [orig imageForState:UIControlStateNormal];
 
-                if (icon) {
-                    // Image card — no title, no insets, clear bg.
-                    // SidewaysScrollView.cloneFrom: handles all styling.
-                    [p setImage:icon forState:UIControlStateNormal];
-                    p.backgroundColor = UIColor.clearColor;
-                    p.layer.masksToBounds = NO;
-                } else {
-                    // Text fallback
-                    [p setTitle:label forState:UIControlStateNormal];
-                    p.backgroundColor = orig.backgroundColor ?: [UIColor systemBlueColor];
-                    p.titleLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightSemibold];
-                    p.titleLabel.numberOfLines = 1;
-                    p.contentEdgeInsets = UIEdgeInsetsMake(10, 12, 10, 12);
-                }
+                if (icon) [p setImage:icon forState:UIControlStateNormal];
+                // The tool rail intentionally shows a short caption below each
+                // symbol. This makes the Portuguese labels discoverable and
+                // keeps the row understandable without relying on color.
+                [p setTitle:label forState:UIControlStateNormal];
+                p.backgroundColor = UIColor.clearColor;
+                p.titleLabel.font = [UIFont systemFontOfSize:11 weight:UIFontWeightSemibold];
+                p.titleLabel.numberOfLines = 2;
 
                 p.accessibilityLabel = label;
                 p.contentHorizontalAlignment = UIControlContentHorizontalAlignmentCenter;

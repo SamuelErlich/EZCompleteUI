@@ -32,11 +32,9 @@
 #import "EZAuthManager.h"
 #import "EZEntitlementManager.h"
 #import "EZCoinStoreViewController.h"
+#import "EZSupabaseConfig.h"
 
 static NSString * const kMyVoicesDefaultsKey    = @"ELMyClonedVoices";
-static NSString * const kEZElevenLabsURL         =
-    @"https://spuoimtqofhbdzosrbng.supabase.co/functions/v1/ez-elevenlabs";
-
 // ---------------------------------------------------------------------------
 #pragma mark - Interface
 // ---------------------------------------------------------------------------
@@ -1064,8 +1062,15 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
               completion:(void (^)(NSDictionary *responseDict,
                                    NSInteger     statusCode,
                                    NSError      *networkError))completion {
-    NSMutableURLRequest *req =
-        [NSMutableURLRequest requestWithURL:[NSURL URLWithString:kEZElevenLabsURL]];
+    NSURL *endpoint = EZSupabaseFunctionURL(@"ez-elevenlabs");
+    if (!endpoint) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            completion(@{}, 0, [NSError errorWithDomain:@"EZCompleteBeta" code:503
+                                                userInfo:@{NSLocalizedDescriptionKey:@"Backend beta ainda não configurado."}]);
+        });
+        return;
+    }
+    NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:endpoint];
     req.HTTPMethod      = @"POST";
     req.timeoutInterval = 60;
     [req setValue:@"application/json"                       forHTTPHeaderField:@"Content-Type"];

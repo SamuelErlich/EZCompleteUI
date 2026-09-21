@@ -6,6 +6,7 @@
 #import "EZTTSVoiceService.h"
 #import "EZAuthManager.h"
 #import "helpers.h"
+#import "EZSupabaseConfig.h"
 
 NSString * const EZTTSVoiceServiceErrorDomain = @"EZTTSVoiceServiceErrorDomain";
 
@@ -31,7 +32,12 @@ static NSError *EZVoiceServiceError(NSInteger code, NSString *title, NSString *m
         return;
     }
 
-    NSURL *url = [NSURL URLWithString:@"https://spuoimtqofhbdzosrbng.supabase.co/functions/v1/ez-elevenlabs"];
+    NSURL *url = EZSupabaseFunctionURL(@"ez-elevenlabs");
+    if (!url) {
+        NSError *err = EZVoiceServiceError(4, @"Backend beta", @"Servidor ainda não configurado.");
+        dispatch_async(dispatch_get_main_queue(), ^{ completion(nil, err); });
+        return;
+    }
     NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:url];
     req.HTTPMethod = @"POST";
     [req setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];

@@ -1,0 +1,4 @@
+"NSMicrophoneUsageDescription" = "Used to turn your speech into text.";
+"NSSpeechRecognitionUsageDescription" = "Used for live speech recognition.";
+"NSPhotoLibraryAddUsageDescription" = "EZComplete saves AI-generated images to your Photo Library.";
+"CFBundleDisplayName" = "EZComplete";

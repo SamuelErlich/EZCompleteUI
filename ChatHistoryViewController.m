@@ -3,6 +3,17 @@
 
 #import "ChatHistoryViewController.h"
 #import "helpers.h"
+#import "EZUITheme.h"
+
+// Keep translated presentation text separate from models, defaults, and saved data.
+static NSString *EZWorkspaceLocalized(NSString *key) {
+    NSString *value = NSLocalizedStringFromTable(key, @"EZWorkspace", nil);
+    if (![value isEqualToString:key]) return value;
+    NSString *path = [[NSBundle mainBundle] pathForResource:@"en" ofType:@"lproj"];
+    NSBundle *fallback = path.length ? [NSBundle bundleWithPath:path] : nil;
+    return fallback ? [fallback localizedStringForKey:key value:key table:@"EZWorkspace"] : value;
+}
+
 
 static NSString * const kCellID = @"EZThreadCell";
 
@@ -20,7 +31,23 @@ static NSString * const kCellID = @"EZThreadCell";
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.title = @"Chat History";
+    self.title = EZWorkspaceLocalized(@"History.Title");
+    self.view.backgroundColor = [EZUITheme backgroundColor];
+    self.view.tintColor = [EZUITheme accentSecondaryColor];
+    UINavigationBarAppearance *appearance = [[UINavigationBarAppearance alloc] init];
+    [appearance configureWithOpaqueBackground];
+    appearance.backgroundColor = [EZUITheme backgroundColor];
+    appearance.titleTextAttributes = @{ NSForegroundColorAttributeName: [EZUITheme primaryTextColor] };
+    appearance.shadowColor = [EZUITheme dividerColor];
+    self.navigationItem.standardAppearance = appearance;
+    self.navigationItem.scrollEdgeAppearance = appearance;
+    self.navigationItem.compactAppearance = appearance;
+    self.tableView.backgroundColor = [EZUITheme backgroundColor];
+    self.tableView.separatorColor = [EZUITheme dividerColor];
+    self.tableView.tintColor = [EZUITheme accentSecondaryColor];
+    self.tableView.rowHeight = UITableViewAutomaticDimension;
+    self.tableView.estimatedRowHeight = 68;
+    self.tableView.separatorStyle = UITableViewCellSeparatorStyleNone;
 
     self.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc]
         initWithImage:[UIImage systemImageNamed:@"magnifyingglass"]
@@ -32,6 +59,9 @@ static NSString * const kCellID = @"EZThreadCell";
         initWithBarButtonSystemItem:UIBarButtonSystemItemClose
                              target:self
                              action:@selector(dismissSelf)];
+
+    self.navigationItem.leftBarButtonItem.accessibilityLabel = EZWorkspaceLocalized(@"Common.Search");
+    self.navigationItem.rightBarButtonItem.accessibilityLabel = EZWorkspaceLocalized(@"Common.Close");
 
     [self.tableView registerClass:[UITableViewCell class] forCellReuseIdentifier:kCellID];
     self.tableView.rowHeight          = UITableViewAutomaticDimension;
@@ -59,7 +89,11 @@ static NSString * const kCellID = @"EZThreadCell";
     if (self.searchBar) return;
     self.searchBar                     = [[UISearchBar alloc] initWithFrame:CGRectMake(0, 0, self.view.bounds.size.width, 44)];
     self.searchBar.autoresizingMask    = UIViewAutoresizingFlexibleWidth;
-    self.searchBar.placeholder         = @"Search titles";
+    self.searchBar.placeholder         = EZWorkspaceLocalized(@"History.Search");
+    self.searchBar.searchBarStyle      = UISearchBarStyleMinimal;
+    self.searchBar.tintColor           = [EZUITheme accentSecondaryColor];
+    self.searchBar.searchTextField.backgroundColor = [EZUITheme surfaceElevatedColor];
+    self.searchBar.searchTextField.textColor = [EZUITheme primaryTextColor];
     self.searchBar.delegate            = self;
     self.searchBar.showsCancelButton   = NO;
     self.tableView.tableHeaderView     = self.searchBar;
@@ -117,17 +151,28 @@ static NSString * const kCellID = @"EZThreadCell";
     cell.accessoryType          = UITableViewCellAccessoryNone;
     cell.userInteractionEnabled = YES;
     cell.selectionStyle         = UITableViewCellSelectionStyleDefault;
+    cell.backgroundColor = [UIColor clearColor];
+    cell.tintColor = [EZUITheme accentSecondaryColor];
+    UIBackgroundConfiguration *background = [UIBackgroundConfiguration listPlainCellConfiguration];
+    background.backgroundColor = [EZUITheme surfaceColor];
+    background.cornerRadius = 16;
+    background.backgroundInsets = NSDirectionalEdgeInsetsMake(5, 16, 5, 16);
+    cell.backgroundConfiguration = background;
 
     if (self.threads.count == 0) {
         // Empty state row
         if (@available(iOS 14.0, *)) {
             UIListContentConfiguration *cfg = cell.defaultContentConfiguration;
-            cfg.text                  = @"No saved conversations";
-            cfg.textProperties.color  = [UIColor secondaryLabelColor];
+            cfg.text                  = EZWorkspaceLocalized(@"History.Empty");
+            cfg.textProperties.numberOfLines = 0;
+            cfg.directionalLayoutMargins = NSDirectionalEdgeInsetsMake(22, 32, 22, 32);
+            cfg.image = [UIImage systemImageNamed:@"bubble.left.and.bubble.right"];
+            cfg.imageProperties.tintColor = [EZUITheme secondaryTextColor];
+            cfg.textProperties.color  = [EZUITheme secondaryTextColor];
             cell.contentConfiguration = cfg;
         } else {
-            cell.textLabel.text      = @"No saved conversations";
-            cell.textLabel.textColor = [UIColor secondaryLabelColor];
+            cell.textLabel.text      = EZWorkspaceLocalized(@"History.Empty");
+            cell.textLabel.textColor = [EZUITheme secondaryTextColor];
         }
         cell.userInteractionEnabled = NO;
         cell.selectionStyle         = UITableViewCellSelectionStyleNone;
@@ -153,16 +198,24 @@ static NSString * const kCellID = @"EZThreadCell";
 
     if (@available(iOS 14.0, *)) {
         UIListContentConfiguration *cfg  = cell.defaultContentConfiguration;
-        cfg.text                         = thread.title ?: @"Untitled";
+        cfg.text                         = thread.title ?: EZWorkspaceLocalized(@"History.Untitled");
         cfg.textProperties.numberOfLines = 2;
+        cfg.textProperties.color = [EZUITheme primaryTextColor];
+        cfg.textProperties.font = [UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
+        cfg.directionalLayoutMargins = NSDirectionalEdgeInsetsMake(20, 32, 20, 32);
+        cfg.image = [UIImage systemImageNamed:@"bubble.left.and.bubble.right"];
+        cfg.imageProperties.tintColor = [EZUITheme accentSecondaryColor];
         cfg.secondaryText                = subtitle;
-        cfg.secondaryTextProperties.color = [UIColor secondaryLabelColor];
+        cfg.secondaryTextProperties.color = [EZUITheme secondaryTextColor];
+        cfg.secondaryTextProperties.numberOfLines = 2;
+        cfg.secondaryTextProperties.font = [UIFont preferredFontForTextStyle:UIFontTextStyleFootnote];
         cell.contentConfiguration        = cfg;
     } else {
-        cell.textLabel.text              = thread.title ?: @"Untitled";
+        cell.textLabel.text              = thread.title ?: EZWorkspaceLocalized(@"History.Untitled");
         cell.textLabel.numberOfLines     = 2;
+        cell.textLabel.textColor = [EZUITheme primaryTextColor];
         cell.detailTextLabel.text        = subtitle;
-        cell.detailTextLabel.textColor   = [UIColor secondaryLabelColor];
+        cell.detailTextLabel.textColor   = [EZUITheme secondaryTextColor];
     }
     cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
     return cell;
@@ -179,21 +232,21 @@ static NSString * const kCellID = @"EZThreadCell";
     EZChatThread *stub = self.threads[(NSUInteger)indexPath.row];
 
     UIAlertController *confirm = [UIAlertController
-        alertControllerWithTitle:@"Restore Conversation?"
-                         message:@"Your current chat has been saved and can be restored later."
+        alertControllerWithTitle:EZWorkspaceLocalized(@"History.RestoreTitle")
+                         message:EZWorkspaceLocalized(@"History.RestoreMessage")
                   preferredStyle:UIAlertControllerStyleAlert];
 
-    [confirm addAction:[UIAlertAction actionWithTitle:@"Restore"
+    [confirm addAction:[UIAlertAction actionWithTitle:EZWorkspaceLocalized(@"History.Restore")
                                                style:UIAlertActionStyleDefault
                                              handler:^(UIAlertAction *a) {
         // Load full thread with messages
         EZChatThread *full = EZThreadLoad(stub.threadID);
         if (!full) {
             UIAlertController *err = [UIAlertController
-                alertControllerWithTitle:@"Error"
-                                 message:@"Could not load this conversation."
+                alertControllerWithTitle:EZWorkspaceLocalized(@"Common.Error")
+                                 message:EZWorkspaceLocalized(@"History.LoadError")
                           preferredStyle:UIAlertControllerStyleAlert];
-            [err addAction:[UIAlertAction actionWithTitle:@"OK"
+            [err addAction:[UIAlertAction actionWithTitle:EZWorkspaceLocalized(@"Common.OK")
                                                    style:UIAlertActionStyleDefault handler:nil]];
             [self presentViewController:err animated:YES completion:nil];
             return;
@@ -204,9 +257,13 @@ static NSString * const kCellID = @"EZThreadCell";
         }];
     }]];
 
-    [confirm addAction:[UIAlertAction actionWithTitle:@"Cancel"
+    [confirm addAction:[UIAlertAction actionWithTitle:EZWorkspaceLocalized(@"Common.Cancel")
                                                style:UIAlertActionStyleCancel handler:nil]];
     [self presentViewController:confirm animated:YES completion:nil];
+}
+
+- (NSString *)tableView:(UITableView *)tableView titleForDeleteConfirmationButtonForRowAtIndexPath:(NSIndexPath *)indexPath {
+    return EZWorkspaceLocalized(@"Common.Delete");
 }
 
 // Swipe-to-delete individual thread
@@ -233,22 +290,22 @@ forRowAtIndexPath:(NSIndexPath *)indexPath {
 - (void)confirmDeleteAll {
     if (self.threads.count == 0) return;
     NSString *msg = [NSString stringWithFormat:
-        @"Permanently delete all %lu saved conversations? This cannot be undone.",
+        EZWorkspaceLocalized(@"History.DeleteAllMessage"),
         (unsigned long)self.threads.count];
 
     UIAlertController *alert = [UIAlertController
-        alertControllerWithTitle:@"Delete All History?"
+        alertControllerWithTitle:EZWorkspaceLocalized(@"History.DeleteAllTitle")
                          message:msg
                   preferredStyle:UIAlertControllerStyleAlert];
 
-    [alert addAction:[UIAlertAction actionWithTitle:@"Delete All"
+    [alert addAction:[UIAlertAction actionWithTitle:EZWorkspaceLocalized(@"History.DeleteAll")
                                              style:UIAlertActionStyleDestructive
                                            handler:^(UIAlertAction *a) {
         for (EZChatThread *t in self.threads) EZThreadDelete(t.threadID);
         EZLog(EZLogLevelInfo, @"HISTORY", @"All threads deleted by user");
         [self reload];
     }]];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel"
+    [alert addAction:[UIAlertAction actionWithTitle:EZWorkspaceLocalized(@"Common.Cancel")
                                              style:UIAlertActionStyleCancel handler:nil]];
     [self presentViewController:alert animated:YES completion:nil];
 }

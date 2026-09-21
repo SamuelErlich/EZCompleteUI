@@ -106,7 +106,7 @@
 
 #if DEBUG
 
-static NSString *const kAdminLedgerBase    = @"https://spuoimtqofhbdzosrbng.supabase.co";
+static NSString *const kAdminLedgerBase    = @"https://YOUR_PROJECT_REF.supabase.co";
 static NSString *const kAdminLedgerPath    = @"/functions/v1/get-admin-ledger";
 // NOTE: placeholder path — point this at whatever edge function actually
 // performs manual coin grants server-side (must log a manual_grant row to

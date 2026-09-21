@@ -1,4 +1,5 @@
 #import "EZSystemCell.h"
+#import "EZUITheme.h"
 
 @implementation EZSystemCell
 - (instancetype)initWithStyle:(UITableViewCellStyle)style reuseIdentifier:(NSString *)reuseIdentifier {
@@ -11,7 +12,7 @@
     _messageLabel.numberOfLines  = 0;
     _messageLabel.textAlignment  = NSTextAlignmentCenter;
     _messageLabel.font           = [UIFont systemFontOfSize:12];
-    _messageLabel.textColor      = [UIColor secondaryLabelColor];
+    _messageLabel.textColor      = [EZUITheme secondaryTextColor];
     _messageLabel.translatesAutoresizingMaskIntoConstraints = NO;
     [self.contentView addSubview:_messageLabel];
 

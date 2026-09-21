@@ -6,6 +6,17 @@
 #import "EZModelPickerViewController.h"
 #import "EZCoinStoreViewController.h"
 #import "EZEntitlementManager.h"
+#import "EZUITheme.h"
+
+// Keep translated presentation text separate from models, defaults, and saved data.
+static NSString *EZWorkspaceLocalized(NSString *key) {
+    NSString *value = NSLocalizedStringFromTable(key, @"EZWorkspace", nil);
+    if (![value isEqualToString:key]) return value;
+    NSString *path = [[NSBundle mainBundle] pathForResource:@"en" ofType:@"lproj"];
+    NSBundle *fallback = path.length ? [NSBundle bundleWithPath:path] : nil;
+    return fallback ? [fallback localizedStringForKey:key value:key table:@"EZWorkspace"] : value;
+}
+
 
 static NSString *EZLocalized(NSString *key) {
     NSString *localized = NSLocalizedString(key, nil);
@@ -85,9 +96,26 @@ static BOOL EZModelRequiresSubscription(NSString *model) {
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.title = EZLocalized(@"EZModelPicker.Title");
+    self.view.backgroundColor = [EZUITheme backgroundColor];
+    self.view.tintColor = [EZUITheme accentSecondaryColor];
+    UINavigationBarAppearance *appearance = [[UINavigationBarAppearance alloc] init];
+    [appearance configureWithOpaqueBackground];
+    appearance.backgroundColor = [EZUITheme backgroundColor];
+    appearance.titleTextAttributes = @{ NSForegroundColorAttributeName: [EZUITheme primaryTextColor] };
+    appearance.shadowColor = [EZUITheme dividerColor];
+    self.navigationItem.standardAppearance = appearance;
+    self.navigationItem.scrollEdgeAppearance = appearance;
+    self.navigationItem.compactAppearance = appearance;
+    self.tableView.backgroundColor = [EZUITheme backgroundColor];
+    self.tableView.separatorColor = [EZUITheme dividerColor];
+    self.tableView.tintColor = [EZUITheme accentSecondaryColor];
+    self.tableView.rowHeight = UITableViewAutomaticDimension;
+    self.tableView.estimatedRowHeight = 68;
+
     self.navigationItem.rightBarButtonItem =
-        [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone
-                                                      target:self action:@selector(_dismiss)];
+        [[UIBarButtonItem alloc] initWithTitle:EZWorkspaceLocalized(@"Common.Done")
+                                             style:UIBarButtonItemStyleDone
+                                            target:self action:@selector(_dismiss)];
 }
 
 - (void)_dismiss {
@@ -154,14 +182,37 @@ static BOOL EZModelRequiresSubscription(NSString *model) {
     }
     NSString *model = EZModelSections()[(NSUInteger)ip.section][(NSUInteger)ip.row];
     cell.textLabel.text            = model;
-    cell.textLabel.font            = [UIFont systemFontOfSize:15 weight:UIFontWeightMedium];
+    cell.textLabel.font            = [UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
+    cell.textLabel.textColor       = [EZUITheme primaryTextColor];
+    cell.textLabel.adjustsFontForContentSizeCategory = YES;
     cell.detailTextLabel.text      = EZModelLabels()[model] ?: @"";
-    cell.detailTextLabel.font      = [UIFont systemFontOfSize:12];
-    cell.detailTextLabel.textColor = [UIColor secondaryLabelColor];
+    cell.detailTextLabel.font      = [UIFont preferredFontForTextStyle:UIFontTextStyleFootnote];
+    cell.detailTextLabel.textColor = [EZUITheme secondaryTextColor];
+    cell.detailTextLabel.numberOfLines = 0;
+    cell.detailTextLabel.adjustsFontForContentSizeCategory = YES;
+    cell.textLabel.numberOfLines = 0;
+    cell.backgroundColor = [EZUITheme surfaceColor];
+    cell.tintColor = [EZUITheme accentSecondaryColor];
+    UIView *selectedBackground = [[UIView alloc] init];
+    selectedBackground.backgroundColor = [EZUITheme accentSoftColor];
+    cell.selectedBackgroundView = selectedBackground;
+    NSArray<NSString *> *sectionSymbols = @[@"sparkles", @"bubble.left.and.bubble.right", @"photo", @"waveform"];
+    cell.imageView.image = [UIImage systemImageNamed:sectionSymbols[(NSUInteger)ip.section]];
+    cell.imageView.tintColor = [EZUITheme accentSecondaryColor];
+    cell.accessibilityValue = [model isEqualToString:self.selectedModel]
+        ? EZWorkspaceLocalized(@"ModelPicker.Selected") : nil;
     cell.accessoryType             = [model isEqualToString:self.selectedModel]
                                      ? UITableViewCellAccessoryCheckmark
                                      : UITableViewCellAccessoryNone;
     return cell;
+}
+
+
+- (void)tableView:(UITableView *)tableView willDisplayHeaderView:(UIView *)view forSection:(NSInteger)section {
+    if (![view isKindOfClass:[UITableViewHeaderFooterView class]]) return;
+    UITableViewHeaderFooterView *header = (UITableViewHeaderFooterView *)view;
+    header.textLabel.textColor = [EZUITheme secondaryTextColor];
+    header.textLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleFootnote];
 }
 
 - (void)tableView:(UITableView *)tv didSelectRowAtIndexPath:(NSIndexPath *)ip {

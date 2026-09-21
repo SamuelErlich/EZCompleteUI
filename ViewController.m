@@ -575,6 +575,7 @@
 #import "EZSupabaseConfig.h"
 #import "EZTermsAcceptanceViewController.h"
 #import "HelperLogViewController.h"
+#import "EZUITheme.h"
 #import <CommonCrypto/CommonDigest.h>
 
 // Stable, non-reversible identifier for OpenAI safety tracking.  Keep this a
@@ -711,6 +712,9 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
 @property (nonatomic, strong) AVAudioPlayer *audioPlayer;
 @property (nonatomic, strong) NSString      *lastAIResponse;
 @property (nonatomic, strong) NSString      *lastUserPrompt;
+/// Stable per-send key reused by the automatic retry so one request cannot
+/// debit the wallet twice after a timeout.
+@property (nonatomic, strong) NSString      *chatRequestIdempotencyKey;
 
 // Dictation
 @property (nonatomic, strong) SFSpeechRecognizer               *speechRecognizer;
@@ -1103,7 +1107,7 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
     [self.pendingFiles removeAllObjects];
     [self.pendingImagePaths removeAllObjects];
 
-    [self.modelButton setTitle:[NSString stringWithFormat:@"Model: %@", self.selectedModel]
+    [self.modelButton setTitle:[NSString localizedStringWithFormat:NSLocalizedString(@"EZMain.ModelFormat", nil), self.selectedModel]
                       forState:UIControlStateNormal];
 
     // Rebuild display messages from saved context
@@ -1432,7 +1436,7 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 - (void)setupUI {
-    self.view.backgroundColor = [UIColor systemBackgroundColor];
+    self.view.backgroundColor = [EZUITheme backgroundColor];
 
     // Top bar buttons
     // + New chat (save current, start fresh)
@@ -1486,14 +1490,17 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
         initWithTarget:self action:@selector(coinPotTapped)];
     [self.coinPotView addGestureRecognizer:potTap];
 
-    // Full-width stack — equalSpacing distributes buttons edge to edge
+    // Compact header: history, balance and new chat stay visible; the rest of
+    // the tools live in the scrollable rail below the thread title.
     UIStackView *topStack = [[UIStackView alloc] initWithArrangedSubviews:@[
-        self.addChatButton, self.historyButton, self.clipboardButton,
-        self.speakButton, self.webSearchButton, self.helperDirectAnswersButton, self.coinPotView,
-        self.renameButton, self.clearButton, self.memoriesButton, self.cloningButton, self.supportRequestButton,
-        self.textToSpeechButton, self.galleryButton]];
+        self.historyButton, self.coinPotView, self.addChatButton]];
     topStack.distribution = UIStackViewDistributionEqualSpacing;
     topStack.alignment    = UIStackViewAlignmentCenter;
+    topStack.spacing      = 12.0;
+    topStack.backgroundColor = [EZUITheme surfaceColor];
+    topStack.layer.cornerRadius = 18.0;
+    topStack.layoutMargins = UIEdgeInsetsMake(2, 10, 2, 10);
+    topStack.layoutMarginsRelativeArrangement = YES;
     topStack.translatesAutoresizingMaskIntoConstraints = NO;
     [self.view addSubview:topStack];
 
@@ -1514,9 +1521,9 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
 
     // Thread title label — tappable, sits between top bar and chat table
     self.threadTitleLabel                 = [[UILabel alloc] init];
-    self.threadTitleLabel.text            = @"New Conversation";
+    self.threadTitleLabel.text            = NSLocalizedString(@"EZMain.NewChat", nil);
     self.threadTitleLabel.font            = [UIFont systemFontOfSize:15 weight:UIFontWeightMedium];
-    self.threadTitleLabel.textColor       = [UIColor secondaryLabelColor];
+    self.threadTitleLabel.textColor       = [EZUITheme secondaryTextColor];
     self.threadTitleLabel.textAlignment   = NSTextAlignmentCenter;
     self.threadTitleLabel.userInteractionEnabled = YES;
     self.threadTitleLabel.translatesAutoresizingMaskIntoConstraints = NO;
@@ -1530,7 +1537,7 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
     self.chatTableView.dataSource         = self;
     self.chatTableView.delegate           = self;
     self.chatTableView.separatorStyle     = UITableViewCellSeparatorStyleNone;
-    self.chatTableView.backgroundColor    = [UIColor systemBackgroundColor];
+    self.chatTableView.backgroundColor    = [EZUITheme backgroundColor];
     self.chatTableView.estimatedRowHeight = 60;
     self.chatTableView.rowHeight          = UITableViewAutomaticDimension;
     self.chatTableView.translatesAutoresizingMaskIntoConstraints = NO;
@@ -1565,14 +1572,14 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
 
     // Input container
     self.inputContainer = [[UIView alloc] init];
-    self.inputContainer.backgroundColor = [UIColor secondarySystemBackgroundColor];
+    [EZUITheme styleCard:self.inputContainer cornerRadius:18.0];
     self.inputContainer.translatesAutoresizingMaskIntoConstraints = NO;
     [self.view addSubview:self.inputContainer];
     
         // Dictate button
         self.dictateButton = [UIButton buttonWithType:UIButtonTypeSystem];
         [self.dictateButton setImage:[UIImage systemImageNamed:@"mic.fill"] forState:UIControlStateNormal];
-        [self.dictateButton setTintColor:[UIColor systemBlueColor]];
+        [self.dictateButton setTintColor:[EZUITheme accentSecondaryColor]];
         [self.dictateButton addTarget:self action:@selector(toggleDictation)
                      forControlEvents:UIControlEventTouchUpInside];
         self.dictateButton.translatesAutoresizingMaskIntoConstraints = NO;
@@ -1580,8 +1587,10 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
 
     // Model picker button
     self.modelButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    [self.modelButton setTitle:[NSString stringWithFormat:@"Model: %@", self.selectedModel]
+    [self.modelButton setTitle:[NSString localizedStringWithFormat:NSLocalizedString(@"EZMain.ModelFormat", nil), self.selectedModel]
                       forState:UIControlStateNormal];
+    self.modelButton.titleLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightSemibold];
+    self.modelButton.tintColor = [EZUITheme accentSecondaryColor];
     [self.modelButton addTarget:self action:@selector(showModelPicker)
                 forControlEvents:UIControlEventTouchUpInside];
     self.modelButton.translatesAutoresizingMaskIntoConstraints = NO;
@@ -1601,16 +1610,13 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
     // Message input — UITextView so it can expand to multiple lines.
     // Wrapped in a rounded container view to replicate UITextBorderStyleRoundedRect look.
     UIView *inputWrapper = [[UIView alloc] init];
-    inputWrapper.backgroundColor   = [UIColor systemBackgroundColor];
-    inputWrapper.layer.cornerRadius = 10.0;
-    inputWrapper.layer.borderWidth  = 1.5;
-    inputWrapper.layer.borderColor  = [UIColor separatorColor].CGColor;
+    [EZUITheme styleTextInput:inputWrapper];
     inputWrapper.clipsToBounds      = YES;
     inputWrapper.translatesAutoresizingMaskIntoConstraints = NO;
 
     self.messageTextField = [[UITextView alloc] init];
     self.messageTextField.font                  = [UIFont systemFontOfSize:16];
-    self.messageTextField.textColor             = [UIColor labelColor];
+    self.messageTextField.textColor             = [EZUITheme primaryTextColor];
     self.messageTextField.backgroundColor       = [UIColor clearColor];
     self.messageTextField.textContainerInset    = UIEdgeInsetsMake(8, 6, 8, 6);
     self.messageTextField.textContainer.lineFragmentPadding = 0;
@@ -1625,7 +1631,7 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
 
     // Placeholder label — UITextView has no built-in placeholder
     UILabel *placeholder = [[UILabel alloc] init];
-    placeholder.text      = @"Type message...";
+    placeholder.text      = NSLocalizedString(@"EZMain.MessagePlaceholder", nil);
     placeholder.font      = [UIFont systemFontOfSize:16];
     placeholder.textColor = [UIColor placeholderTextColor];
     placeholder.tag       = 9001;   // retrieved to show/hide as user types
@@ -1650,16 +1656,13 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
 
     // Send button
     self.sendButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    [self.sendButton setTitle:@"Send" forState:UIControlStateNormal];
+    [self.sendButton setTitle:NSLocalizedString(@"EZMain.Send", nil) forState:UIControlStateNormal];
     [self.sendButton addTarget:self action:@selector(handleSend)
               forControlEvents:UIControlEventTouchUpInside];
     self.sendButton.translatesAutoresizingMaskIntoConstraints = NO;
     [self.inputContainer addSubview:self.sendButton];
-    self.inputContainer.backgroundColor = [UIColor colorWithRed:0 green:0.44 blue:0.34 alpha:0.8];
-    self.inputContainer.layer.borderWidth = 2.0;
-    self.inputContainer.layer.borderColor = [UIColor secondaryLabelColor].CGColor;
-    self.inputContainer.layer.masksToBounds = YES;
-    self.inputContainer.layer.cornerRadius = 10.0;
+    [EZUITheme stylePrimaryButton:self.sendButton];
+    self.inputContainer.layer.borderColor = [EZUITheme dividerColor].CGColor;
 
     [self.sendButton setContentCompressionResistancePriority:UILayoutPriorityRequired
                                                      forAxis:UILayoutConstraintAxisHorizontal];
@@ -1695,7 +1698,7 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
     self.triageUncertainTurnsStepper.stepValue = 1;
     self.triageUncertainTurnsStepper.value = MAX(0, MIN(15, triageTurns));
     self.triageUncertainTurnsStepper.accessibilityLabel =
-        @"Turns for uncertain triage";
+        NSLocalizedString(@"EZMain.TriageTurns", nil);
     self.triageUncertainTurnsStepper.translatesAutoresizingMaskIntoConstraints = NO;
     [self.triageUncertainTurnsStepper addTarget:self
                                          action:@selector(triageUncertainTurnsChanged:)
@@ -1789,7 +1792,8 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
 - (UIButton *)_iconButton:(NSString *)sfSymbol tint:(nullable UIColor *)tint action:(SEL)action {
     UIButton *b = [UIButton buttonWithType:UIButtonTypeSystem];
     [b setImage:[UIImage systemImageNamed:sfSymbol] forState:UIControlStateNormal];
-    if (tint) [b setTintColor:tint];
+    [b setTintColor:tint ?: [EZUITheme accentSecondaryColor]];
+    b.accessibilityTraits = UIAccessibilityTraitButton;
     [b addTarget:self action:action forControlEvents:UIControlEventTouchUpInside];
     return b;
 }
@@ -1971,11 +1975,11 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
 - (void)updateThreadTitleLabel {
     NSString *title = self.activeThread.title;
     if (!title.length || [title isEqualToString:@"New Conversation"]) {
-        self.threadTitleLabel.text      = @"New Conversation";
-        self.threadTitleLabel.textColor = [UIColor tertiaryLabelColor];
+        self.threadTitleLabel.text      = NSLocalizedString(@"EZMain.NewChat", nil);
+        self.threadTitleLabel.textColor = [EZUITheme secondaryTextColor];
     } else {
         self.threadTitleLabel.text      = title;
-        self.threadTitleLabel.textColor = [UIColor secondaryLabelColor];
+        self.threadTitleLabel.textColor = [EZUITheme primaryTextColor];
     }
 }
 
@@ -1984,18 +1988,18 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
     NSString *current = self.activeThread.title.length > 0
         ? self.activeThread.title : @"";
     UIAlertController *alert =
-        [UIAlertController alertControllerWithTitle:@"Rename Thread"
+        [UIAlertController alertControllerWithTitle:NSLocalizedString(@"EZMain.RenameThread", nil)
                                             message:nil
                                      preferredStyle:UIAlertControllerStyleAlert];
     [alert addTextFieldWithConfigurationHandler:^(UITextField *tf) {
         tf.text             = current;
-        tf.placeholder      = @"Thread name";
+        tf.placeholder      = NSLocalizedString(@"EZMain.ThreadName", nil);
         tf.clearButtonMode  = UITextFieldViewModeWhileEditing;
         tf.returnKeyType    = UIReturnKeyDone;
         tf.autocapitalizationType = UITextAutocapitalizationTypeSentences;
     }];
     __weak typeof(self) ws = self;
-    [alert addAction:[UIAlertAction actionWithTitle:@"Save"
+        [alert addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"EZMain.Save", nil)
                                               style:UIAlertActionStyleDefault
                                             handler:^(UIAlertAction *_) {
         NSString *newTitle = [alert.textFields.firstObject.text
@@ -2006,7 +2010,7 @@ typedef NS_ENUM(NSInteger, EZAttachMode) {
         [ws saveActiveThread];
         EZLogf(EZLogLevelInfo, @"THREAD", @"Renamed to: %@", newTitle);
     }]];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel"
+    [alert addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"EZMain.Cancel", nil)
                                               style:UIAlertActionStyleCancel handler:nil]];
     [self presentViewController:alert animated:YES completion:nil];
 }
@@ -2379,7 +2383,7 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
         if (![self modelSupportsVision:self.selectedModel]) {
             NSString *prev     = self.selectedModel;
             self.selectedModel = @"gpt-4o";
-            [self.modelButton setTitle:@"Model: gpt-4o" forState:UIControlStateNormal];
+            [self.modelButton setTitle:[NSString localizedStringWithFormat:NSLocalizedString(@"EZMain.ModelFormat", nil), @"gpt-4o"] forState:UIControlStateNormal];
             [self appendToChat:[NSString stringWithFormat:
                 @"[System: Image attached — %@ doesn't support vision. "
                 @"Switched to gpt-4o. Type a prompt to analyze the image.]", prev]];
@@ -2707,8 +2711,14 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
         return;
     }
 
-    NSURL *edgeURL = [NSURL URLWithString:
-        @"https://spuoimtqofhbdzosrbng.supabase.co/functions/v1/ez-elevenlabs"];
+    NSURL *edgeURL = EZSupabaseFunctionURL(@"ez-elevenlabs");
+    if (!edgeURL) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self appendToChat:@"[TTS beta: backend ainda não configurado]"];
+            [self speakWithApple:text];
+        });
+        return;
+    }
     NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:edgeURL];
     req.HTTPMethod = @"POST";
     // Was left on the NSURLSession default (60s). ElevenLabs generation time
@@ -3033,7 +3043,7 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     // ── Guard: Whisper is transcription-only, not a chat model ───────────────
     if ([self.selectedModel isEqualToString:@"whisper-1"]) {
         self.selectedModel = @"gpt-4o";
-        [self.modelButton setTitle:@"Model: gpt-4o" forState:UIControlStateNormal];
+        [self.modelButton setTitle:[NSString localizedStringWithFormat:NSLocalizedString(@"EZMain.ModelFormat", nil), @"gpt-4o"] forState:UIControlStateNormal];
         [self appendToChat:@"[System: Whisper is for audio transcription only — switched to gpt-4o for chat]"];
     }
 
@@ -3097,7 +3107,7 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
                 [self callImageEdit:text imagePath:editPath];
             } else if ([intent isEqualToString:@"chat"]) {
                 self.selectedModel = @"gpt-5.6-luna";
-                [self.modelButton setTitle:@"Model: gpt-5.6-luna" forState:UIControlStateNormal];
+                [self.modelButton setTitle:[NSString localizedStringWithFormat:NSLocalizedString(@"EZMain.ModelFormat", nil), @"gpt-5.6-luna"] forState:UIControlStateNormal];
                 [self appendToChat:@"[System: Switched to gpt-5.6-luna for this text request]"];
                 [self callChatCompletions];
             } else {
@@ -3252,9 +3262,15 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
                     body:(NSDictionary *)body
               retryCount:(NSInteger)retryCount
               completion:(void(^)(NSDictionary * _Nullable json, NSError * _Nullable error))completion {
-    NSString *urlStr = [NSString stringWithFormat:
-        @"https://spuoimtqofhbdzosrbng.supabase.co/functions/v1/%@", functionName];
-    NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:urlStr]];
+    NSURL *functionURL = EZSupabaseFunctionURL(functionName);
+    if (!functionURL) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            completion(nil, [NSError errorWithDomain:@"EZCompleteBeta" code:1001
+                                             userInfo:@{NSLocalizedDescriptionKey:@"Backend beta ainda não configurado."}]);
+        });
+        return;
+    }
+    NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:functionURL];
     req.HTTPMethod = @"POST";
     req.timeoutInterval = 240;
     [req setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
@@ -3368,6 +3384,9 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
 /// Sends one already-assembled chat turn. A retry reuses chatContext, which
 /// already contains the submitted prompt and its attached-file/image content.
 - (void)callChatCompletionsWithRetryCount:(NSInteger)retryCount {
+    if (retryCount == 0 || self.chatRequestIdempotencyKey.length == 0) {
+        self.chatRequestIdempotencyKey = [NSUUID UUID].UUIDString;
+    }
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
 
     // GPT-5.x models and GPT-6 Astra use the Responses API.
@@ -3513,6 +3532,9 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     ezBody[@"estimated_tokens"] = @(totalEstimate);
     ezBody[@"max_tokens"]        = @(maxCompletionTokens);
     ezBody[@"feature_tier"]     = featureTier;
+    ezBody[@"idempotency_key"]  = self.chatRequestIdempotencyKey;
+    NSString *usageLogID = [EZEntitlementManager shared].lastLogID;
+    if (usageLogID.length > 0) ezBody[@"usage_log_id"] = usageLogID;
     if (userPreferences.length > 0) ezBody[@"user_preferences"] = userPreferences;
     if (useWebSearch)           ezBody[@"web_search"] = @YES;
     if (capturedPrompt.length > 0) {
@@ -3528,7 +3550,11 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     NSString *token = [EZAuthManager shared].accessToken;
     if (!token) { [self handleAPIError:@"Not signed in"]; return; }
 
-    NSURL *ezURL = [NSURL URLWithString:@"https://spuoimtqofhbdzosrbng.supabase.co/functions/v1/ez-chat"];
+    NSURL *ezURL = EZSupabaseFunctionURL(@"ez-chat");
+    if (!ezURL) {
+        [self handleAPIError:@"Backend beta ainda não configurado"];
+        return;
+    }
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:ezURL];
     request.HTTPMethod = @"POST";
     BOOL isHeavyReasoningModel = [self.selectedModel isEqualToString:@"gpt-5.6-sol"] ||
@@ -3873,7 +3899,7 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
         dispatch_async(dispatch_get_main_queue(), ^{
             self.lastImagePrompt = prompt;
             self.selectedModel   = @"gpt-image-1-edit";
-            [self.modelButton setTitle:[NSString stringWithFormat:@"Model: %@ (edit mode)",
+            [self.modelButton setTitle:[NSString localizedStringWithFormat:NSLocalizedString(@"EZMain.ModelEditFormat", nil),
                                          self.preEditModeModel ?: @"gpt-image-1"]
                               forState:UIControlStateNormal];
             [self appendToChat:@"[System: Edit complete — still in edit mode. Attach a new image or type another edit prompt.]"];
@@ -4272,7 +4298,7 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
         self.preEditModeModel = @"gpt-image-1"; // sensible default, matches old hardcoded behavior
     }
     self.selectedModel = @"gpt-image-1-edit";
-    [self.modelButton setTitle:[NSString stringWithFormat:@"Model: %@ (edit mode)", self.preEditModeModel]
+    [self.modelButton setTitle:[NSString localizedStringWithFormat:NSLocalizedString(@"EZMain.ModelEditFormat", nil), self.preEditModeModel]
                       forState:UIControlStateNormal];
 }
 
@@ -4284,7 +4310,7 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
 
     NSString *model = self.preEditModeModel.length ? self.preEditModeModel : @"gpt-image-1";
     self.selectedModel = model;
-    [self.modelButton setTitle:[NSString stringWithFormat:@"Model: %@", model]
+    [self.modelButton setTitle:[NSString localizedStringWithFormat:NSLocalizedString(@"EZMain.ModelFormat", nil), model]
                       forState:UIControlStateNormal];
 }
 
@@ -4748,7 +4774,7 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     __weak typeof(self) ws = self;
     picker.onModelSelected = ^(NSString *model) {
         ws.selectedModel = model;
-        [ws.modelButton setTitle:[NSString stringWithFormat:@"Model: %@", model]
+        [ws.modelButton setTitle:[NSString localizedStringWithFormat:NSLocalizedString(@"EZMain.ModelFormat", nil), model]
                         forState:UIControlStateNormal];
         [[NSUserDefaults standardUserDefaults] setObject:model forKey:@"selectedModel"];
         ws.imageSettingsButton.hidden = ![ws isGptImage1Family:model];
@@ -5902,7 +5928,7 @@ didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
                     if (s && s.messageTextField.text.length == 0) {
                         s.messageTextField.text = pendingPrompt;
                         [s appendToChat:
-                            @"[System: Your prompt has been restored — tap Send when ready]"];
+                            NSLocalizedString(@"EZMain.RestoredPrompt", nil)];
                     }
                     return;
                 }

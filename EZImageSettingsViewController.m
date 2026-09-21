@@ -33,6 +33,17 @@
 #import "EZCoinStoreViewController.h"
 #import "EZEntitlementManager.h"
 #import "helpers.h"
+#import "EZUITheme.h"
+
+// Keep translated presentation text separate from models, defaults, and saved data.
+static NSString *EZWorkspaceLocalized(NSString *key) {
+    NSString *value = NSLocalizedStringFromTable(key, @"EZWorkspace", nil);
+    if (![value isEqualToString:key]) return value;
+    NSString *path = [[NSBundle mainBundle] pathForResource:@"en" ofType:@"lproj"];
+    NSBundle *fallback = path.length ? [NSBundle bundleWithPath:path] : nil;
+    return fallback ? [fallback localizedStringForKey:key value:key table:@"EZWorkspace"] : value;
+}
+
 
 static NSSet<NSString *> *EZModelsSupportingXhighMax(void) {
     static NSSet<NSString *> *models;
@@ -55,7 +66,23 @@ static BOOL EZImageSettingRequiresSubscription(NSString *key, NSString *value) {
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.title = @"Image Settings";
+    self.title = EZWorkspaceLocalized(@"Image.Title");
+    self.view.backgroundColor = [EZUITheme backgroundColor];
+    self.view.tintColor = [EZUITheme accentSecondaryColor];
+    UINavigationBarAppearance *appearance = [[UINavigationBarAppearance alloc] init];
+    [appearance configureWithOpaqueBackground];
+    appearance.backgroundColor = [EZUITheme backgroundColor];
+    appearance.titleTextAttributes = @{ NSForegroundColorAttributeName: [EZUITheme primaryTextColor] };
+    appearance.shadowColor = [EZUITheme dividerColor];
+    self.navigationItem.standardAppearance = appearance;
+    self.navigationItem.scrollEdgeAppearance = appearance;
+    self.navigationItem.compactAppearance = appearance;
+    self.tableView.backgroundColor = [EZUITheme backgroundColor];
+    self.tableView.separatorColor = [EZUITheme dividerColor];
+    self.tableView.tintColor = [EZUITheme accentSecondaryColor];
+    self.tableView.rowHeight = UITableViewAutomaticDimension;
+    self.tableView.estimatedRowHeight = 68;
+
 
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     NSString *selectedModel  = [defaults stringForKey:@"selectedModel"] ?: @"";
@@ -65,8 +92,8 @@ static BOOL EZImageSettingRequiresSubscription(NSString *key, NSString *value) {
         ? @[@"auto", @"max", @"xhigh", @"high", @"medium", @"low"]
         : @[@"auto", @"high", @"medium", @"low"];
     NSArray<NSString *> *qualityLabels = supportsXhighMax
-        ? @[@"Auto (recommended)", @"Max (highest quality)", @"Extra High", @"High", @"Medium", @"Low (fastest)"]
-        : @[@"Auto (recommended)", @"High", @"Medium", @"Low (fastest)"];
+        ? @[EZWorkspaceLocalized(@"Image.AutoRecommended"), EZWorkspaceLocalized(@"Image.Maximum"), EZWorkspaceLocalized(@"Image.ExtraHigh"), EZWorkspaceLocalized(@"Image.High"), EZWorkspaceLocalized(@"Image.Medium"), EZWorkspaceLocalized(@"Image.LowFast")]
+        : @[EZWorkspaceLocalized(@"Image.AutoRecommended"), EZWorkspaceLocalized(@"Image.High"), EZWorkspaceLocalized(@"Image.Medium"), EZWorkspaceLocalized(@"Image.LowFast")];
 
     // Clamp a previously-stored quality that's no longer valid for the
     // current model — see this file's own changelog for why.
@@ -84,28 +111,29 @@ static BOOL EZImageSettingRequiresSubscription(NSString *key, NSString *value) {
     }
 
     _sections = @[
-        @{ @"title": @"Size",       @"key": @"imgSize",       @"default": @"1024x1024",
+        @{ @"title": EZWorkspaceLocalized(@"Image.Size"),       @"key": @"imgSize",       @"default": @"1024x1024",
            @"options": @[@"1024x1024", @"1024x1536", @"1536x1024"],
-           @"labels":  @[@"Square — 1024 × 1024", @"Portrait — 1024 × 1536", @"Landscape — 1536 × 1024"] },
-        @{ @"title": @"Quality",    @"key": @"imgQuality",    @"default": @"auto",
+           @"labels":  @[EZWorkspaceLocalized(@"Image.Square"), EZWorkspaceLocalized(@"Image.Portrait"), EZWorkspaceLocalized(@"Image.Landscape")] },
+        @{ @"title": EZWorkspaceLocalized(@"Image.Quality"),    @"key": @"imgQuality",    @"default": @"auto",
            @"options": qualityOptions,
            @"labels":  qualityLabels },
-        @{ @"title": @"Format",     @"key": @"imgFormat",     @"default": @"png",
+        @{ @"title": EZWorkspaceLocalized(@"Image.Format"),     @"key": @"imgFormat",     @"default": @"png",
            @"options": @[@"png", @"jpeg", @"webp"],
-           @"labels":  @[@"PNG — lossless, transparency OK", @"JPEG — lossy, no transparency", @"WebP — modern, transparency OK"] },
-        @{ @"title": @"Background", @"key": @"imgBackground", @"default": @"auto",
+           @"labels":  @[EZWorkspaceLocalized(@"Image.PNG"), EZWorkspaceLocalized(@"Image.JPEG"), EZWorkspaceLocalized(@"Image.WebP")] },
+        @{ @"title": EZWorkspaceLocalized(@"Image.Background"), @"key": @"imgBackground", @"default": @"auto",
            @"options": @[@"auto", @"transparent", @"opaque"],
-           @"labels":  @[@"Auto", @"Transparent (PNG/WebP only)", @"Opaque"] },
-        @{ @"title": @"Moderation", @"key": @"imgModeration", @"default": @"auto",
+           @"labels":  @[EZWorkspaceLocalized(@"Image.Auto"), EZWorkspaceLocalized(@"Image.Transparent"), EZWorkspaceLocalized(@"Image.Opaque")] },
+        @{ @"title": EZWorkspaceLocalized(@"Image.Moderation"), @"key": @"imgModeration", @"default": @"auto",
            @"options": @[@"auto", @"low"],
-           @"labels":  @[@"Auto", @"Low"] },
-        @{ @"title": @"Variations", @"key": @"imgVariations", @"default": @"1",
+           @"labels":  @[EZWorkspaceLocalized(@"Image.Auto"), EZWorkspaceLocalized(@"Image.Low")] },
+        @{ @"title": EZWorkspaceLocalized(@"Image.Variations"), @"key": @"imgVariations", @"default": @"1",
            @"options": @[@"1", @"2", @"4"],
-           @"labels":  @[@"1 — Single result", @"2 — Two variations", @"4 — Four variations (grid)"] },
+           @"labels":  @[EZWorkspaceLocalized(@"Image.One"), EZWorkspaceLocalized(@"Image.Two"), EZWorkspaceLocalized(@"Image.Four")] },
     ];
     self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc]
-        initWithBarButtonSystemItem:UIBarButtonSystemItemDone
-                             target:self action:@selector(_dismiss)];
+        initWithTitle:EZWorkspaceLocalized(@"Common.Done")
+                style:UIBarButtonItemStyleDone
+               target:self action:@selector(_dismiss)];
 }
 
 - (void)_dismiss {
@@ -163,11 +191,29 @@ static BOOL EZImageSettingRequiresSubscription(NSString *key, NSString *value) {
     NSString *val      = sec[@"options"][(NSUInteger)ip.row];
     NSString *current  = [[NSUserDefaults standardUserDefaults] stringForKey:sec[@"key"]] ?: sec[@"default"];
     cell.textLabel.text  = sec[@"labels"][(NSUInteger)ip.row];
-    cell.textLabel.font  = [UIFont systemFontOfSize:15];
+    cell.textLabel.font  = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
+    cell.textLabel.adjustsFontForContentSizeCategory = YES;
+    cell.textLabel.numberOfLines = 0;
+    cell.textLabel.textColor = [EZUITheme primaryTextColor];
+    cell.backgroundColor = [EZUITheme surfaceColor];
+    cell.tintColor = [EZUITheme accentSecondaryColor];
+    UIView *selectedBackground = [[UIView alloc] init];
+    selectedBackground.backgroundColor = [EZUITheme accentSoftColor];
+    cell.selectedBackgroundView = selectedBackground;
+    cell.accessibilityValue = [val isEqualToString:current]
+        ? EZWorkspaceLocalized(@"ModelPicker.Selected") : nil;
     cell.accessoryType   = [val isEqualToString:current]
                            ? UITableViewCellAccessoryCheckmark
                            : UITableViewCellAccessoryNone;
     return cell;
+}
+
+
+- (void)tableView:(UITableView *)tableView willDisplayHeaderView:(UIView *)view forSection:(NSInteger)section {
+    if (![view isKindOfClass:[UITableViewHeaderFooterView class]]) return;
+    UITableViewHeaderFooterView *header = (UITableViewHeaderFooterView *)view;
+    header.textLabel.textColor = [EZUITheme secondaryTextColor];
+    header.textLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleFootnote];
 }
 
 - (void)tableView:(UITableView *)tv didSelectRowAtIndexPath:(NSIndexPath *)ip {

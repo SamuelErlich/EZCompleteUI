@@ -298,8 +298,8 @@ static const void *kBRObserverAddedKey = &kBRObserverAddedKey;
 
 @implementation BrainRotViewController
 
-static NSString *const kBRBrainRotAIURL = @"https://spuoimtqofhbdzosrbng.supabase.co/functions/v1/br-ai";
-NSString *const kBRHighScoreURL  = @"https://spuoimtqofhbdzosrbng.supabase.co/functions/v1/br-highscores";
+static NSString *const kBRBrainRotAIURL = @"https://YOUR_PROJECT_REF.supabase.co/functions/v1/br-ai";
+NSString *const kBRHighScoreURL  = @"https://YOUR_PROJECT_REF.supabase.co/functions/v1/br-highscores";
 
 static const NSInteger kBRMaxHeartDisplay = 3;
 
@@ -3610,7 +3610,7 @@ static const void *kBREndCardNavigateAfterSubmitKey    = &kBREndCardNavigateAfte
         actionWithTitle:@"Get Coins"
                   style:UIAlertActionStyleDefault
                 handler:^(UIAlertAction *action) {
-            NSURL *storeURL = [NSURL URLWithString:@"ezcomplete://coin-store"];
+            NSURL *storeURL = [NSURL URLWithString:@"ezcompletebeta://coin-store"];
             if ([[UIApplication sharedApplication] canOpenURL:storeURL]) {
                 [[UIApplication sharedApplication] openURL:storeURL
                                                    options:@{}

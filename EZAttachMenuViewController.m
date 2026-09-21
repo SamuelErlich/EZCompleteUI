@@ -4,13 +4,18 @@
 //
 
 #import "EZAttachMenuViewController.h"
+#import "EZUITheme.h"
+
+static NSString *EZInterfaceString(NSString *key) {
+    return NSLocalizedStringFromTable(key, @"EZInterface", nil);
+}
 
 static NSArray<NSDictionary *> *EZAttachRows(void) {
     return @[
-        @{ @"title": @"Transcribe Audio / Video",   @"subtitle": @"Whisper transcription",         @"icon": @"waveform" },
-        @{ @"title": @"Analyze PDF / ePub / Text File",  @"subtitle": @"Extracts and summarizes text",   @"icon": @"doc.text" },
-        @{ @"title": @"Attach Image from Files",    @"subtitle": @"Vision analysis or image edit",  @"icon": @"photo.on.rectangle" },
-        @{ @"title": @"Choose from Photo Library",  @"subtitle": @"Pick a photo from your library", @"icon": @"photo.stack" },
+        @{ @"title": EZInterfaceString(@"Attach.Transcribe"),   @"subtitle": EZInterfaceString(@"Attach.TranscribeDetail"),         @"icon": @"waveform" },
+        @{ @"title": EZInterfaceString(@"Attach.Analyze"),  @"subtitle": EZInterfaceString(@"Attach.AnalyzeDetail"),   @"icon": @"doc.text" },
+        @{ @"title": EZInterfaceString(@"Attach.ImageFiles"),    @"subtitle": EZInterfaceString(@"Attach.ImageFilesDetail"),  @"icon": @"photo.on.rectangle" },
+        @{ @"title": EZInterfaceString(@"Attach.PhotoLibrary"),  @"subtitle": EZInterfaceString(@"Attach.PhotoLibraryDetail"), @"icon": @"photo.stack" },
     ];
 }
 
@@ -22,10 +27,15 @@ static NSArray<NSDictionary *> *EZAttachRows(void) {
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.title = @"Attach";
+    self.title = EZInterfaceString(@"Attach.Title");
     self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc]
-        initWithBarButtonSystemItem:UIBarButtonSystemItemCancel
-                             target:self action:@selector(_dismiss)];
+        initWithTitle:EZInterfaceString(@"Common.Cancel")
+                style:UIBarButtonItemStyleDone
+               target:self action:@selector(_dismiss)];
+    self.navigationController.navigationBar.tintColor = [EZUITheme accentSecondaryColor];
+    self.view.backgroundColor = [EZUITheme backgroundColor];
+    self.tableView.backgroundColor = [EZUITheme backgroundColor];
+    self.tableView.separatorColor = [EZUITheme dividerColor];
 }
 
 - (void)_dismiss {
@@ -45,15 +55,18 @@ static NSArray<NSDictionary *> *EZAttachRows(void) {
     if (!cell) {
         cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"AttachCell"];
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+        cell.backgroundColor = [EZUITheme surfaceColor];
+        cell.contentView.backgroundColor = [EZUITheme surfaceColor];
     }
     NSDictionary *row = EZAttachRows()[(NSUInteger)ip.row];
     cell.textLabel.text            = row[@"title"];
     cell.textLabel.font            = [UIFont systemFontOfSize:16 weight:UIFontWeightMedium];
+    cell.textLabel.textColor       = [EZUITheme primaryTextColor];
     cell.detailTextLabel.text      = row[@"subtitle"];
     cell.detailTextLabel.font      = [UIFont systemFontOfSize:13];
-    cell.detailTextLabel.textColor = [UIColor secondaryLabelColor];
+    cell.detailTextLabel.textColor = [EZUITheme secondaryTextColor];
     cell.imageView.image           = [UIImage systemImageNamed:row[@"icon"]];
-    cell.imageView.tintColor       = [UIColor systemBlueColor];
+    cell.imageView.tintColor       = [EZUITheme accentSecondaryColor];
     return cell;
 }
 

@@ -1,0 +1,106 @@
+/* Login, settings, and attachment interface. Keep format placeholders unchanged. */
+
+/* Common */
+"Common.AppName" = "EZCompleteUI";
+"Common.Cancel" = "Cancel";
+"Common.Done" = "Done";
+"Common.Delete" = "Delete";
+"Common.Copy" = "Copy";
+"Common.OK" = "OK";
+
+/* Login */
+"Login.LastAccountFormat" = "Last signed in as %@";
+"Login.SignInSubtitle" = "Sign in to continue";
+"Login.Email" = "Email";
+"Login.Password" = "Password";
+"Login.ForgotPassword" = "Forgot Password?";
+"Login.SignIn" = "Sign In";
+"Login.CreateAccountLink" = "Don't have an account? Sign Up";
+"Login.ResetSubtitle" = "Choose a new password for your account";
+"Login.NewPassword" = "New Password";
+"Login.ConfirmNewPassword" = "Confirm New Password";
+"Login.SetNewPassword" = "Set New Password";
+"Login.PasswordLength" = "Password must be at least 8 characters.";
+"Login.PasswordMismatch" = "Passwords don't match. Please try again.";
+"Login.GenericError" = "Something went wrong. Please try again.";
+"Login.PasswordUpdated" = "Password updated! Please sign in with your new password.";
+"Login.SignUpSubtitle" = "Create your account";
+"Login.SignUp" = "Sign Up";
+"Login.SignInLink" = "Already have an account? Sign In";
+"Login.EmailRequired" = "Please enter your email address.";
+"Login.EmailInvalid" = "Please enter a valid email address.";
+"Login.PasswordRequired" = "Please enter your password.";
+"Login.ResetEmailRequired" = "Enter your email address above, then tap Forgot Password.";
+"Login.ResetEmailSent" = "Password reset email sent. Check your inbox.";
+"Login.ResetEmailFailed" = "Could not send reset email. Please try again.";
+"Login.ConfirmEmailFormat" = "We sent a confirmation link to %@.\nTap it to activate your account, then sign in.";
+"Login.ShowPassword" = "Show password";
+"Login.HidePassword" = "Hide password";
+
+/* Settings */
+"Settings.Title" = "Settings";
+"Settings.VersionFormat" = "EZCompleteUI  v%@  (build %@)";
+"Settings.SubscriptionSection" = "💎 Subscription";
+"Settings.Loading" = "Loading...";
+"Settings.ManageSubscription" = "💎 Subscribe / Manage Subscription";
+"Settings.RefreshSubscription" = "🔄 Restore / Refresh Subscription";
+"Settings.SignOutButton" = "🚪 Sign Out";
+"Settings.ModelPreferences" = "Model Preferences (Optional):";
+"Settings.TemperatureInitial" = "Temperature: 0.70";
+"Settings.HelperTemperatureInitial" = "Helper Temperature: 0.20";
+"Settings.FrequencyPenaltyInitial" = "Freq Penalty: 0.00";
+"Settings.WebSection" = "🌐 Web Search";
+"Settings.WebDefault" = "Enable web search by default:";
+"Settings.WebLocation" = "Location hint (optional city):";
+"Settings.LocationPlaceholder" = "e.g. Miami, FL";
+"Settings.TTSSection" = "🎙 ElevenLabs TTS";
+"Settings.VoiceIDLabel" = "Voice ID (preset or cloned):";
+"Settings.VoiceID" = "Voice ID";
+"Settings.OpenTTS" = "🔊 Open Text to Speech";
+"Settings.CloningSection" = "🎤 Voice Cloning (ElevenLabs)";
+"Settings.CloningDescription" = "Upload an audio sample to create a custom voice clone.";
+"Settings.OpenCloning" = "🎤 Voice Cloning & Management";
+"Settings.MemorySection" = "🧠 AI Memory";
+"Settings.OpenMemories" = "📖 View / Edit Memories";
+"Settings.ClearMemories" = "Clear All Memories";
+"Settings.HelperStats" = "View Helper Stats";
+"Settings.Policies" = "📄 Legal & Policies";
+"Settings.Support" = "📬 Support & Feedback";
+"Settings.SubscriptionUnavailable" = "⚠️ Unable to verify subscription";
+"Settings.ActivePlanFormat" = "✅ Active — %@ plan";
+"Settings.CoinsOnly" = "🪙 Coins only — no active subscription";
+"Settings.NoSubscription" = "❌ No active subscription";
+"Settings.CoinBalanceFormat" = "🪙 Coin balance: %ld";
+"Settings.SignInRequiredTitle" = "Not logged in";
+"Settings.SignInRequiredMessage" = "Please sign in first.";
+"Settings.Checking" = "Checking...";
+"Settings.SignOutTitle" = "Sign Out?";
+"Settings.SignOutMessage" = "You will need to sign in again to use EZCompleteUI.";
+"Settings.SignOut" = "Sign Out";
+"Settings.TemperatureFormat" = "Temperature: %.2f";
+"Settings.HelperTemperatureFormat" = "Helper Temperature: %.2f";
+"Settings.FrequencyPenaltyFormat" = "Freq Penalty: %.2f";
+"Settings.ClearMemoriesTitle" = "Clear All Memories?";
+"Settings.ClearMemoriesMessage" = "This deletes all saved conversation summaries. Cannot be undone.";
+"Settings.MemoriesCleared" = "All memories cleared.";
+"Settings.ClearMemoriesFailed" = "Error clearing memories.";
+"Settings.MemoryTitle" = "Memory";
+"Settings.HelperStatsTitle" = "EZHelper Stats";
+"Settings.Plan.Basic" = "Basic";
+"Settings.Plan.BasicWeekly" = "Basic Weekly";
+"Settings.Plan.Standard" = "Standard";
+"Settings.Plan.Pro" = "Pro";
+"Settings.Plan.Ultra" = "Ultra";
+"Settings.Plan.Power" = "Power";
+"Settings.Plan.Enterprise" = "Enterprise";
+
+/* Attach */
+"Attach.Title" = "Attach";
+"Attach.Transcribe" = "Transcribe Audio / Video";
+"Attach.TranscribeDetail" = "Whisper transcription";
+"Attach.Analyze" = "Analyze PDF / ePub / Text File";
+"Attach.AnalyzeDetail" = "Extracts and summarizes text";
+"Attach.ImageFiles" = "Attach Image from Files";
+"Attach.ImageFilesDetail" = "Vision analysis or image edit";
+"Attach.PhotoLibrary" = "Choose from Photo Library";
+"Attach.PhotoLibraryDetail" = "Pick a photo from your library";

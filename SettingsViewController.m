@@ -8,6 +8,7 @@
     //   - donate method removed (app now has a coin store; donation button obsolete).
 
     #import "SettingsViewController.h"
+    #import "EZUITheme.h"
     #import "MemoriesViewController.h"
     #import "TextToSpeechViewController.h"
     #import "ElevenLabsCloneViewController.h"
@@ -19,6 +20,10 @@
     #import "EZEntitlementManager.h"
     #import "helpers.h"
     #import <SafariServices/SafariServices.h>
+
+    static NSString *EZInterfaceString(NSString *key) {
+        return NSLocalizedStringFromTable(key, @"EZInterface", nil);
+    }
 
     static NSString * const kHelperTemperatureDefaultsKey = @"helperTemperature";
 
@@ -78,12 +83,14 @@
 
     - (void)viewDidLoad {
         [super viewDidLoad];
-        self.title = @"Settings";
-        self.view.backgroundColor = [UIColor systemBackgroundColor];
+        self.title = EZInterfaceString(@"Settings.Title");
+        self.view.backgroundColor = [EZUITheme backgroundColor];
+        self.navigationController.navigationBar.tintColor = [EZUITheme accentSecondaryColor];
         self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc]
-            initWithBarButtonSystemItem:UIBarButtonSystemItemDone
-                                 target:self
-                                 action:@selector(saveAndClose)];
+            initWithTitle:EZInterfaceString(@"Common.Done")
+                   style:UIBarButtonItemStyleDone
+                  target:self
+                  action:@selector(saveAndClose)];
 
         [self setupUI];
         [self loadSettings];
@@ -164,7 +171,7 @@
         NSString *appVersion     = infoPlist[@"CFBundleShortVersionString"] ?: @"?";
         NSString *buildNumber    = infoPlist[@"CFBundleVersion"]            ?: @"?";
         UILabel *versionLabel    = [[UILabel alloc] initWithFrame:CGRectMake(20, y, w, 20)];
-        versionLabel.text        = [NSString stringWithFormat:@"EZCompleteUI  v%@  (build %@)",
+        versionLabel.text        = [NSString stringWithFormat:EZInterfaceString(@"Settings.VersionFormat"),
                                      appVersion, buildNumber];
         versionLabel.font        = [UIFont systemFontOfSize:12];
         versionLabel.textColor   = [UIColor tertiaryLabelColor];
@@ -173,49 +180,47 @@
         y += 30;
 
         // ── Subscription ─────────────────────────────────────────────────────────
-        [self addSection:@"💎 Subscription" y:&y];
+        [self addSection:EZInterfaceString(@"Settings.SubscriptionSection") y:&y];
 
         self.subscriptionStatusLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, y, w, 20)];
         self.subscriptionStatusLabel.font = [UIFont systemFontOfSize:13];
-        self.subscriptionStatusLabel.textColor = [UIColor secondaryLabelColor];
-        self.subscriptionStatusLabel.text = @"Loading...";
+        self.subscriptionStatusLabel.textColor = [EZUITheme secondaryTextColor];
+        self.subscriptionStatusLabel.text = EZInterfaceString(@"Settings.Loading");
         [self.scrollView addSubview:self.subscriptionStatusLabel];
         y += 26;
 
         self.coinBalanceLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, y, w, 20)];
         self.coinBalanceLabel.font = [UIFont systemFontOfSize:13];
-        self.coinBalanceLabel.textColor = [UIColor secondaryLabelColor];
+        self.coinBalanceLabel.textColor = [EZUITheme secondaryTextColor];
         self.coinBalanceLabel.text = @"";
         [self.scrollView addSubview:self.coinBalanceLabel];
         y += 30;
 
-        [self addButton:@"💎 Subscribe / Manage Subscription"
+        [self addButton:EZInterfaceString(@"Settings.ManageSubscription")
                   color:[UIColor systemBlueColor]
                  action:@selector(openSubscribePage)
                       y:&y w:w];
 
-        [self addButton:@"🔄 Restore / Refresh Subscription"
+        [self addButton:EZInterfaceString(@"Settings.RefreshSubscription")
                   color:[UIColor systemGreenColor]
                  action:@selector(refreshSubscription)
                       y:&y w:w];
 
-        [self addButton:@"🚪 Sign Out"
+        [self addButton:EZInterfaceString(@"Settings.SignOutButton")
                   color:[UIColor systemGrayColor]
                  action:@selector(signOut)
                       y:&y w:w];
 
         // ── OpenAI ───────────────────────────────────────────────────────────────
         // ── Model Preferences ─────────────────────────────────────────────────────
-        [self addLabel:@"Model Preferences (Optional):" y:&y];
+        [self addLabel:EZInterfaceString(@"Settings.ModelPreferences") y:&y];
 
         CGFloat minTextViewHeight = 80.0;
         self.systemMsgView = [[UITextView alloc] initWithFrame:CGRectMake(20, y, w, minTextViewHeight)];
         self.systemMsgView.font          = [UIFont systemFontOfSize:14];
         self.systemMsgView.delegate      = self;
-        self.systemMsgView.layer.cornerRadius  = 8;
-        self.systemMsgView.layer.borderWidth   = 1.0;
-        self.systemMsgView.layer.borderColor   = [UIColor systemGray4Color].CGColor;
-        self.systemMsgView.backgroundColor     = [UIColor secondarySystemBackgroundColor];
+        [EZUITheme styleTextInput:self.systemMsgView];
+        self.systemMsgView.textColor           = [EZUITheme primaryTextColor];
         self.systemMsgView.textContainerInset  = UIEdgeInsetsMake(8, 6, 8, 6);
         self.systemMsgView.scrollEnabled       = NO;
         self.systemMsgViewHeight               = minTextViewHeight;
@@ -223,35 +228,35 @@
         y += minTextViewHeight + 10;
 
         // ── Sliders ───────────────────────────────────────────────────────────────
-        self.tempLabel  = [self addLabel:@"Temperature: 0.70" y:&y];
+        self.tempLabel  = [self addLabel:EZInterfaceString(@"Settings.TemperatureInitial") y:&y];
         self.tempSlider = [self addSlider:w y:&y min:0 max:2];
-        self.helperTempLabel  = [self addLabel:@"Helper Temperature: 0.20" y:&y];
+        self.helperTempLabel  = [self addLabel:EZInterfaceString(@"Settings.HelperTemperatureInitial") y:&y];
         self.helperTempSlider = [self addSlider:w y:&y min:0 max:0.5f];
-        self.freqLabel  = [self addLabel:@"Freq Penalty: 0.00" y:&y];
+        self.freqLabel  = [self addLabel:EZInterfaceString(@"Settings.FrequencyPenaltyInitial") y:&y];
         self.freqSlider = [self addSlider:w y:&y min:-2 max:2];
 
         // ── Web Search ────────────────────────────────────────────────────────────
-        [self addSection:@"🌐 Web Search" y:&y];
-        [self addLabel:@"Enable web search by default:" y:&y];
+        [self addSection:EZInterfaceString(@"Settings.WebSection") y:&y];
+        [self addLabel:EZInterfaceString(@"Settings.WebDefault") y:&y];
         self.webSearchSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(w - 30, y - 28, 51, 31)];
         [self.scrollView addSubview:self.webSearchSwitch];
-        [self addLabel:@"Location hint (optional city):" y:&y];
-        self.webLocationField = [self addField:w y:&y placeholder:@"e.g. Miami, FL"];
+        [self addLabel:EZInterfaceString(@"Settings.WebLocation") y:&y];
+        self.webLocationField = [self addField:w y:&y placeholder:EZInterfaceString(@"Settings.LocationPlaceholder")];
 
         // ── ElevenLabs TTS ────────────────────────────────────────────────────────
-        [self addSection:@"🎙 ElevenLabs TTS" y:&y];
-        [self addLabel:@"Voice ID (preset or cloned):" y:&y];
-        self.elVoiceField = [self addField:w y:&y placeholder:@"Voice ID"];
+        [self addSection:EZInterfaceString(@"Settings.TTSSection") y:&y];
+        [self addLabel:EZInterfaceString(@"Settings.VoiceIDLabel") y:&y];
+        self.elVoiceField = [self addField:w y:&y placeholder:EZInterfaceString(@"Settings.VoiceID")];
 
-        [self addButton:@"🔊 Open Text to Speech"
+        [self addButton:EZInterfaceString(@"Settings.OpenTTS")
                   color:[UIColor systemCyanColor]
                  action:@selector(openTextToSpeech)
                       y:&y w:w];
 
         // ── ElevenLabs Voice Cloning ──────────────────────────────────────────────
-        [self addSection:@"🎤 Voice Cloning (ElevenLabs)" y:&y];
-        [self addLabel:@"Upload an audio sample to create a custom voice clone." y:&y];
-        [self addButton:@"🎤 Voice Cloning & Management"
+        [self addSection:EZInterfaceString(@"Settings.CloningSection") y:&y];
+        [self addLabel:EZInterfaceString(@"Settings.CloningDescription") y:&y];
+        [self addButton:EZInterfaceString(@"Settings.OpenCloning")
                   color:[UIColor systemPurpleColor]
                  action:@selector(openElevenLabsCloneVC)
                       y:&y w:w];
@@ -288,25 +293,25 @@
                           forControlEvents:UIControlEventValueChanged];
 */
         // ── AI Memory ─────────────────────────────────────────────────────────────
-        [self addSection:@"🧠 AI Memory" y:&y];
+        [self addSection:EZInterfaceString(@"Settings.MemorySection") y:&y];
         y += 8;
-        [self addButton:@"📖 View / Edit Memories"
+        [self addButton:EZInterfaceString(@"Settings.OpenMemories")
                   color:[UIColor systemGreenColor]
                  action:@selector(openMemoriesViewer)
                       y:&y w:w];
-        [self addButton:@"Clear All Memories"
+        [self addButton:EZInterfaceString(@"Settings.ClearMemories")
                   color:[UIColor systemOrangeColor]
                  action:@selector(confirmClearMemories)
                       y:&y w:w];
-        [self addButton:@"View Helper Stats"
+        [self addButton:EZInterfaceString(@"Settings.HelperStats")
                   color:[UIColor systemIndigoColor]
                  action:@selector(showHelperStats)
                       y:&y w:w];
-        [self addButton:@"📄 Legal & Policies"
+        [self addButton:EZInterfaceString(@"Settings.Policies")
                   color:[UIColor systemIndigoColor]
                  action:@selector(openPolicies)
                       y:&y w:w];
-        [self addButton:@"📬 Support & Feedback"
+        [self addButton:EZInterfaceString(@"Settings.Support")
                   color:[UIColor systemTealColor]
                  action:@selector(openSupportRequest)
                       y:&y w:w];
@@ -329,20 +334,20 @@
                 BOOL isActive = tier.length > 0 && [status isEqualToString:@"active"];
 
                 if (!refreshed) {
-                    self.subscriptionStatusLabel.text = @"⚠️ Unable to verify subscription";
+                    self.subscriptionStatusLabel.text = EZInterfaceString(@"Settings.SubscriptionUnavailable");
                     self.subscriptionStatusLabel.textColor = [UIColor systemOrangeColor];
                 } else if (isActive) {
                     self.subscriptionStatusLabel.text = [NSString stringWithFormat:
-                        @"✅ Active — %@ plan", tier.capitalizedString];
+                        EZInterfaceString(@"Settings.ActivePlanFormat"), tier.capitalizedString];
                     self.subscriptionStatusLabel.textColor = [UIColor systemGreenColor];
                 } else {
                     self.subscriptionStatusLabel.text = [status isEqualToString:@"coins_only"]
-                        ? @"🪙 Coins only — no active subscription"
-                        : @"❌ No active subscription";
+                        ? EZInterfaceString(@"Settings.CoinsOnly")
+                        : EZInterfaceString(@"Settings.NoSubscription");
                     self.subscriptionStatusLabel.textColor = [UIColor secondaryLabelColor];
                 }
                 self.coinBalanceLabel.text = [NSString stringWithFormat:
-                    @"🪙 Coin balance: %ld", (long)balance];
+                    EZInterfaceString(@"Settings.CoinBalanceFormat"), (long)balance];
             });
         }];
     }
@@ -354,7 +359,7 @@
 - (void)openCoinStore:(BOOL)showLowCoinsWarning featureName:(NSString * _Nullable)featureName {
     NSString *token = [EZAuthManager shared].accessToken;
     if (!token) {
-        [self showAlert:@"Not logged in" message:@"Please sign in first."];
+        [self showAlert:EZInterfaceString(@"Settings.SignInRequiredTitle") message:EZInterfaceString(@"Settings.SignInRequiredMessage")];
         return;
     }
     EZCoinStoreViewController *store = [[EZCoinStoreViewController alloc] init];
@@ -384,17 +389,17 @@
     }
 
     - (void)refreshSubscription {
-        self.subscriptionStatusLabel.text      = @"Checking...";
+        self.subscriptionStatusLabel.text      = EZInterfaceString(@"Settings.Checking");
         self.subscriptionStatusLabel.textColor = [UIColor secondaryLabelColor];
         [self refreshSubscriptionDisplay];
     }
 
     - (void)signOut {
         UIAlertController *confirm = [UIAlertController
-            alertControllerWithTitle:@"Sign Out?"
-                             message:@"You will need to sign in again to use EZCompleteUI."
+            alertControllerWithTitle:EZInterfaceString(@"Settings.SignOutTitle")
+                             message:EZInterfaceString(@"Settings.SignOutMessage")
                       preferredStyle:UIAlertControllerStyleAlert];
-        [confirm addAction:[UIAlertAction actionWithTitle:@"Sign Out"
+        [confirm addAction:[UIAlertAction actionWithTitle:EZInterfaceString(@"Settings.SignOut")
                                                    style:UIAlertActionStyleDestructive
                                                  handler:^(UIAlertAction *a) {
             [[EZAuthManager shared] signOut];
@@ -408,7 +413,7 @@
                                 completion:nil];
             }];
         }]];
-        [confirm addAction:[UIAlertAction actionWithTitle:@"Cancel"
+        [confirm addAction:[UIAlertAction actionWithTitle:EZInterfaceString(@"Common.Cancel")
                                                    style:UIAlertActionStyleCancel handler:nil]];
         [self presentViewController:confirm animated:YES completion:nil];
     }
@@ -465,7 +470,7 @@
                            CGRectMake(20, *y, self.view.frame.size.width - 40, 28)];
         label.text      = title;
         label.font      = [UIFont boldSystemFontOfSize:15];
-        label.textColor = [UIColor systemBlueColor];
+        label.textColor = [EZUITheme accentSecondaryColor];
         [self.scrollView addSubview:label];
         *y += 34;
     }
@@ -475,7 +480,7 @@
                                CGRectMake(20, *y, self.view.frame.size.width - 40, 20)];
         label.text          = text;
         label.font          = [UIFont systemFontOfSize:13];
-        label.textColor     = [UIColor secondaryLabelColor];
+        label.textColor     = [EZUITheme secondaryTextColor];
         label.numberOfLines = 0;
         [self.scrollView addSubview:label];
         *y += 22;
@@ -484,11 +489,14 @@
 
     - (UITextField *)addField:(CGFloat)width y:(CGFloat *)y placeholder:(NSString *)placeholder {
         UITextField *field  = [[UITextField alloc] initWithFrame:CGRectMake(20, *y, width, 40)];
-        field.borderStyle   = UITextBorderStyleRoundedRect;
+        field.borderStyle   = UITextBorderStyleNone;
         field.placeholder   = placeholder;
         field.delegate      = self;
         field.returnKeyType = UIReturnKeyDone;
         field.font          = [UIFont systemFontOfSize:14];
+        field.textColor     = [EZUITheme primaryTextColor];
+        field.tintColor     = [EZUITheme accentSecondaryColor];
+        [EZUITheme styleTextInput:field];
         [self.scrollView addSubview:field];
         *y += 50;
         return field;
@@ -509,9 +517,11 @@
                     y:(CGFloat *)y w:(CGFloat)width {
         UIButton *button          = [UIButton buttonWithType:UIButtonTypeSystem];
         button.frame              = CGRectMake(20, *y, width, 44);
-        button.backgroundColor    = color;
+        button.backgroundColor    = color ?: [EZUITheme accentColor];
         button.tintColor          = [UIColor whiteColor];
-        button.layer.cornerRadius = 10;
+        button.layer.cornerRadius = 14;
+        button.layer.masksToBounds = YES;
+        button.titleLabel.font = [UIFont systemFontOfSize:15 weight:UIFontWeightSemibold];
         [button setTitle:title forState:UIControlStateNormal];
         [button addTarget:self action:action forControlEvents:UIControlEventTouchUpInside];
         [self.scrollView addSubview:button];
@@ -519,11 +529,11 @@
     }
 
     - (void)updateLabels {
-        self.tempLabel.text = [NSString stringWithFormat:@"Temperature: %.2f",
+        self.tempLabel.text = [NSString stringWithFormat:EZInterfaceString(@"Settings.TemperatureFormat"),
                                self.tempSlider.value];
-        self.helperTempLabel.text = [NSString stringWithFormat:@"Helper Temperature: %.2f",
+        self.helperTempLabel.text = [NSString stringWithFormat:EZInterfaceString(@"Settings.HelperTemperatureFormat"),
                                      self.helperTempSlider.value];
-        self.freqLabel.text = [NSString stringWithFormat:@"Freq Penalty: %.2f",
+        self.freqLabel.text = [NSString stringWithFormat:EZInterfaceString(@"Settings.FrequencyPenaltyFormat"),
                                self.freqSlider.value];
     }
 /*
@@ -643,32 +653,32 @@
 
     - (void)confirmClearMemories {
         UIAlertController *confirm = [UIAlertController
-            alertControllerWithTitle:@"Clear All Memories?"
-                             message:@"This deletes all saved conversation summaries. Cannot be undone."
+            alertControllerWithTitle:EZInterfaceString(@"Settings.ClearMemoriesTitle")
+                             message:EZInterfaceString(@"Settings.ClearMemoriesMessage")
                       preferredStyle:UIAlertControllerStyleAlert];
-        [confirm addAction:[UIAlertAction actionWithTitle:@"Delete"
+        [confirm addAction:[UIAlertAction actionWithTitle:EZInterfaceString(@"Common.Delete")
                                                    style:UIAlertActionStyleDestructive
                                                  handler:^(UIAlertAction *a) {
             BOOL cleared   = clearMemoryLog();
-            NSString *msg  = cleared ? @"All memories cleared." : @"Error clearing memories.";
-            [self showAlert:@"Memory" message:msg];
+            NSString *msg  = cleared ? EZInterfaceString(@"Settings.MemoriesCleared") : EZInterfaceString(@"Settings.ClearMemoriesFailed");
+            [self showAlert:EZInterfaceString(@"Settings.MemoryTitle") message:msg];
         }]];
-        [confirm addAction:[UIAlertAction actionWithTitle:@"Cancel"
+        [confirm addAction:[UIAlertAction actionWithTitle:EZInterfaceString(@"Common.Cancel")
                                                    style:UIAlertActionStyleCancel handler:nil]];
         [self presentViewController:confirm animated:YES completion:nil];
     }
 
     - (void)showHelperStats {
         UIAlertController *alert = [UIAlertController
-            alertControllerWithTitle:@"EZHelper Stats"
+            alertControllerWithTitle:EZInterfaceString(@"Settings.HelperStatsTitle")
                              message:EZHelperStats()
                       preferredStyle:UIAlertControllerStyleAlert];
-        [alert addAction:[UIAlertAction actionWithTitle:@"Copy"
+        [alert addAction:[UIAlertAction actionWithTitle:EZInterfaceString(@"Common.Copy")
                                                  style:UIAlertActionStyleDefault
                                                handler:^(UIAlertAction *a) {
             [UIPasteboard generalPasteboard].string = EZHelperStats();
         }]];
-        [alert addAction:[UIAlertAction actionWithTitle:@"OK"
+        [alert addAction:[UIAlertAction actionWithTitle:EZInterfaceString(@"Common.OK")
                                                  style:UIAlertActionStyleCancel handler:nil]];
         [self presentViewController:alert animated:YES completion:nil];
     }
@@ -748,7 +758,7 @@
                 alertControllerWithTitle:title
                                  message:message
                           preferredStyle:UIAlertControllerStyleAlert];
-            [alert addAction:[UIAlertAction actionWithTitle:@"OK"
+            [alert addAction:[UIAlertAction actionWithTitle:EZInterfaceString(@"Common.OK")
                                                       style:UIAlertActionStyleDefault
                                                     handler:nil]];
             [self presentViewController:alert animated:YES completion:nil];

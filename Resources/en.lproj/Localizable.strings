@@ -172,13 +172,13 @@
 
 "EZCoinStore.Section.OneTimeTopUps" = "ONE-TIME TOP-UPS";
 
-"EZCoinStore.DailyCoins" = "🎁 Daily Coins";
+"EZCoinStore.DailyCoins" = "🎁 Test Credits";
 
-"EZCoinStore.DailyCoins.FreeFormat" = "🎁 +%ld Free!";
+"EZCoinStore.DailyCoins.FreeFormat" = "🎁 +%ld Test!";
 
-"EZCoinStore.DailyCoins.Free" = "🎁 Free Coins!";
-"EZCoinStore.DailyReminder.Title" = "Your free coins are ready";
-"EZCoinStore.DailyReminder.Body" = "Claim your coins whenever you’re ready.";
+"EZCoinStore.DailyCoins.Free" = "🎁 Test Credits!";
+"EZCoinStore.DailyReminder.Title" = "Your test credit is ready";
+"EZCoinStore.DailyReminder.Body" = "Activate the test credit when ready.";
 
 "EZCoinStore.DailyCoins.NextHours" = "🎁 Next: %ldh %ldm";
 
@@ -190,7 +190,7 @@
 
 "EZCoinStore.Alert.NotSignedIn" = "Not Signed In";
 
-"EZCoinStore.Alert.SignInDailyCoins" = "Please sign in to claim your daily coins.";
+"EZCoinStore.Alert.SignInDailyCoins" = "Sign in to activate the test credit.";
 
 "EZCoinStore.Alert.NetworkError" = "Network Error";
 
@@ -198,7 +198,7 @@
 
 "EZCoinStore.Alert.AlreadyClaimed" = "Already Claimed";
 
-"EZCoinStore.Alert.AlreadyClaimedMessage" = "You've already claimed your free coins. Check back in 6 hours!";
+"EZCoinStore.Alert.AlreadyClaimedMessage" = "This test credit is already activated for this account.";
 
 "EZCoinStore.Alert.GenericRetry" = "Something went wrong. Please try again.";
 
@@ -356,3 +356,43 @@
 "EZGallery.Export.ShareClean" = "Share Branded Image";
 "EZGallery.Export.Download" = "Download Image";
 "EZGallery.Export.Cancel" = "Cancel";
+
+/* Main chat workspace and feature rail */
+"EZMain.Title" = "EZCompleteUI";
+"EZMain.MessagePlaceholder" = "Type a message…";
+"EZMain.Send" = "Send";
+"EZMain.Copy" = "Copy";
+"EZMain.Copied" = "✓ Copied!";
+"EZMain.EditImagePrompt" = "Edit this image: ";
+"EZMain.ThreadName" = "Thread name";
+"EZMain.ModelFormat" = "Model: %@";
+"EZMain.ModelEditFormat" = "Model: %@ (edit mode)";
+"EZMain.CoinsFormat" = "🪙 %ld";
+"EZMain.Working" = "Working…";
+"EZMain.GPT5Thinking" = "GPT-5 is thinking…";
+"EZMain.ProcessingRequest" = "Processing your request…";
+"EZMain.GPT5StillWorking" = "Still working — GPT-5 can take up to 3 min";
+"EZMain.ReasoningPrompt" = "Reasoning through your prompt…";
+"EZMain.AlmostThere" = "Almost there…";
+"EZMain.ComplexRequest" = "Almost there — complex requests take longer";
+"EZMain.GPT5Thorough" = "Hang tight, GPT-5 is thorough";
+"EZMain.WorkingOnAnswer" = "Working hard on your answer…";
+"EZMain.DoNotLeavePage" = "Do not leave the page while generating";
+"EZMain.StillGenerating" = "Still generating — this can take a moment";
+"EZMain.Speak" = "Speak";
+"EZMain.WebSearch" = "Web Search";
+"EZMain.HelperDirectAnswers" = "Helper Direct Answers";
+"EZMain.NewChat" = "New Chat";
+"EZMain.Memories" = "Memories";
+"EZMain.TextToSpeech" = "TTS";
+"EZMain.Support" = "Support";
+"EZMain.CloneVoice" = "Clone Voice";
+"EZMain.Gallery" = "Gallery";
+"EZMain.Settings" = "Settings";
+"EZMain.BrainRot" = "Brain Rot";
+"EZMain.RestoredPrompt" = "[System: Your prompt has been restored — tap Send when ready]";
+"EZMain.CopiedSystem" = "[System: Copied ✓]";
+"EZMain.TriageTurns" = "Turns for uncertain triage";
+"EZMain.RenameThread" = "Rename conversation";
+"EZMain.Save" = "Save";
+"EZMain.Cancel" = "Cancel";

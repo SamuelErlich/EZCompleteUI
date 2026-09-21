@@ -1,4 +1,5 @@
 #import "EZBubbleCell.h"
+#import "EZUITheme.h"
 
 @implementation EZBubbleCell {
     UIView     *_bubbleView;
@@ -115,25 +116,21 @@
 
     // ── Bubble background ────────────────────────────────────────────────────
     _bubbleView.backgroundColor = isUser
-        ? [UIColor systemBlueColor]
-        : [UIColor colorWithDynamicProvider:^UIColor *(UITraitCollection *tc) {
-               return tc.userInterfaceStyle == UIUserInterfaceStyleDark
-                   ? [UIColor colorWithRed:0.20 green:0.20 blue:0.22 alpha:1.0]
-                   : [UIColor colorWithRed:0.90 green:0.90 blue:0.92 alpha:1.0];
-           }];
+        ? [EZUITheme userBubbleColor]
+        : [EZUITheme assistantBubbleColor];
     _messageTextView.backgroundColor = [UIColor clearColor];
-    _messageTextView.textColor = isUser ? [UIColor whiteColor] : [UIColor labelColor];
+    _messageTextView.textColor = isUser ? UIColor.whiteColor : [EZUITheme primaryTextColor];
 
     UIColor *linkColor = isUser
         ? [UIColor colorWithWhite:1.0 alpha:0.90]
-        : [UIColor colorWithRed:0.231 green:0.510 blue:0.965 alpha:1.0];
+        : [EZUITheme accentSecondaryColor];
     _messageTextView.linkTextAttributes = @{
         NSForegroundColorAttributeName : linkColor,
         NSUnderlineStyleAttributeName  : @(NSUnderlineStyleSingle),
     };
     _messageTextView.tintColor = isUser
         ? [UIColor colorWithWhite:1.0 alpha:0.7]
-        : [UIColor systemBlueColor];
+        : [EZUITheme accentSecondaryColor];
 
     // ── Tail ─────────────────────────────────────────────────────────────────
     if (@available(iOS 11.0, *)) {

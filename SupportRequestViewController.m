@@ -33,6 +33,7 @@
 #import "EZKeyVault.h"
 #import "EZAuthManager.h"
 #import "EZEntitlementManager.h"
+#import "EZSupabaseConfig.h"
 #import "helpers.h"
 #import <MessageUI/MessageUI.h>
 
@@ -437,10 +438,13 @@ static NSArray<NSString *> *EZSensitiveUserDefaultsKeys(void) {
         return;
     }
 
-    static NSString *const kUsageEdgeURL =
-        @"https://spuoimtqofhbdzosrbng.supabase.co/functions/v1/get-usage-log";
-
-    NSURLComponents *components = [NSURLComponents componentsWithString:kUsageEdgeURL];
+    NSURL *usageURL = EZSupabaseFunctionURL(@"get-usage-log");
+    if (!usageURL) {
+        completion(nil);
+        return;
+    }
+    NSURLComponents *components = [NSURLComponents componentsWithURL:usageURL
+                                               resolvingAgainstBaseURL:NO];
     components.queryItems = @[
         [NSURLQueryItem queryItemWithName:@"page"  value:@"0"],
         [NSURLQueryItem queryItemWithName:@"limit" value:@"500"],

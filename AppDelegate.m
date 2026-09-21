@@ -7,7 +7,7 @@
 //   and handles incoming deep links for the password reset flow.
 //
 // Changes:
-//   - Added application:openURL:options: to handle ezcomplete:// deep links
+//   - Added application:openURL:options: to handle ezcompletebeta:// deep links
 //     for the password reset flow. Tokens are applied via EZAuthManager which
 //     posts EZPasswordResetReadyNotification — LoginViewController observes
 //     this and switches to its password-reset UI state.
@@ -18,7 +18,7 @@
 //     it 300-500ms later when the async session restore completed.
 //   - Added fallback URL parsing for direct Supabase redirects (no edge function):
 //     when the edge function is unreachable or not yet deployed, Supabase puts
-//     tokens in the URL fragment (ezcomplete://#access_token=...&type=recovery)
+//     tokens in the URL fragment (ezcompletebeta://#access_token=...&type=recovery)
 //     rather than as query params on the password-reset host. Both formats are
 //     handled so the reset flow works with or without the edge function deployed.
 
@@ -95,17 +95,17 @@ static NSString *const kPendingExternalImageEditPath = @"EZPendingExternalImageE
 }
 
 // ── Deep link handler ─────────────────────────────────────────────────────────
-// Called by iOS when any ezcomplete:// URL is opened — from Mail, Safari, or
+// Called by iOS when any ezcompletebeta:// URL is opened — from Mail, Safari, or
 // LiveContainer's open-url forwarding. Handles the password reset flow only.
 //
 // Two URL formats are supported:
 //
 //   Via edge function (preferred — provides branded page + LiveContainer fallbacks):
-//     ezcomplete://password-reset?access_token=...&refresh_token=...
+//     ezcompletebeta://password-reset?access_token=...&refresh_token=...
 //     Tokens arrive as query parameters on the "password-reset" host.
 //
 //   Direct Supabase redirect (fallback — works without edge function deployed):
-//     ezcomplete://#access_token=...&refresh_token=...&type=recovery
+//     ezcompletebeta://#access_token=...&refresh_token=...&type=recovery
 //     Tokens arrive in the URL fragment with no host. Only the "recovery" type
 //     is handled; other Supabase auth callbacks (magic links etc.) are ignored.
 //
@@ -121,14 +121,14 @@ static NSString *const kPendingExternalImageEditPath = @"EZPendingExternalImageE
 
     if (url.isFileURL) return [self acceptIncomingImageURL:url];
 
-    if (![url.scheme isEqualToString:@"ezcomplete"]) return NO;
+    if (![url.scheme isEqualToString:@"ezcompletebeta"]) return NO;
 
     NSString *accessToken  = nil;
     NSString *refreshToken = nil;
 
     if ([url.host isEqualToString:@"password-reset"]) {
         // ── Edge function format ───────────────────────────────────────────────
-        // ezcomplete://password-reset?access_token=...&refresh_token=...
+        // ezcompletebeta://password-reset?access_token=...&refresh_token=...
         NSURLComponents *components = [NSURLComponents componentsWithURL:url
                                                 resolvingAgainstBaseURL:NO];
         for (NSURLQueryItem *item in components.queryItems) {
@@ -138,7 +138,7 @@ static NSString *const kPendingExternalImageEditPath = @"EZPendingExternalImageE
 
     } else if (url.fragment.length) {
         // ── Direct Supabase fallback format ───────────────────────────────────
-        // ezcomplete://#access_token=...&refresh_token=...&type=recovery
+        // ezcompletebeta://#access_token=...&refresh_token=...&type=recovery
         //
         // The URL fragment is not sent to any server — iOS passes the full URL
         // including fragment to this method. We reuse NSURLComponents query
@@ -154,7 +154,7 @@ static NSString *const kPendingExternalImageEditPath = @"EZPendingExternalImageE
 
         // Ignore non-recovery callbacks (e.g. email confirmation magic links)
         if (![fragmentParams[@"type"] isEqualToString:@"recovery"]) {
-            NSLog(@"[AppDelegate] ezcomplete:// fragment type '%@' — not a recovery link, ignoring.",
+            NSLog(@"[AppDelegate] ezcompletebeta:// fragment type '%@' — not a recovery link, ignoring.",
                   fragmentParams[@"type"]);
             return NO;
         }

@@ -1,193 +1,88 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+set -Eeuo pipefail
 
 APP_NAME="EZCompleteUI"
-STAGED_APP=".theos/_/Applications/${APP_NAME}.app"
-STAGED_PLIST="${STAGED_APP}/Info.plist"
-SAVED_APP="/tmp/${APP_NAME}_patched.app"
-export XDG_CACHE_HOME="${PWD}/.cache"
-mkdir -p "${XDG_CACHE_HOME}/clang/ModuleCache"
+ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$ROOT_DIR"
+export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$ROOT_DIR/.cache}"
+export THEOS_PACKAGE_SCHEME="rootless"
+export THEOS_STAGING_DIR="${THEOS_STAGING_DIR:-$ROOT_DIR/.theos/_}"
 
-# ─────────────────────────────────────────────────────────────────────────────
-# patch_plist <path>
-# ─────────────────────────────────────────────────────────────────────────────
-patch_plist() {
-    local target="$1"
-    echo "  Patching: ${target}"
-    python3 - "${target}" <<'PYEOF'
-import plistlib, sys
-path = sys.argv[1]
-try:
-    with open(path, 'rb') as f:
-        d = plistlib.load(f)
-except Exception as e:
-    print(f"ERROR reading plist: {e}", file=sys.stderr)
-    sys.exit(1)
-d["NSMicrophoneUsageDescription"] = "EZCompleteUI uses the microphone for voice dictation."
-d["NSSpeechRecognitionUsageDescription"] = "EZCompleteUI uses speech recognition to transcribe your voice."
-d["NSDocumentsFolderUsageDescription"] = "EZCompleteUI needs access to your files so you can attach documents, images, and audio to your chats."
-d['UIFileSharingEnabled'] = True
-d['LSSupportsOpeningDocumentsInPlace'] = True
-# UISupportsDocumentBrowser = True breaks UIDocumentPickerViewController on iOS 15 — remove it
-d.pop('UISupportsDocumentBrowser', None)
-with open(path, 'wb') as f:
-    plistlib.dump(d, f)
-keys = [k for k in d if 'Usage' in k]
-print(f"  Injected {len(keys)} key(s): {keys}")
-assert 'NSMicrophoneUsageDescription' in d
-assert 'NSSpeechRecognitionUsageDescription' in d
-assert 'NSDocumentsFolderUsageDescription' in d
-assert d.get('UIFileSharingEnabled') == True
-assert 'UISupportsDocumentBrowser' not in d, "UISupportsDocumentBrowser must be removed"
-PYEOF
-}
+fail() { echo "ERROR: $*" >&2; exit 1; }
+info() { printf '\n==> %s\n' "$*"; }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 1. Compile + stage
-# ─────────────────────────────────────────────────────────────────────────────
-echo ""
-echo "==> [1/5] Compiling..."
-make clean && make stage FINALPACKAGE=1 DEBUG=0 debug=0
+info "Preflight: host tools, Theos and SDK"
+command -v make >/dev/null || fail "make is required"
+command -v python3 >/dev/null || fail "python3 is required"
+command -v zip >/dev/null || fail "zip is required to produce the IPA"
+command -v dpkg-deb >/dev/null || fail "dpkg-deb is required to inspect the package"
+[ -n "${THEOS:-}" ] || fail "THEOS is not set. Install Theos and export THEOS=/path/to/theos."
+[ -d "$THEOS" ] || fail "THEOS does not point to a directory: $THEOS"
+[ -d "${THEOS_SDKS_PATH:-$THEOS/sdks}" ] || fail "iPhoneOS SDK directory not found at ${THEOS_SDKS_PATH:-$THEOS/sdks}"
+SDK_COUNT=$(find "${THEOS_SDKS_PATH:-$THEOS/sdks}" -maxdepth 1 -type d -name 'iPhoneOS*.sdk' | wc -l | tr -d ' ')
+[ "$SDK_COUNT" -gt 0 ] || fail "No iPhoneOS*.sdk found under ${THEOS_SDKS_PATH:-$THEOS/sdks}"
+printf '  THEOS: %s\n  SDKs:  %s iPhoneOS SDK(s)\n  stage: %s\n' "$THEOS" "$SDK_COUNT" "$THEOS_STAGING_DIR"
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 2. Patch staged plist
-# ─────────────────────────────────────────────────────────────────────────────
-echo ""
-echo "==> [2/5] Patching Info.plist..."
-patch_plist "${STAGED_PLIST}"
+info "Preflight: redesign source tree"
+python3 scripts/validate_redesign.py --strict || fail "source preflight failed; recover the missing implementation files before packaging"
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 3. Save a copy of the patched app BEFORE make package wipes staging
-# ─────────────────────────────────────────────────────────────────────────────
-echo ""
-echo "==> [3/5] Saving patched app bundle..."
-rm -rf "${SAVED_APP}"
-cp -r "${STAGED_APP}" "${SAVED_APP}"
-echo "  Saved to ${SAVED_APP}"
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 4. Build IPA from saved patched app
-# ─────────────────────────────────────────────────────────────────────────────
-echo ""
-echo "==> [4/5] Building IPA..."
-rm -rf Payload
-mkdir -p Payload
-cp -r "${SAVED_APP}" "Payload/${APP_NAME}.app"
-# zip updates an existing archive but does not remove files that disappeared
-# from Payload.  Start fresh so an old case-variant such as
-# en.lproj/localizable.strings cannot survive alongside Localizable.strings.
-rm -f "${APP_NAME}.ipa"
-zip -r9 "${APP_NAME}.ipa" Payload > /dev/null
-if unzip -Z1 "${APP_NAME}.ipa" | grep -qx "Payload/${APP_NAME}.app/en.lproj/localizable.strings"; then
-    echo "ERROR: stale en.lproj/localizable.strings found in IPA"
-    exit 1
-fi
-rm -rf Payload
-echo "  ${APP_NAME}.ipa ready"
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 5. Build .deb
-#
-# make package re-stages and overwrites .theos/_/ — that's fine now because
-# we already have our patched copy in /tmp. After make package produces the
-# deb, we extract it with dpkg-deb, swap in our patched app, rebuild with
-# dpkg-deb --build which produces a guaranteed-valid Debian archive.
-# ─────────────────────────────────────────────────────────────────────────────
-echo ""
-echo "==> [5/5] Building .deb..."
+info "Clean and package rootless app"
+make clean
 make package FINALPACKAGE=1 DEBUG=0 debug=0
 
-DEB=$(ls -t packages/*.deb 2>/dev/null | head -1)
-if [ -z "${DEB}" ]; then
-    echo "ERROR: No .deb found in packages/ after make package"
-    exit 1
-fi
-echo "  Theos built: ${DEB}"
-echo "  Repacking with patched plist..."
+info "Locate the actual Theos staged app"
+STAGED_APP=""
+while IFS= read -r plist; do
+    candidate="${plist%/Info.plist}"
+    if [ "$(basename "$candidate")" = "${APP_NAME}.app" ] && [ -x "$candidate/${APP_NAME}" ]; then
+        STAGED_APP="$candidate"
+        break
+    fi
+done < <(find "$THEOS_STAGING_DIR" -type f -path "*/Applications/${APP_NAME}.app/Info.plist" -print 2>/dev/null)
+[ -n "$STAGED_APP" ] || fail "Theos produced no staged ${APP_NAME}.app under $THEOS_STAGING_DIR"
+case "$STAGED_APP" in
+  *"/var/jb/Applications/${APP_NAME}.app") ;;
+  *) fail "staged app is not rootless (/var/jb/Applications): $STAGED_APP";;
+esac
+printf '  staged app: %s\n' "$STAGED_APP"
 
-WORK="$(mktemp -d)"
-trap "rm -rf '${WORK}'" EXIT
-
-# Extract the full deb contents using dpkg-deb (reliable, no ar needed)
-DEB_ROOT="${WORK}/deb_root"
-mkdir -p "${DEB_ROOT}"
-dpkg-deb --extract "${DEB}" "${DEB_ROOT}"
-dpkg-deb --control "${DEB}" "${DEB_ROOT}/DEBIAN"
-
-# Rootless jailbreaks (Dopamine, palera1n) install to /var/jb/Applications
-# Remove any /Applications path Theos may have staged and use correct rootless path
-rm -rf "${DEB_ROOT}/Applications"
-rm -rf "${DEB_ROOT}/var/jb/Applications/${APP_NAME}.app"
-mkdir -p "${DEB_ROOT}/var/jb/Applications"
-cp -r "${SAVED_APP}" "${DEB_ROOT}/var/jb/Applications/${APP_NAME}.app"
-
-# Make sure DEBIAN scripts are executable
-chmod 755 "${DEB_ROOT}/DEBIAN/"* 2>/dev/null || true
-
-# Verify plist is patched inside deb root before repacking
-echo "  Verifying plist in deb root..."
-python3 << PYEOF
+INFO_PLIST="$STAGED_APP/Info.plist"
+python3 - "$INFO_PLIST" <<'PY'
 import plistlib, sys
-path = "${DEB_ROOT}/var/jb/Applications/${APP_NAME}.app/Info.plist"
-with open(path, 'rb') as f:
-    d = plistlib.load(f)
-mic    = d.get('NSMicrophoneUsageDescription', 'MISSING')
-speech = d.get('NSSpeechRecognitionUsageDescription', 'MISSING')
-docs   = d.get('NSDocumentsFolderUsageDescription', 'MISSING')
-print(f"  Mic:    {mic[:60]}")
-print(f"  Speech: {speech[:60]}")
-print(f"  Docs:   {docs[:60]}")
-if mic == 'MISSING' or speech == 'MISSING':
-    print("ERROR: keys missing from deb root plist!", file=sys.stderr)
-    sys.exit(1)
-PYEOF
-
-# Rebuild with dpkg-deb — always produces a valid Debian binary archive
-dpkg-deb --build --root-owner-group "${DEB_ROOT}" "${DEB}"
-echo "  ${DEB} ready"
-
-# Final validation
-echo "  Validating deb..."
-dpkg-deb --info "${DEB}" | grep -E "Package|Version|Architecture|Installed-Size" | sed 's/^/    /'
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Cleanup + Summary
-# ─────────────────────────────────────────────────────────────────────────────
-rm -rf "${SAVED_APP}"
-
-VERSION=$(python3 <<'PY'
-import pathlib, plistlib, sys
-
-def try_plist(path):
-    try:
-        with open(path, 'rb') as f:
-            d = plistlib.load(f)
-    except Exception:
-        return False
-    version = d.get('CFBundleShortVersionString')
-    if version:
-        print(version)
-        return True
-    return False
-
-if try_plist('Resources/Info.plist'):
-    sys.exit(0)
-
-control = pathlib.Path('control')
-if control.exists():
-    for line in control.read_text().splitlines():
-        if line.startswith('Version:'):
-            print(line.split(':', 1)[1].strip())
-            sys.exit(0)
-
-print('1.0')
+p = sys.argv[1]
+d = plistlib.loads(open(p, 'rb').read())
+for key in ('CFBundleIdentifier', 'CFBundleExecutable', 'CFBundleVersion'):
+    if not d.get(key):
+        raise SystemExit(f'ERROR: staged Info.plist missing {key}')
+print(f"  bundle: {d['CFBundleIdentifier']} v{d['CFBundleVersion']}")
 PY
-)
 
-echo ""
-echo "╔══════════════════════════════════════════════════════╗"
-printf  "║  Build Complete  v%-35s║\n" "${VERSION}"
-echo "╠══════════════════════════════════════════════════════╣"
-printf  "║  IPA  %-47s║\n" "${APP_NAME}.ipa"
-printf  "║  DEB  %-47s║\n" "${DEB}"
-echo "╚══════════════════════════════════════════════════════╝"
+info "Build IPA from the staged app (no re-signing or post-sign plist patching)"
+rm -rf Payload
+mkdir -p Payload
+cp -R "$STAGED_APP" "Payload/${APP_NAME}.app"
+rm -f "${APP_NAME}.ipa"
+(
+  cd Payload
+  zip -r9 "../${APP_NAME}.ipa" "${APP_NAME}.app" >/dev/null
+)
+rm -rf Payload
+unzip -Z1 "${APP_NAME}.ipa" | grep -qx "Payload/${APP_NAME}.app/Info.plist" || fail "IPA does not contain the staged app Info.plist"
+printf '  IPA: %s (%s bytes)\n' "${APP_NAME}.ipa" "$(wc -c < "${APP_NAME}.ipa" | tr -d ' ')"
+
+info "Validate final Debian package"
+DEB="$(python3 - <<'PY2'
+from pathlib import Path
+
+packages = list(Path('packages').glob('*.deb'))
+if not packages:
+    raise SystemExit(0)
+print(max(packages, key=lambda path: path.stat().st_mtime))
+PY2
+)"
+[ -n "$DEB" ] || fail "make package did not produce a .deb in packages/"
+dpkg-deb --info "$DEB" | grep -Eq '^ Package:|^ Version:|^ Architecture:' || fail "invalid Debian control metadata"
+printf '  DEB: %s (%s bytes)\n' "$DEB" "$(wc -c < "$DEB" | tr -d ' ')"
+
+info "Build complete"
+printf '  Output IPA: %s\n  Output DEB: %s\n' "$ROOT_DIR/${APP_NAME}.ipa" "$ROOT_DIR/$DEB"

@@ -2,11 +2,11 @@
 
 EZCompleteUI is a native iOS AI workspace built with Objective-C and Theos. It combines coin-metered AI chat, image generation and editing, transcription, voice tools, local thread history, searchable memories, a photo gallery, and a custom game-creation area in one app.
 
-The current release is **7.0.7** and targets iOS 15.0 and later.
+The current checkout is the independent **0.1.0 beta** and targets iOS 15.0 and later. Its bundle identifier is \`com.gabriel.ezcomplete.beta\`.
 
 ## What it includes
 
-- Authenticated, coin-based access with a coin store, balance display, user usage ledger.
+- Authenticated, server-authoritative beta credits with a balance display and append-only usage ledger.
 - Persistent chats with local thread restore, inline image attachments, generated-image grids, code blocks, and Quick Look previews, as well as shareable file creations including pdf, csv, rtf, with inline previews.
 - AI memory: conversations are summarized, searchable, editable, and can retain attachment references.
 - Image gallery: view generated images, ask about an image, edit it with AI, share or delete it, or pass it into the custom game workflow.
@@ -34,7 +34,7 @@ The picker is the source of truth for models exposed by the app.
 ## Using the app
 
 1. Sign in and accept the in-app terms.
-2. Add coins or manage your subscription from Settings or the coin balance control.
+2. Claim the one-time server test grant from the beta coin screen. Real payments are disabled.
 3. Choose a model from the model button. 
 4. When generaring or editing an image, check the image settings (little button that appears next to the model picker when an image model is active).  You can set the number of variations to generate, image quality, moderation level, background and file type.
 5. Send a prompt, or attach an image/file with the attachment control.
@@ -54,7 +54,7 @@ The app keeps its local working data in the app Documents directory:
 | `ezui_system.log` | System diagnostic log |
 | `ezui_helper.log` | Helper/routing diagnostic log |
 
-Authenticated requests, entitlement checks, billing, and usage logging are handled through the project’s Supabase edge functions. All coin deductions annd credits are recorded in a detailed usage ledger, accessible from the coin store. 
+Authenticated requests, entitlement checks, beta grants, and usage logging are handled through the new project’s Supabase edge functions. Real PayPal, Pix and card payments are intentionally disabled until provider webhooks and idempotency tests are complete.
 
 ## Building from source
 
@@ -77,6 +77,14 @@ For the packaged IPA and rootless `.deb` workflow:
 ```
 
 The build script stages the app, applies the required microphone, speech-recognition, and document-access usage descriptions to the staged plist, creates `EZCompleteUI.ipa`, and packages the rootless Debian archive.
+
+### Build without a Mac
+
+The repository includes `.github/workflows/build-rootless.yml`. After pushing the
+source to GitHub, open **Actions → Build rootless beta package → Run workflow**.
+The workflow uses a hosted macOS runner, installs Theos and the iPhoneOS SDKs,
+and publishes the generated `.deb` and `.ipa` as downloadable artifacts. Upload
+the generated `.deb` to YouRepo only after testing that package on the device.
 
 ## Project layout
 
@@ -102,7 +110,7 @@ EZCompleteUI/
 
 **A feature says there are not enough coins**
 
-Open the coin store, add coins or manage the subscription, then retry. The user usage ledger shows credits and deductions.
+This beta only accepts the one-time server grant. If the button says that the account is waiting for approval, add the user UUID to `beta_testers` in the new Supabase project; real purchases and subscriptions are disabled.
 
 **API Error: The token is invalid**
 Close the app and reopen it, or sign out and sign back in from settings.

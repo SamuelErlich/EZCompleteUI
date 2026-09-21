@@ -52,6 +52,7 @@
 //
 
 #import "EZCodeBlockCell.h"
+#import "EZUITheme.h"
 #import <QuickLook/QuickLook.h>
 #import <QuickLookThumbnailing/QuickLookThumbnailing.h>
 
@@ -105,22 +106,22 @@ static NSCache<NSString *, UIImage *> *EZCodeBlockThumbCache(void) {
     self.selectionStyle  = UITableViewCellSelectionStyleNone;
 
     UIView *container          = [[UIView alloc] init];
-    container.backgroundColor  = [UIColor colorWithWhite:0.12 alpha:1.0];
+    container.backgroundColor  = [EZUITheme surfaceColor];
     container.layer.cornerRadius = 10;
     container.clipsToBounds    = YES;
-    container.layer.borderColor = [UIColor colorWithWhite:0.3 alpha:1.0].CGColor;
+    container.layer.borderColor = [EZUITheme dividerColor].CGColor;
     container.layer.borderWidth = 0.5;
     container.translatesAutoresizingMaskIntoConstraints = NO;
     [self.contentView addSubview:container];
 
     UIView *header              = [[UIView alloc] init];
-    header.backgroundColor      = [UIColor colorWithWhite:0.18 alpha:1.0];
+    header.backgroundColor      = [EZUITheme surfaceElevatedColor];
     header.translatesAutoresizingMaskIntoConstraints = NO;
     [container addSubview:header];
 
     _langLabel                  = [[UILabel alloc] init];
     _langLabel.font             = [UIFont monospacedSystemFontOfSize:12 weight:UIFontWeightMedium];
-    _langLabel.textColor        = [UIColor colorWithRed:0.6 green:0.8 blue:1.0 alpha:1.0];
+    _langLabel.textColor        = [EZUITheme accentSecondaryColor];
     _langLabel.translatesAutoresizingMaskIntoConstraints = NO;
     [header addSubview:_langLabel];
 

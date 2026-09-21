@@ -1,19 +1,8 @@
 // EZSupabaseConfig.h
 // EZCompleteUI
 //
-// Purpose:
-//   Single source of truth for the Supabase project URL and anon
-//   (publishable) key. EZAuthManager.m and SupportRequestViewController.m
-//   currently each hardcode this URL as their own private constant — if
-//   the project is ever migrated, both have to be found and updated by
-//   hand, and it's easy to miss one. New code (starting with
-//   EZInsurancePolicyManager) should import this header instead of adding
-//   a third copy of the literal. Not touching the two existing files in
-//   this pass since they're outside the current feature's scope, but
-//   worth folding them onto this header next time either is touched.
-//
-// Changes:
-//   - Initial version, extracted for EZInsurancePolicyManager.
+// Single source of truth for the new beta Supabase project. The checked-in
+// values are safe placeholders until a project is created and configured.
 
 #import <Foundation/Foundation.h>
 
@@ -25,7 +14,18 @@ extern NSString *const EZSupabaseURL;
 /// Supabase anon/publishable key. Intentionally public — safe to ship in
 /// the binary, analogous to a Firebase API key. Never add the
 /// service_role key here or anywhere in client code; it belongs only in
-/// Edge Function secrets (see insurance-release-check).
+/// Edge Function secrets (see supabase/README.md).
 extern NSString *const EZSupabaseAnonKey;
+
+/// Returns NO while the beta is using the safe placeholder configuration.
+/// The app must fail closed instead of ever contacting the original project.
+FOUNDATION_EXPORT BOOL EZBackendConfigured(void);
+
+/// Builds a function URL from the configured project URL. Returns nil while
+/// the backend is unconfigured, which keeps network calls fail-closed.
+FOUNDATION_EXPORT NSURL * _Nullable EZSupabaseFunctionURL(NSString *functionName);
+
+/// Builds an HTTPS URL for an Auth REST path such as /auth/v1/user.
+FOUNDATION_EXPORT NSURL * _Nullable EZBackendURLForPath(NSString *path);
 
 NS_ASSUME_NONNULL_END

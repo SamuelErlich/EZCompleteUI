@@ -2,18 +2,19 @@
 //  SidewaysScrollView.m
 //  EZCompleteUI
 //
+//  Compact, accessible tool rail used by the main chat screen. The public
+//  configure method stays compatible with the original project while the
+//  duplicated cover-flow cards are replaced by one calm blue/purple row.
+//
 
 #import "SidewaysScrollView.h"
-#import <QuartzCore/QuartzCore.h>
-#import <UIKit/UIKit.h>   // UIImpactFeedbackGenerator
+#import "EZUITheme.h"
 
-@interface SidewaysScrollView () <UIScrollViewDelegate>
+@interface SidewaysScrollView ()
 @property (nonatomic, strong) UIScrollView *scrollView;
 @property (nonatomic, strong) NSArray<UIButton *> *protoButtons;
-@property (nonatomic, assign) CGFloat buttonWidth;
-@property (nonatomic, assign) CGFloat buttonHeight;
 @property (nonatomic, assign) BOOL doubleSize;
-@property (nonatomic, assign) CGRect previousBounds;
+@property (nonatomic, assign) CGSize lastLayoutSize;
 @end
 
 @implementation SidewaysScrollView
@@ -21,274 +22,121 @@
 - (instancetype)initWithFrame:(CGRect)frame {
     if ((self = [super initWithFrame:frame])) {
         self.backgroundColor = UIColor.clearColor;
-        _interItemSpacing = 10.0;
-
-        _scrollView = [[UIScrollView alloc] initWithFrame:self.bounds];
+        _interItemSpacing = 8.0;
+        _scrollView = [[UIScrollView alloc] initWithFrame:CGRectZero];
         _scrollView.translatesAutoresizingMaskIntoConstraints = NO;
         _scrollView.showsHorizontalScrollIndicator = NO;
         _scrollView.alwaysBounceHorizontal = YES;
-        _scrollView.scrollEnabled = YES;
-        _scrollView.delegate = self;
+        _scrollView.directionalLockEnabled = YES;
         _scrollView.clipsToBounds = NO;
         [self addSubview:_scrollView];
-
         [NSLayoutConstraint activateConstraints:@[
             [_scrollView.topAnchor constraintEqualToAnchor:self.topAnchor],
             [_scrollView.bottomAnchor constraintEqualToAnchor:self.bottomAnchor],
-            [_scrollView.leadingAnchor constraintEqualToAnchor:self.leadingAnchor],
-            [_scrollView.trailingAnchor constraintEqualToAnchor:self.trailingAnchor],
+            [_scrollView.leadingAnchor constraintEqualToAnchor:self.leadingAnchor constant:10.0],
+            [_scrollView.trailingAnchor constraintEqualToAnchor:self.trailingAnchor constant:-10.0],
         ]];
-
-        _previousBounds = CGRectZero;
     }
     return self;
 }
 
+- (void)configureWithButtons:(NSArray<UIButton *> *)buttons doubleSize:(BOOL)doubleSize {
+    self.protoButtons = buttons ?: @[];
+    self.doubleSize = doubleSize;
+    [self rebuildContent];
+}
+
 - (void)layoutSubviews {
     [super layoutSubviews];
-
-    if (!CGSizeEqualToSize(self.previousBounds.size, self.bounds.size) ||
-        self.scrollView.contentSize.width == 0) {
-        self.previousBounds = self.bounds;
-
-        CGFloat h = CGRectGetHeight(self.bounds);
-        if (h <= 0.0) return;
-
-        self.buttonHeight = self.doubleSize ? (h * 2.0) : (h - 8.0);
-        self.buttonWidth  = MAX(80.0, self.buttonHeight);
-
+    if (self.scrollView.subviews.count != self.protoButtons.count ||
+        !CGSizeEqualToSize(self.lastLayoutSize, self.bounds.size)) {
         [self rebuildContent];
     }
 }
 
-- (void)configureWithButtons:(NSArray<UIButton *> *)buttons doubleSize:(BOOL)doubleSize {
-    self.protoButtons = buttons ?: @[];
-    self.doubleSize   = doubleSize;
-    [self setNeedsLayout];
-}
-
-#pragma mark - Build
-
 - (void)rebuildContent {
-    for (UIView *v in self.scrollView.subviews) { [v removeFromSuperview]; }
-
-    NSInteger n = (NSInteger)self.protoButtons.count;
-    if (n <= 0) {
+    if (self.bounds.size.height <= 0) return;
+    for (UIView *view in [self.scrollView.subviews copy]) [view removeFromSuperview];
+    if (self.protoButtons.count == 0) {
         self.scrollView.contentSize = CGSizeZero;
+        self.lastLayoutSize = self.bounds.size;
         return;
     }
 
-    const CGFloat itemW   = self.buttonWidth;
-    const CGFloat itemH   = self.buttonHeight;
-    const CGFloat spacing = self.interItemSpacing;
-    const CGFloat containerH = CGRectGetHeight(self.bounds);
-    const CGFloat y = (containerH - itemH) / 2.0;
-
-    CGFloat singleWidth = n * itemW + MAX(0, n - 1) * spacing;
-
-    for (NSInteger copyIdx = 0; copyIdx < 2; copyIdx++) {
-        CGFloat x = copyIdx * (singleWidth + spacing);
-        for (NSInteger i = 0; i < n; i++) {
-            UIButton *btn = [self cloneFrom:self.protoButtons[i] itemHeight:itemH];
-            btn.frame = CGRectMake(x, y, itemW, itemH);
-            [self.scrollView addSubview:btn];
-            x += itemW + spacing;
-        }
+    CGFloat itemWidth = self.doubleSize ? 96.0 : 86.0;
+    CGFloat itemHeight = MAX(68.0, MIN(86.0, CGRectGetHeight(self.bounds) - 8.0));
+    CGFloat x = 0.0;
+    for (NSInteger i = 0; i < self.protoButtons.count; i++) {
+        UIButton *button = [self modernButtonFromPrototype:self.protoButtons[i]];
+        button.frame = CGRectMake(x, (CGRectGetHeight(self.bounds) - itemHeight) / 2.0,
+                                  itemWidth, itemHeight);
+        [self.scrollView addSubview:button];
+        x += itemWidth + self.interItemSpacing;
     }
-
-    CGFloat contentW = singleWidth * 2 + spacing;
-    self.scrollView.contentSize = CGSizeMake(contentW, containerH);
-    self.scrollView.contentInset = UIEdgeInsetsZero;
-    self.scrollView.contentOffset = CGPointZero;
-
-    // Apply initial coverflow pass so first frame looks correct
-    [self applyCoverflowTransforms];
+    self.scrollView.contentSize = CGSizeMake(MAX(0, x - self.interItemSpacing),
+                                              CGRectGetHeight(self.bounds));
+    self.lastLayoutSize = self.bounds.size;
 }
 
-- (UIButton *)cloneFrom:(UIButton *)proto itemHeight:(CGFloat)itemH {
-    UIButton *btn = [UIButton buttonWithType:UIButtonTypeCustom];
-    btn.tag = proto.tag;
+- (UIButton *)modernButtonFromPrototype:(UIButton *)prototype {
+    UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
+    UIImage *image = [prototype imageForState:UIControlStateNormal];
+    if (image) [button setImage:image forState:UIControlStateNormal];
+    NSString *title = [prototype titleForState:UIControlStateNormal];
+    if (title.length) [button setTitle:title forState:UIControlStateNormal];
+    button.accessibilityLabel = prototype.accessibilityLabel ?: title;
+    button.accessibilityTraits = UIAccessibilityTraitButton;
+    button.tintColor = [EZUITheme accentSecondaryColor];
+    button.titleLabel.font = [UIFont systemFontOfSize:11.0 weight:UIFontWeightSemibold];
+    button.titleLabel.adjustsFontSizeToFitWidth = YES;
+    button.titleLabel.minimumScaleFactor = 0.72;
+    button.titleLabel.numberOfLines = 2;
+    button.titleLabel.textAlignment = NSTextAlignmentCenter;
+    button.contentHorizontalAlignment = UIControlContentHorizontalAlignmentCenter;
+    button.contentVerticalAlignment = UIControlContentVerticalAlignmentCenter;
+    button.imageView.contentMode = UIViewContentModeScaleAspectFit;
+    button.backgroundColor = [EZUITheme surfaceElevatedColor];
+    button.layer.cornerRadius = 16.0;
+    button.layer.borderWidth = 1.0;
+    button.layer.borderColor = [EZUITheme dividerColor].CGColor;
+    button.layer.masksToBounds = YES;
 
-    [btn setTitle:[proto titleForState:UIControlStateNormal] forState:UIControlStateNormal];
-    UIImage *img = [proto imageForState:UIControlStateNormal];
-    BOOL hasImage = (img != nil);
-    if (hasImage) {
-        [btn setImage:img forState:UIControlStateNormal];
-        btn.imageView.contentMode = UIViewContentModeScaleAspectFill;
-        btn.contentEdgeInsets = UIEdgeInsetsZero;
-        btn.imageEdgeInsets   = UIEdgeInsetsZero;
-    } else {
-        btn.titleLabel.font = proto.titleLabel.font ?: [UIFont systemFontOfSize:16 weight:UIFontWeightSemibold];
-        btn.contentEdgeInsets = UIEdgeInsetsMake(8, 12, 8, 12);
+    if (@available(iOS 15.0, *)) {
+        UIButtonConfiguration *configuration = [UIButtonConfiguration plainButtonConfiguration];
+        configuration.image = image;
+        configuration.title = title;
+        configuration.imagePlacement = NSDirectionalRectEdgeTop;
+        configuration.imagePadding = 5.0;
+        configuration.titlePadding = 2.0;
+        configuration.contentInsets = NSDirectionalEdgeInsetsMake(8, 5, 7, 5);
+        configuration.baseForegroundColor = [EZUITheme primaryTextColor];
+        configuration.imageColorTransformer = ^UIColor *(UIColor *color) {
+            return [EZUITheme accentSecondaryColor];
+        };
+        button.configuration = configuration;
     }
 
-    UIColor *bg = hasImage ? UIColor.clearColor : (proto.backgroundColor ?: [UIColor systemBlueColor]);
-    btn.backgroundColor = bg;
-
-    CGFloat radius = hasImage ? MAX(14.0, MIN(itemH * 0.16, 22.0))
-                              : MAX(12.0, MIN(itemH * 0.18, 24.0));
-    btn.layer.cornerRadius  = radius;
-    btn.layer.masksToBounds = NO;
-    btn.clipsToBounds       = NO;
-
-    if (hasImage) {
-        btn.imageView.layer.cornerRadius  = radius;
-        btn.imageView.layer.masksToBounds = YES;
-        btn.layer.shadowColor   = [UIColor colorWithWhite:0 alpha:0.45].CGColor;
-        btn.layer.shadowOffset  = CGSizeMake(0, 4);
-        btn.layer.shadowOpacity = 0.9;
-        btn.layer.shadowRadius  = 8.0;
-        btn.layer.borderWidth   = 0.5;
-        btn.layer.borderColor   = [UIColor colorWithWhite:1.0 alpha:0.18].CGColor;
-    } else {
-        btn.layer.borderWidth  = 1.0;
-        btn.layer.borderColor  = [UIColor colorWithWhite:0.92 alpha:1.0].CGColor;
-        btn.layer.shadowColor  = [UIColor colorWithWhite:0 alpha:0.28].CGColor;
-        btn.layer.shadowOffset = CGSizeMake(0, 3);
-        btn.layer.shadowOpacity= 0.7;
-        btn.layer.shadowRadius = 6.0;
-        CGFloat r=0,g=0,b=0,a=0;
-        UIColor *titleColor = UIColor.labelColor;
-        if ([bg getRed:&r green:&g blue:&b alpha:&a]) {
-            CGFloat lum = 0.299*r + 0.587*g + 0.114*b;
-            titleColor = (lum < 0.62) ? UIColor.whiteColor : UIColor.blackColor;
+    for (id target in prototype.allTargets) {
+        NSArray<NSString *> *actions = [prototype actionsForTarget:target
+                                                   forControlEvent:UIControlEventTouchUpInside] ?: @[];
+        for (NSString *actionName in actions) {
+            [button addTarget:target action:NSSelectorFromString(actionName)
+             forControlEvents:UIControlEventTouchUpInside];
         }
-        [btn setTitleColor:titleColor forState:UIControlStateNormal];
     }
-
-    for (id target in proto.allTargets) {
-        NSArray<NSString *> *up = [proto actionsForTarget:target forControlEvent:UIControlEventTouchUpInside] ?: @[];
-        for (NSString *nm in up) {
-            [btn addTarget:target action:NSSelectorFromString(nm) forControlEvents:UIControlEventTouchUpInside];
-        }
-#ifdef UIControlEventPrimaryActionTriggered
-        NSArray<NSString *> *prim = [proto actionsForTarget:target forControlEvent:UIControlEventPrimaryActionTriggered] ?: @[];
-        for (NSString *nm in prim) {
-            [btn addTarget:target action:NSSelectorFromString(nm) forControlEvents:UIControlEventPrimaryActionTriggered];
-        }
-#endif
-    }
-
-    // Press/release animation + haptic
-    [btn addTarget:self action:@selector(ez_btnTouchDown:)
-          forControlEvents:UIControlEventTouchDown | UIControlEventTouchDragEnter];
-    [btn addTarget:self action:@selector(ez_btnTouchUp:)
-          forControlEvents:UIControlEventTouchUpInside
-                          | UIControlEventTouchUpOutside
-                          | UIControlEventTouchCancel
-                          | UIControlEventTouchDragExit];
-
-    return btn;
+    [button addTarget:self action:@selector(ez_pressed:) forControlEvents:UIControlEventTouchDown];
+    [button addTarget:self action:@selector(ez_released:) forControlEvents:UIControlEventTouchUpInside | UIControlEventTouchCancel];
+    return button;
 }
 
-#pragma mark - Button Press Animation
+- (void)ez_pressed:(UIButton *)button {
+    [UIView animateWithDuration:0.12 animations:^{ button.transform = CGAffineTransformMakeScale(0.94, 0.94); }];
+}
 
-- (void)ez_btnTouchDown:(UIButton *)btn {
-    // Scale down and darken slightly — feels like a physical press
-    [UIView animateWithDuration:0.10
-                          delay:0
-         usingSpringWithDamping:0.7
-          initialSpringVelocity:3.0
-                        options:UIViewAnimationOptionAllowUserInteraction
-                     animations:^{
-        btn.transform = CGAffineTransformMakeScale(0.88, 0.88);
-        btn.alpha = btn.alpha * 0.75;
+- (void)ez_released:(UIButton *)button {
+    [UIView animateWithDuration:0.22 delay:0 usingSpringWithDamping:0.65 initialSpringVelocity:2.0 options:UIViewAnimationOptionAllowUserInteraction animations:^{
+        button.transform = CGAffineTransformIdentity;
     } completion:nil];
-
-    // Medium impact haptic — feels like a click
-    if (@available(iOS 10.0, *)) {
-        UIImpactFeedbackGenerator *hap = [[UIImpactFeedbackGenerator alloc]
-            initWithStyle:UIImpactFeedbackStyleMedium];
-        [hap prepare];
-        [hap impactOccurred];
-    }
-}
-
-- (void)ez_btnTouchUp:(UIButton *)btn {
-    // Spring back to whatever coverflow transform the scroll position dictates.
-    // We restore identity here then let the next applyCoverflowTransforms call
-    // re-apply the correct 3-D transform on the next scroll tick (or immediately).
-    [UIView animateWithDuration:0.30
-                          delay:0
-         usingSpringWithDamping:0.55
-          initialSpringVelocity:4.0
-                        options:UIViewAnimationOptionAllowUserInteraction
-                     animations:^{
-        btn.transform = CGAffineTransformIdentity;
-        // Restore alpha to what coverflow would set for this button.
-        // Use 1.0 as a safe default — applyCoverflowTransforms corrects it
-        // on the very next scroll event.
-        btn.alpha = 1.0;
-    } completion:^(BOOL finished) {
-        // Re-apply the correct coverflow state immediately after spring settles
-        [self applyCoverflowTransforms];
-    }];
-}
-
-#pragma mark - Coverflow Transform
-
-- (void)applyCoverflowTransforms {
-    CGFloat scrollW = CGRectGetWidth(self.scrollView.bounds);
-    if (scrollW <= 0) return;
-
-    CGFloat offsetX = self.scrollView.contentOffset.x;
-    CGFloat centerX = offsetX + scrollW / 2.0;
-
-    // Max rotation angle for cards at the edges
-    const CGFloat maxAngleRad  = 55.0 * M_PI / 180.0;
-    // Distance from center at which full tilt is reached
-    const CGFloat tiltDistance = self.buttonWidth * 1.2;
-    // How much off-center cards shrink
-    const CGFloat minScale     = 0.82;
-
-    for (UIView *btn in self.scrollView.subviews) {
-        CGFloat btnCenterX = btn.frame.origin.x + btn.frame.size.width / 2.0;
-        CGFloat delta      = btnCenterX - centerX;
-
-        // Normalise: 0.0 = dead center, ±1.0 = fully tilted
-        CGFloat norm = delta / tiltDistance;
-        norm = MAX(-1.0, MIN(1.0, norm));
-
-        CGFloat angle = norm * maxAngleRad;
-        CGFloat scale = 1.0 - (1.0 - minScale) * fabs(norm);
-
-        // Perspective + Y-axis rotation
-        CATransform3D t = CATransform3DIdentity;
-        t.m34 = -1.0 / 600.0;
-        t = CATransform3DScale(t, scale, scale, 1.0);
-        t = CATransform3DRotate(t, angle, 0, 1, 0);
-
-        btn.layer.transform = t;
-
-        // Fade edges, full opacity at center
-        btn.alpha = 0.55 + 0.45 * (1.0 - fabs(norm));
-
-        // Center card renders on top
-        btn.layer.zPosition = (1.0 - fabs(norm)) * 10.0;
-    }
-}
-
-#pragma mark - UIScrollViewDelegate
-
-- (void)scrollViewDidScroll:(UIScrollView *)scrollView {
-    // Seamless infinite wrap
-    NSInteger n = (NSInteger)self.protoButtons.count;
-    if (n <= 0) return;
-
-    CGFloat singleWidth = n * self.buttonWidth + MAX(0, n - 1) * self.interItemSpacing + self.interItemSpacing;
-    if (singleWidth <= 0) return;
-
-    CGFloat x = scrollView.contentOffset.x;
-    if (x >= singleWidth) {
-        scrollView.contentOffset = CGPointMake(fmod(x, singleWidth), 0);
-    } else if (x < 0) {
-        CGFloat wrapped = singleWidth + fmod(x, singleWidth);
-        if (wrapped >= singleWidth) wrapped -= singleWidth;
-        scrollView.contentOffset = CGPointMake(wrapped, 0);
-    }
-
-    // Coverflow transform — runs every scroll tick
-    [self applyCoverflowTransforms];
 }
 
 @end
